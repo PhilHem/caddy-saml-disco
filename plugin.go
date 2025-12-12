@@ -5,6 +5,7 @@ package caddysamldisco
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -27,7 +28,7 @@ type SAMLDisco struct {
 
 	// Runtime state (not serialized)
 	metadataStore MetadataStore
-	// sessionStore  SessionStore
+	sessionStore  SessionStore
 }
 
 // CaddyModule returns the Caddy module information.
@@ -52,8 +53,21 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	}
 	// TODO: Add URL-based metadata loading in Phase 2
 
-	// TODO: Initialize session store
-	// TODO: Load SAML SP certificate and key
+	// Initialize session store if key file is configured
+	if s.KeyFile != "" {
+		privateKey, err := LoadPrivateKey(s.KeyFile)
+		if err != nil {
+			return fmt.Errorf("load SP private key: %w", err)
+		}
+
+		duration, err := time.ParseDuration(s.SessionDuration)
+		if err != nil {
+			return fmt.Errorf("parse session duration: %w", err)
+		}
+
+		s.sessionStore = NewCookieSessionStore(privateKey, duration)
+	}
+
 	return nil
 }
 
@@ -79,4 +93,5 @@ var (
 	_ caddy.Validator             = (*SAMLDisco)(nil)
 	_ caddyhttp.MiddlewareHandler = (*SAMLDisco)(nil)
 	_ caddyfile.Unmarshaler       = (*SAMLDisco)(nil)
+	_ SessionStore                = (*CookieSessionStore)(nil)
 )

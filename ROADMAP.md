@@ -12,7 +12,7 @@ Development phases for caddy-saml-disco.
 - [x] Basic Caddyfile parsing (`caddyfile.go`)
 - [x] Test IdP fixture (`testfixtures/idp/`) using `crewjam/saml/samlidp`
 - [x] Single IdP metadata loading (file only)
-- [ ] Session management with JWT cookies (`session.go`)
+- [x] Session management with JWT cookies (`session.go`)
 - [ ] SAML SP logic: AuthnRequest, ACS (`saml.go`)
 - [ ] SP metadata endpoint
 - [ ] Integration test validating full SAML flow against test IdP
