@@ -20,7 +20,7 @@ Development phases for caddy-saml-disco.
 - [x] Redirect unauthenticated users to IdP (`redirectToIdP`)
 - [x] Use configured `SessionDuration` in handleACS (currently hardcoded)
 - [x] Set session cookie `MaxAge` to match `SessionDuration`
-- [ ] Add `session_duration` to example Caddyfile
+- [x] Add `session_duration` to example Caddyfile
 - [ ] Test session expiry behavior in integration tests
 - [ ] Validate RelayState is relative path before redirect (prevent open redirect)
 - [ ] E2E test for full auth redirect flow (protected → IdP → ACS → original)

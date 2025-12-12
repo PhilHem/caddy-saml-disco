@@ -1,0 +1,42 @@
+# Example Caddyfile for caddy-saml-disco
+#
+# This configuration protects myapp.example.com with SAML authentication.
+# Users will be authenticated against the configured Identity Provider.
+
+myapp.example.com {
+    # SAML Discovery Service configuration
+    saml_disco {
+        # Required: SP Entity ID (must match IdP configuration)
+        entity_id https://myapp.example.com/saml
+
+        # IdP metadata source (use one of the following)
+        metadata_file /etc/caddy/saml/idp-metadata.xml
+        # metadata_url https://idp.example.com/metadata
+
+        # SP certificate and private key (PEM format)
+        cert_file /etc/caddy/saml/sp-cert.pem
+        key_file /etc/caddy/saml/sp-key.pem
+
+        # Session configuration
+        session_duration 4h           # How long sessions last (default: 8h)
+        session_cookie_name saml_auth # Cookie name (default: saml_session)
+
+        # Optional: Custom ACS URL (default: {scheme}://{host}/saml/acs)
+        # acs_url https://myapp.example.com/saml/acs
+
+        # Optional: Metadata refresh interval (default: 1h)
+        # metadata_refresh_interval 30m
+
+        # Optional: Custom templates directory
+        # templates_dir /etc/caddy/saml/templates
+
+        # Optional: Custom login redirect (for custom UIs)
+        # login_redirect /custom-login
+
+        # Optional: IdP filter pattern (for metadata aggregates)
+        # idp_filter *.example.edu
+    }
+
+    # Your protected application
+    reverse_proxy localhost:8080
+}
