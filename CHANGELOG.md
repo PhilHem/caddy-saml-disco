@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- IdP filtering by pattern via `idp_filter` config option
+- Supports glob-like patterns: `*substring*`, `prefix*`, `*suffix`
+- Filter is applied at provisioning time for efficiency with large aggregates
+
 ## [0.5.0] - 2025-12-12
 
 ### Added

@@ -54,15 +54,21 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("parse metadata refresh interval: %w", err)
 	}
 
+	// Build metadata store options
+	var metadataOpts []MetadataOption
+	if s.IdPFilter != "" {
+		metadataOpts = append(metadataOpts, WithIdPFilter(s.IdPFilter))
+	}
+
 	// Initialize metadata store based on config
 	if s.MetadataFile != "" {
-		store := NewFileMetadataStore(s.MetadataFile)
+		store := NewFileMetadataStore(s.MetadataFile, metadataOpts...)
 		if err := store.Load(); err != nil {
 			return fmt.Errorf("load metadata from file: %w", err)
 		}
 		s.metadataStore = store
 	} else if s.MetadataURL != "" {
-		store := NewURLMetadataStore(s.MetadataURL, refreshInterval)
+		store := NewURLMetadataStore(s.MetadataURL, refreshInterval, metadataOpts...)
 		if err := store.Load(); err != nil {
 			return fmt.Errorf("load metadata from URL: %w", err)
 		}

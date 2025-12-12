@@ -428,11 +428,11 @@ func TestFileMetadataStore_Load_NestedEntitiesDescriptor(t *testing.T) {
 
 	// Verify IdPs from different nesting levels are found
 	expectedIdPs := []string{
-		"https://idp.federation.example.org",   // top-level
-		"https://idp.university-north.edu",     // nested: Universities
-		"https://idp.university-south.edu",     // nested: Universities
-		"https://idp.research-center.org",      // nested: Research Institutes
-		"https://idp.physics-lab.org",          // deeply nested: Research > Labs
+		"https://idp.federation.example.org", // top-level
+		"https://idp.university-north.edu",   // nested: Universities
+		"https://idp.university-south.edu",   // nested: Universities
+		"https://idp.research-center.org",    // nested: Research Institutes
+		"https://idp.physics-lab.org",        // deeply nested: Research > Labs
 	}
 
 	for _, entityID := range expectedIdPs {
@@ -965,6 +965,235 @@ func TestURLMetadataStore_UserAgent(t *testing.T) {
 	expectedUserAgent := "caddy-saml-disco/" + Version
 	if receivedUserAgent != expectedUserAgent {
 		t.Errorf("User-Agent = %q, want %q", receivedUserAgent, expectedUserAgent)
+	}
+}
+
+// IdP filter pattern tests (provisioning-time filtering)
+
+func TestMatchesEntityIDPattern(t *testing.T) {
+	tests := []struct {
+		entityID string
+		pattern  string
+		expected bool
+	}{
+		// Empty pattern matches everything
+		{"https://idp.example.com/saml", "", true},
+		{"https://idp.stanford.edu/idp", "", true},
+
+		// Wildcard matches everything
+		{"https://idp.example.com/saml", "*", true},
+		{"https://idp.stanford.edu/idp", "*", true},
+
+		// Suffix patterns (common use case: filter by domain)
+		{"https://idp.example.edu/shibboleth", "*example.edu*", true},
+		{"https://idp.stanford.edu/idp", "*stanford.edu*", true},
+		{"https://idp.mit.edu/shibboleth", "*stanford.edu*", false},
+
+		// Prefix patterns
+		{"https://idp.example.com/saml", "https://idp.example.com*", true},
+		{"https://idp.other.com/saml", "https://idp.example.com*", false},
+
+		// Substring patterns (institution name in URL)
+		{"https://login.rz.rwth-aachen.de/shibboleth", "*rwth*", true},
+		{"https://login.rz.rwth-aachen.de/shibboleth", "*munich*", false},
+
+		// Case sensitivity (entity IDs are case-sensitive per SAML spec)
+		{"https://idp.EXAMPLE.com/saml", "*example*", false},
+		{"https://idp.EXAMPLE.com/saml", "*EXAMPLE*", true},
+
+		// Pattern with special characters
+		{"https://idp.uni-freiburg.de/idp", "*uni-freiburg*", true},
+
+		// No match
+		{"https://idp.example.com/saml", "*nonexistent*", false},
+	}
+
+	for _, tc := range tests {
+		result := matchesEntityIDPattern(tc.entityID, tc.pattern)
+		if result != tc.expected {
+			t.Errorf("matchesEntityIDPattern(%q, %q) = %v, want %v",
+				tc.entityID, tc.pattern, result, tc.expected)
+		}
+	}
+}
+
+func TestFileMetadataStore_WithIdPFilter(t *testing.T) {
+	// Load aggregate metadata with filter
+	store := NewFileMetadataStore("testdata/aggregate-metadata.xml", WithIdPFilter("*idp1*"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Only idp1.example.com should match the filter
+	if len(idps) != 1 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 1", len(idps))
+	}
+
+	if len(idps) > 0 && idps[0].EntityID != "https://idp1.example.com/saml" {
+		t.Errorf("Expected idp1.example.com, got %s", idps[0].EntityID)
+	}
+
+	// Filtered IdPs should not be accessible via GetIdP
+	_, err = store.GetIdP("https://idp2.example.com/saml")
+	if err != ErrIdPNotFound {
+		t.Error("Filtered IdP should not be accessible via GetIdP")
+	}
+}
+
+func TestFileMetadataStore_WithIdPFilter_NoMatch(t *testing.T) {
+	// Filter that matches nothing
+	store := NewFileMetadataStore("testdata/aggregate-metadata.xml", WithIdPFilter("*nonexistent*"))
+	err := store.Load()
+
+	// Should fail because no IdPs match
+	if err == nil {
+		t.Error("Expected error when no IdPs match filter")
+	}
+}
+
+func TestFileMetadataStore_WithIdPFilter_Empty(t *testing.T) {
+	// Empty filter should load all IdPs (same as no filter)
+	store := NewFileMetadataStore("testdata/aggregate-metadata.xml", WithIdPFilter(""))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	if len(idps) != 3 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 3", len(idps))
+	}
+}
+
+func TestFileMetadataStore_WithIdPFilter_DFNAAISample(t *testing.T) {
+	// Filter for Berlin institutions only
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml", WithIdPFilter("*berlin*"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Only FU Berlin should match (https://identity.fu-berlin.de/idp-fub)
+	if len(idps) != 1 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 1", len(idps))
+	}
+}
+
+func TestFileMetadataStore_WithIdPFilter_Refresh(t *testing.T) {
+	// Test that filter is applied on refresh too
+	dir := t.TempDir()
+	path := filepath.Join(dir, "federation.xml")
+
+	// Write initial aggregate with 2 IdPs
+	initialXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+    <EntityDescriptor entityID="https://allowed.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://allowed.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+    <EntityDescriptor entityID="https://blocked.other.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://blocked.other.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+	if err := os.WriteFile(path, []byte(initialXML), 0644); err != nil {
+		t.Fatalf("write initial metadata: %v", err)
+	}
+
+	store := NewFileMetadataStore(path, WithIdPFilter("*example.com*"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Only allowed.example.com should be loaded
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Fatalf("expected 1 IdP after filtered load, got %d", len(idps))
+	}
+
+	// Update file: add another matching IdP
+	updatedXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+    <EntityDescriptor entityID="https://allowed.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://allowed.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+    <EntityDescriptor entityID="https://also-allowed.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://also-allowed.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+    <EntityDescriptor entityID="https://still-blocked.other.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://still-blocked.other.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+	if err := os.WriteFile(path, []byte(updatedXML), 0644); err != nil {
+		t.Fatalf("write updated metadata: %v", err)
+	}
+
+	// Refresh
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+
+	// Now 2 IdPs should match the filter
+	idps, _ = store.ListIdPs("")
+	if len(idps) != 2 {
+		t.Errorf("expected 2 IdPs after refresh, got %d", len(idps))
+	}
+
+	// Verify blocked IdP is still not accessible
+	_, err := store.GetIdP("https://still-blocked.other.com")
+	if err != ErrIdPNotFound {
+		t.Error("Blocked IdP should not be accessible after refresh")
+	}
+}
+
+func TestURLMetadataStore_WithIdPFilter(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/aggregate-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	// Filter to only load idp2
+	store := NewURLMetadataStore(server.URL, time.Hour, WithIdPFilter("*idp2*"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	if len(idps) != 1 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 1", len(idps))
+	}
+
+	if len(idps) > 0 && idps[0].EntityID != "https://idp2.example.com/saml" {
+		t.Errorf("Expected idp2.example.com, got %s", idps[0].EntityID)
 	}
 }
 

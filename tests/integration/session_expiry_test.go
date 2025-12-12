@@ -145,4 +145,3 @@ func TestSessionExpiry_ValidThenExpired_RedirectsToIdP(t *testing.T) {
 		t.Errorf("expired session: redirect to %q, want IdP SSO URL prefix", location)
 	}
 }
-

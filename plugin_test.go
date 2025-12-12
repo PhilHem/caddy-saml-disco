@@ -762,10 +762,10 @@ func TestValidateRelayState(t *testing.T) {
 		// Edge cases
 		{"backslash escape", "\\\\evil.com", "/"},
 		{"encoded slashes", "%2f%2fevil.com", "/"},
-		{"whitespace prefix becomes valid", " /valid", "/valid"},           // trimmed, then valid
-		{"tab prefix becomes valid", "\t/valid", "/valid"},                 // trimmed, then valid
-		{"only whitespace", "   ", "/"},                                    // trimmed to empty
-		{"newline in path", "/path\nHeader: injection", "/"},               // header injection blocked
+		{"whitespace prefix becomes valid", " /valid", "/valid"}, // trimmed, then valid
+		{"tab prefix becomes valid", "\t/valid", "/valid"},       // trimmed, then valid
+		{"only whitespace", "   ", "/"},                          // trimmed to empty
+		{"newline in path", "/path\nHeader: injection", "/"},     // header injection blocked
 	}
 
 	for _, tc := range tests {

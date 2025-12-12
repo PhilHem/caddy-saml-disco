@@ -48,18 +48,72 @@ type MetadataStore interface {
 // ErrIdPNotFound is returned when an IdP is not found in the store.
 var ErrIdPNotFound = fmt.Errorf("idp not found")
 
+// matchesEntityIDPattern returns true if the entityID matches the glob pattern.
+// Empty pattern matches everything. Uses strings.Contains for substring matching
+// when pattern is wrapped in wildcards (e.g., "*example*").
+func matchesEntityIDPattern(entityID, pattern string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+
+	// Handle common case: *substring* pattern (substring match)
+	if strings.HasPrefix(pattern, "*") && strings.HasSuffix(pattern, "*") && len(pattern) > 2 {
+		substring := pattern[1 : len(pattern)-1]
+		return strings.Contains(entityID, substring)
+	}
+
+	// Handle prefix pattern: prefix*
+	if strings.HasSuffix(pattern, "*") && !strings.HasPrefix(pattern, "*") {
+		prefix := pattern[:len(pattern)-1]
+		return strings.HasPrefix(entityID, prefix)
+	}
+
+	// Handle suffix pattern: *suffix
+	if strings.HasPrefix(pattern, "*") && !strings.HasSuffix(pattern, "*") {
+		suffix := pattern[1:]
+		return strings.HasSuffix(entityID, suffix)
+	}
+
+	// Exact match
+	return entityID == pattern
+}
+
+// MetadataOption is a functional option for configuring metadata stores.
+type MetadataOption func(*metadataOptions)
+
+type metadataOptions struct {
+	idpFilter string
+}
+
+// WithIdPFilter returns an option that filters IdPs by entity ID pattern.
+// Only IdPs whose entity ID matches the pattern will be loaded.
+// Supports glob-like patterns: "*substring*", "prefix*", "*suffix".
+func WithIdPFilter(pattern string) MetadataOption {
+	return func(o *metadataOptions) {
+		o.idpFilter = pattern
+	}
+}
+
 // FileMetadataStore loads IdP metadata from a local file.
 // Supports both single EntityDescriptor and aggregate EntitiesDescriptor formats.
 type FileMetadataStore struct {
-	path string
+	path      string
+	idpFilter string
 
 	mu   sync.RWMutex
 	idps []IdPInfo // Supports multiple IdPs from aggregate metadata
 }
 
 // NewFileMetadataStore creates a new FileMetadataStore.
-func NewFileMetadataStore(path string) *FileMetadataStore {
-	return &FileMetadataStore{path: path}
+func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStore {
+	options := &metadataOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	return &FileMetadataStore{
+		path:      path,
+		idpFilter: options.idpFilter,
+	}
 }
 
 // Load reads and parses the metadata file.
@@ -125,11 +179,33 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		return fmt.Errorf("parse metadata: %w", err)
 	}
 
+	// Apply IdP filter if configured
+	if s.idpFilter != "" {
+		idps = filterIdPs(idps, s.idpFilter)
+		if len(idps) == 0 {
+			return fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
+		}
+	}
+
 	s.mu.Lock()
 	s.idps = idps
 	s.mu.Unlock()
 
 	return nil
+}
+
+// filterIdPs returns only IdPs whose entity ID matches the pattern.
+func filterIdPs(idps []IdPInfo, pattern string) []IdPInfo {
+	if pattern == "" {
+		return idps
+	}
+	var filtered []IdPInfo
+	for _, idp := range idps {
+		if matchesEntityIDPattern(idp.EntityID, pattern) {
+			filtered = append(filtered, idp)
+		}
+	}
+	return filtered
 }
 
 // parseMetadata parses SAML metadata XML, supporting both single EntityDescriptor
@@ -242,6 +318,7 @@ type URLMetadataStore struct {
 	url        string
 	httpClient *http.Client
 	cacheTTL   time.Duration
+	idpFilter  string
 
 	mu           sync.RWMutex
 	idps         []IdPInfo
@@ -251,10 +328,15 @@ type URLMetadataStore struct {
 }
 
 // NewURLMetadataStore creates a new URLMetadataStore.
-func NewURLMetadataStore(url string, cacheTTL time.Duration) *URLMetadataStore {
+func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOption) *URLMetadataStore {
+	options := &metadataOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
 	return &URLMetadataStore{
-		url:      url,
-		cacheTTL: cacheTTL,
+		url:       url,
+		cacheTTL:  cacheTTL,
+		idpFilter: options.idpFilter,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -363,6 +445,14 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 	idps, err := parseMetadata(data)
 	if err != nil {
 		return fmt.Errorf("parse metadata: %w", err)
+	}
+
+	// Apply IdP filter if configured
+	if s.idpFilter != "" {
+		idps = filterIdPs(idps, s.idpFilter)
+		if len(idps) == 0 {
+			return fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
+		}
 	}
 
 	s.mu.Lock()
