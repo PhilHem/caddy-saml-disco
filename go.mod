@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/caddyserver/caddy/v2 v2.8.4
 	github.com/crewjam/saml v0.5.1
+	github.com/golang-jwt/jwt/v5 v5.3.0
 )
 
 require (
@@ -35,7 +36,6 @@ require (
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-sql-driver/mysql v1.7.1 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/glog v1.2.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
