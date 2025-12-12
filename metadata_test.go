@@ -4,9 +4,12 @@ package caddysamldisco
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestFileMetadataStore_Load(t *testing.T) {
@@ -517,5 +520,463 @@ func TestFileMetadataStore_Refresh_Aggregate(t *testing.T) {
 	}
 	if _, err := store.GetIdP("https://idp3.example.com"); err != nil {
 		t.Error("idp3 should be found after refresh")
+	}
+}
+
+// URLMetadataStore tests
+
+func TestURLMetadataStore_Load(t *testing.T) {
+	// Serve testdata/idp-metadata.xml via httptest.Server
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	if len(idps) != 1 {
+		t.Fatalf("expected 1 IdP, got %d", len(idps))
+	}
+
+	idp := idps[0]
+
+	if idp.EntityID != "https://idp.example.com/saml" {
+		t.Errorf("EntityID = %q, want %q", idp.EntityID, "https://idp.example.com/saml")
+	}
+
+	if idp.DisplayName != "Example IdP" {
+		t.Errorf("DisplayName = %q, want %q", idp.DisplayName, "Example IdP")
+	}
+
+	if idp.SSOURL != "https://idp.example.com/saml/sso" {
+		t.Errorf("SSOURL = %q, want %q", idp.SSOURL, "https://idp.example.com/saml/sso")
+	}
+}
+
+func TestURLMetadataStore_GetIdP(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Found
+	idp, err := store.GetIdP("https://idp.example.com/saml")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+	if idp.EntityID != "https://idp.example.com/saml" {
+		t.Errorf("wrong EntityID returned")
+	}
+
+	// Not found
+	_, err = store.GetIdP("https://unknown.example.com")
+	if err != ErrIdPNotFound {
+		t.Errorf("expected ErrIdPNotFound, got %v", err)
+	}
+}
+
+func TestURLMetadataStore_Load_HTTPError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{"404 Not Found", http.StatusNotFound},
+		{"500 Internal Server Error", http.StatusInternalServerError},
+		{"503 Service Unavailable", http.StatusServiceUnavailable},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.statusCode)
+			}))
+			defer server.Close()
+
+			store := NewURLMetadataStore(server.URL, time.Hour)
+			err := store.Load()
+			if err == nil {
+				t.Error("expected error for HTTP error response")
+			}
+		})
+	}
+}
+
+func TestURLMetadataStore_Load_InvalidXML(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("not valid xml"))
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	err := store.Load()
+	if err == nil {
+		t.Error("expected error for invalid XML")
+	}
+}
+
+func TestURLMetadataStore_Load_NetworkError(t *testing.T) {
+	// Use a URL that will fail to connect
+	store := NewURLMetadataStore("http://localhost:1", time.Hour)
+	err := store.Load()
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
+func TestURLMetadataStore_Load_ContextCanceled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Second) // Slow response
+		w.Write([]byte("<xml/>"))
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := store.Refresh(ctx)
+	if err == nil {
+		t.Error("expected error for canceled context")
+	}
+}
+
+func TestURLMetadataStore_CacheHit(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	fetchCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetchCount++
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+
+	// First fetch
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if fetchCount != 1 {
+		t.Errorf("expected 1 fetch, got %d", fetchCount)
+	}
+
+	// Second call within TTL should not fetch again
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+	if fetchCount != 1 {
+		t.Errorf("expected 1 fetch (cache hit), got %d", fetchCount)
+	}
+}
+
+func TestURLMetadataStore_CacheExpiry(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	fetchCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetchCount++
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	// Use very short TTL
+	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+
+	// First fetch
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if fetchCount != 1 {
+		t.Errorf("expected 1 fetch, got %d", fetchCount)
+	}
+
+	// Wait for cache to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Second call after TTL should fetch again
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+	if fetchCount != 2 {
+		t.Errorf("expected 2 fetches (cache miss), got %d", fetchCount)
+	}
+}
+
+func TestURLMetadataStore_ConditionalRequest_ETag(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	etag := `"abc123"`
+	requestCount := 0
+	conditionalRequestReceived := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		// Check if client sent If-None-Match header
+		if r.Header.Get("If-None-Match") == etag {
+			conditionalRequestReceived = true
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+
+	// First fetch - should get full response with ETag
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Fatalf("expected 1 IdP after first load, got %d", len(idps))
+	}
+
+	// Wait for cache to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Second fetch - should send If-None-Match and get 304
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+
+	// Verify conditional request was sent
+	if !conditionalRequestReceived {
+		t.Error("expected If-None-Match header to be sent on second request")
+	}
+
+	// Data should still be present (not cleared on 304)
+	idps, _ = store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Errorf("expected 1 IdP after 304 response, got %d", len(idps))
+	}
+}
+
+func TestURLMetadataStore_ConditionalRequest_LastModified(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	lastMod := "Wed, 01 Jan 2025 00:00:00 GMT"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if client sent If-Modified-Since header
+		if r.Header.Get("If-Modified-Since") == lastMod {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Last-Modified", lastMod)
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+
+	// First fetch
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Wait for cache to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Second fetch - should send If-Modified-Since and get 304
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+
+	// Data should still be present
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Errorf("expected 1 IdP after 304 response, got %d", len(idps))
+	}
+}
+
+func TestURLMetadataStore_ConditionalRequest_Modified(t *testing.T) {
+	// First metadata - single IdP
+	metadata1, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	// Second metadata - aggregate with 3 IdPs
+	metadata2, err := os.ReadFile("testdata/aggregate-metadata.xml")
+	if err != nil {
+		t.Fatalf("read aggregate metadata: %v", err)
+	}
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			w.Header().Set("ETag", `"v1"`)
+			w.Write(metadata1)
+		} else {
+			// New version - different ETag, return full response
+			w.Header().Set("ETag", `"v2"`)
+			w.Write(metadata2)
+		}
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+
+	// First fetch - single IdP
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Fatalf("expected 1 IdP after first load, got %d", len(idps))
+	}
+
+	// Wait for cache to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Second fetch - should get updated data
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+
+	idps, _ = store.ListIdPs("")
+	if len(idps) != 3 {
+		t.Errorf("expected 3 IdPs after update, got %d", len(idps))
+	}
+}
+
+func TestURLMetadataStore_Load_Aggregate(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/aggregate-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	if len(idps) != 3 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 3", len(idps))
+	}
+}
+
+func TestURLMetadataStore_Load_DFNAAISample(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/dfn-aai-sample.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// 6 IdPs from DFN-AAI sample (SP should be skipped)
+	if len(idps) != 6 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 6", len(idps))
+	}
+
+	// Verify specific IdP
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+	if idp.DisplayName != "Freie Universität Berlin" {
+		t.Errorf("DisplayName = %q, want %q", idp.DisplayName, "Freie Universität Berlin")
+	}
+}
+
+func TestURLMetadataStore_ListIdPs_Filter(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/aggregate-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	tests := []struct {
+		filter   string
+		expected int
+	}{
+		{"", 3},           // no filter - all 3 IdPs
+		{"University", 2}, // matches State University and Tech University
+		{"Corporate", 1},  // matches Corporate Provider only
+		{"unknown", 0},    // no match
+	}
+
+	for _, tc := range tests {
+		idps, err := store.ListIdPs(tc.filter)
+		if err != nil {
+			t.Errorf("ListIdPs(%q) failed: %v", tc.filter, err)
+			continue
+		}
+		if len(idps) != tc.expected {
+			t.Errorf("ListIdPs(%q) returned %d IdPs, want %d", tc.filter, len(idps), tc.expected)
+		}
 	}
 }

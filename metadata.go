@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/crewjam/saml"
 )
@@ -232,4 +235,139 @@ func parseEntityDescriptor(data []byte) (*IdPInfo, error) {
 	}
 
 	return extractIdPInfo(&ed)
+}
+
+// URLMetadataStore loads IdP metadata from a URL with caching.
+type URLMetadataStore struct {
+	url        string
+	httpClient *http.Client
+	cacheTTL   time.Duration
+
+	mu           sync.RWMutex
+	idps         []IdPInfo
+	lastFetch    time.Time
+	etag         string
+	lastModified string
+}
+
+// NewURLMetadataStore creates a new URLMetadataStore.
+func NewURLMetadataStore(url string, cacheTTL time.Duration) *URLMetadataStore {
+	return &URLMetadataStore{
+		url:      url,
+		cacheTTL: cacheTTL,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+// Load fetches and parses the metadata from the URL.
+// This should be called during initialization.
+func (s *URLMetadataStore) Load() error {
+	return s.Refresh(context.Background())
+}
+
+// GetIdP returns the IdP if the entity ID matches.
+func (s *URLMetadataStore) GetIdP(entityID string) (*IdPInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for i := range s.idps {
+		if s.idps[i].EntityID == entityID {
+			idp := s.idps[i]
+			return &idp, nil
+		}
+	}
+
+	return nil, ErrIdPNotFound
+}
+
+// ListIdPs returns all IdPs, optionally filtered by display name or entity ID.
+func (s *URLMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.idps) == 0 {
+		return nil, nil
+	}
+
+	if filter == "" {
+		result := make([]IdPInfo, len(s.idps))
+		copy(result, s.idps)
+		return result, nil
+	}
+
+	filter = strings.ToLower(filter)
+	var result []IdPInfo
+	for _, idp := range s.idps {
+		if strings.Contains(strings.ToLower(idp.DisplayName), filter) ||
+			strings.Contains(strings.ToLower(idp.EntityID), filter) {
+			result = append(result, idp)
+		}
+	}
+
+	return result, nil
+}
+
+// Refresh fetches metadata from the URL if cache has expired.
+func (s *URLMetadataStore) Refresh(ctx context.Context) error {
+	// Check if cache is still valid
+	s.mu.RLock()
+	if !s.lastFetch.IsZero() && time.Since(s.lastFetch) < s.cacheTTL {
+		s.mu.RUnlock()
+		return nil // Cache hit
+	}
+	etag := s.etag
+	lastModified := s.lastModified
+	s.mu.RUnlock()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	// Add conditional request headers if we have cached values
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+	if lastModified != "" {
+		req.Header.Set("If-Modified-Since", lastModified)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch metadata: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Handle 304 Not Modified - data hasn't changed
+	if resp.StatusCode == http.StatusNotModified {
+		s.mu.Lock()
+		s.lastFetch = time.Now()
+		s.mu.Unlock()
+		return nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("fetch metadata: HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	idps, err := parseMetadata(data)
+	if err != nil {
+		return fmt.Errorf("parse metadata: %w", err)
+	}
+
+	s.mu.Lock()
+	s.idps = idps
+	s.lastFetch = time.Now()
+	s.etag = resp.Header.Get("ETag")
+	s.lastModified = resp.Header.Get("Last-Modified")
+	s.mu.Unlock()
+
+	return nil
 }

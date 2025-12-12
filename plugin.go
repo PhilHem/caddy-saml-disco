@@ -48,6 +48,12 @@ func (SAMLDisco) CaddyModule() caddy.ModuleInfo {
 func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	s.Config.SetDefaults()
 
+	// Parse refresh interval for metadata cache TTL
+	refreshInterval, err := time.ParseDuration(s.MetadataRefreshInterval)
+	if err != nil {
+		return fmt.Errorf("parse metadata refresh interval: %w", err)
+	}
+
 	// Initialize metadata store based on config
 	if s.MetadataFile != "" {
 		store := NewFileMetadataStore(s.MetadataFile)
@@ -55,8 +61,13 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("load metadata from file: %w", err)
 		}
 		s.metadataStore = store
+	} else if s.MetadataURL != "" {
+		store := NewURLMetadataStore(s.MetadataURL, refreshInterval)
+		if err := store.Load(); err != nil {
+			return fmt.Errorf("load metadata from URL: %w", err)
+		}
+		s.metadataStore = store
 	}
-	// TODO: Add URL-based metadata loading in Phase 2
 
 	// Initialize session store and SAML service if key file is configured
 	if s.KeyFile != "" {
