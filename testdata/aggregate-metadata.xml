@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    Name="https://federation.example.org">
+    <EntityDescriptor entityID="https://idp1.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7
+o5e7irD6PTW6DMnlTs/rkwDL5Ss7RLJHHaIwj3sig4Crr8eMxnZWzjmQxhCdLwvb
+bDhbYYDUvOBPABI+GHdfgh6B8rkRkwQXphQBj5BGANNLhjRpAOHvvPCnF1IeKWTK</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp1.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">State University</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://idp2.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7
+o5e7irD6PTW6DMnlTs/rkwDL5Ss7RLJHHaIwj3sig4Crr8eMxnZWzjmQxhCdLwvb
+bDhbYYDUvOBPABI+GHdfgh6B8rkRkwQXphQBj5BGANNLhjRpAOHvvPCnF1IeKWTK</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp2.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Tech University</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://idp3.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7
+o5e7irD6PTW6DMnlTs/rkwDL5Ss7RLJHHaIwj3sig4Crr8eMxnZWzjmQxhCdLwvb
+bDhbYYDUvOBPABI+GHdfgh6B8rkRkwQXphQBj5BGANNLhjRpAOHvvPCnF1IeKWTK</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp3.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Corporate Provider</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+</EntitiesDescriptor>

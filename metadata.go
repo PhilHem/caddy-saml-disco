@@ -46,11 +46,12 @@ type MetadataStore interface {
 var ErrIdPNotFound = fmt.Errorf("idp not found")
 
 // FileMetadataStore loads IdP metadata from a local file.
+// Supports both single EntityDescriptor and aggregate EntitiesDescriptor formats.
 type FileMetadataStore struct {
 	path string
 
-	mu  sync.RWMutex
-	idp *IdPInfo // For single IdP, we just store one
+	mu   sync.RWMutex
+	idps []IdPInfo // Supports multiple IdPs from aggregate metadata
 }
 
 // NewFileMetadataStore creates a new FileMetadataStore.
@@ -69,38 +70,44 @@ func (s *FileMetadataStore) GetIdP(entityID string) (*IdPInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.idp == nil {
-		return nil, ErrIdPNotFound
+	for i := range s.idps {
+		if s.idps[i].EntityID == entityID {
+			// Return a copy to prevent mutation
+			idp := s.idps[i]
+			return &idp, nil
+		}
 	}
 
-	if s.idp.EntityID != entityID {
-		return nil, ErrIdPNotFound
-	}
-
-	// Return a copy to prevent mutation
-	idp := *s.idp
-	return &idp, nil
+	return nil, ErrIdPNotFound
 }
 
-// ListIdPs returns all IdPs (just one for file-based store).
+// ListIdPs returns all IdPs, optionally filtered by display name or entity ID.
 func (s *FileMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.idp == nil {
+	if len(s.idps) == 0 {
 		return nil, nil
 	}
 
-	// Apply filter if provided
-	if filter != "" {
-		filter = strings.ToLower(filter)
-		if !strings.Contains(strings.ToLower(s.idp.DisplayName), filter) &&
-			!strings.Contains(strings.ToLower(s.idp.EntityID), filter) {
-			return nil, nil
+	// No filter - return all IdPs
+	if filter == "" {
+		result := make([]IdPInfo, len(s.idps))
+		copy(result, s.idps)
+		return result, nil
+	}
+
+	// Apply filter
+	filter = strings.ToLower(filter)
+	var result []IdPInfo
+	for _, idp := range s.idps {
+		if strings.Contains(strings.ToLower(idp.DisplayName), filter) ||
+			strings.Contains(strings.ToLower(idp.EntityID), filter) {
+			result = append(result, idp)
 		}
 	}
 
-	return []IdPInfo{*s.idp}, nil
+	return result, nil
 }
 
 // Refresh reloads metadata from the file.
@@ -110,27 +117,70 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		return fmt.Errorf("read metadata file: %w", err)
 	}
 
-	idp, err := parseEntityDescriptor(data)
+	idps, err := parseMetadata(data)
 	if err != nil {
 		return fmt.Errorf("parse metadata: %w", err)
 	}
 
 	s.mu.Lock()
-	s.idp = idp
+	s.idps = idps
 	s.mu.Unlock()
 
 	return nil
 }
 
-// parseEntityDescriptor extracts IdPInfo from SAML metadata XML.
-func parseEntityDescriptor(data []byte) (*IdPInfo, error) {
-	var ed saml.EntityDescriptor
-	if err := xml.Unmarshal(data, &ed); err != nil {
-		return nil, fmt.Errorf("unmarshal xml: %w", err)
+// parseMetadata parses SAML metadata XML, supporting both single EntityDescriptor
+// and aggregate EntitiesDescriptor formats.
+func parseMetadata(data []byte) ([]IdPInfo, error) {
+	// Try EntitiesDescriptor first (aggregate metadata)
+	var entities saml.EntitiesDescriptor
+	if err := xml.Unmarshal(data, &entities); err == nil && len(entities.EntityDescriptors) > 0 {
+		return parseEntitiesDescriptor(&entities)
 	}
 
+	// Fall back to single EntityDescriptor
+	idp, err := parseEntityDescriptor(data)
+	if err != nil {
+		return nil, err
+	}
+	return []IdPInfo{*idp}, nil
+}
+
+// parseEntitiesDescriptor extracts all IdPs from an aggregate metadata document.
+// It skips entities without IDPSSODescriptor (e.g., SP metadata).
+func parseEntitiesDescriptor(entities *saml.EntitiesDescriptor) ([]IdPInfo, error) {
+	var idps []IdPInfo
+
+	// Process direct EntityDescriptor children
+	for i := range entities.EntityDescriptors {
+		idp, err := extractIdPInfo(&entities.EntityDescriptors[i])
+		if err != nil {
+			// Skip entities without IDPSSODescriptor (SPs, etc.)
+			continue
+		}
+		idps = append(idps, *idp)
+	}
+
+	// Process nested EntitiesDescriptor elements (recursive)
+	for i := range entities.EntitiesDescriptors {
+		nestedIdps, err := parseEntitiesDescriptor(&entities.EntitiesDescriptors[i])
+		if err != nil {
+			continue
+		}
+		idps = append(idps, nestedIdps...)
+	}
+
+	if len(idps) == 0 {
+		return nil, fmt.Errorf("no IdPs found in aggregate metadata")
+	}
+
+	return idps, nil
+}
+
+// extractIdPInfo extracts IdPInfo from a single EntityDescriptor.
+func extractIdPInfo(ed *saml.EntityDescriptor) (*IdPInfo, error) {
 	if len(ed.IDPSSODescriptors) == 0 {
-		return nil, fmt.Errorf("no IDPSSODescriptor found in metadata")
+		return nil, fmt.Errorf("no IDPSSODescriptor found")
 	}
 
 	idpDesc := ed.IDPSSODescriptors[0]
@@ -147,10 +197,6 @@ func parseEntityDescriptor(data []byte) (*IdPInfo, error) {
 			ssoURL = sso.Location
 			ssoBinding = sso.Binding
 		}
-	}
-
-	if ssoURL == "" {
-		return nil, fmt.Errorf("no SSO endpoint found in metadata")
 	}
 
 	// Extract display name from Organization or fall back to EntityID
@@ -176,4 +222,14 @@ func parseEntityDescriptor(data []byte) (*IdPInfo, error) {
 		SSOBinding:   ssoBinding,
 		Certificates: certs,
 	}, nil
+}
+
+// parseEntityDescriptor extracts IdPInfo from a single EntityDescriptor XML.
+func parseEntityDescriptor(data []byte) (*IdPInfo, error) {
+	var ed saml.EntityDescriptor
+	if err := xml.Unmarshal(data, &ed); err != nil {
+		return nil, fmt.Errorf("unmarshal xml: %w", err)
+	}
+
+	return extractIdPInfo(&ed)
 }

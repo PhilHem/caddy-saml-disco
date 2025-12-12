@@ -36,7 +36,9 @@ Development phases for caddy-saml-disco.
 
 **Goal:** Support metadata aggregates and IdP discovery.
 
-- [ ] Metadata aggregate parsing (multiple IdPs from one XML)
+- [x] Metadata aggregate parsing (multiple IdPs from one XML)
+- [x] Test nested EntitiesDescriptor parsing
+- [x] Test aggregate metadata refresh (file changes)
 - [ ] URL-based metadata loading with caching
 - [ ] TTL-based metadata refresh
 - [ ] IdP filtering by pattern
@@ -44,6 +46,10 @@ Development phases for caddy-saml-disco.
 - [ ] Default discovery UI (embedded HTML template)
 - [ ] Auto-redirect for single IdP scenarios
 - [ ] Search/filter IdPs in API
+- [ ] Parse mdui:UIInfo extensions (DisplayName, Description, Logo URLs)
+- [ ] Add `Description`, `LogoURL`, `Scopes` fields to `IdPInfo` struct
+- [ ] Prefer mdui:DisplayName over Organization/OrganizationDisplayName
+- [x] Create realistic test metadata with mdui extensions (dfn-aai-sample.xml)
 
 **Outcome:** Can load federation metadata and present IdP selection to users.
 
@@ -59,6 +65,8 @@ Development phases for caddy-saml-disco.
 - [ ] Remember last-used IdP cookie
 - [ ] Custom frontend example in `examples/`
 - [ ] CORS headers for SPA frontends (optional)
+- [ ] Multi-language display name support (prefer user's Accept-Language locale)
+- [ ] Logo proxy/caching endpoint (avoid hotlinking federation logos)
 
 **Outcome:** Users can build custom discovery UIs consuming the JSON API.
 
@@ -75,6 +83,10 @@ Development phases for caddy-saml-disco.
 - [ ] Security review (cookie flags, CSRF, etc.)
 - [ ] Documentation site or README expansion
 - [ ] Performance testing with large metadata files
+- [ ] **Metadata signature verification** (critical for federation trust)
+- [ ] Parse `mdrpi:RegistrationInfo` for trust chain validation
+- [ ] Validate metadata `validUntil` attribute (reject expired metadata)
+- [ ] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
 
 **Outcome:** Ready for production use in federation environments.
 
@@ -90,6 +102,10 @@ Development phases for caddy-saml-disco.
 - [ ] Header injection customization
 - [ ] Multiple SP configurations per instance
 - [ ] Comprehensive test suite (unit, integration, e2e)
+- [ ] Parse `mdattr:EntityAttributes` for entity categories (R&S, SIRTFI)
+- [ ] Scope-based attribute validation (shibmd:Scope)
+- [ ] Certificate rotation handling (multiple signing certs per IdP)
+- [ ] Filter IdPs by entity category or assurance level
 
 **Outcome:** Full-featured SAML SP plugin for Caddy.
 

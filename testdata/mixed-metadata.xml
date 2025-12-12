@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    Name="https://federation.example.org">
+    <!-- IdP 1 -->
+    <EntityDescriptor entityID="https://idp1.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp1.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">First IdP</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <!-- SP - should be skipped -->
+    <EntityDescriptor entityID="https://sp.example.com">
+        <SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+                                      Location="https://sp.example.com/acs" index="0"/>
+        </SPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Service Provider</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <!-- IdP 2 -->
+    <EntityDescriptor entityID="https://idp2.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp2.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Second IdP</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <!-- IdP 3 -->
+    <EntityDescriptor entityID="https://idp3.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp3.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Third IdP</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+</EntitiesDescriptor>

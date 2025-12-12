@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nested federation metadata structure.
+  Some federations group entities by region or category using nested EntitiesDescriptor.
+-->
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+                    Name="https://federation.example.org">
+
+    <!-- Top-level IdP (not nested) -->
+    <EntityDescriptor entityID="https://idp.federation.example.org">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <ds:KeyInfo>
+                    <ds:X509Data>
+                        <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                    </ds:X509Data>
+                </ds:KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp.federation.example.org/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Federation Central IdP</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <!-- Nested: Universities group -->
+    <EntitiesDescriptor Name="Universities">
+        <EntityDescriptor entityID="https://idp.university-north.edu">
+            <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <KeyDescriptor use="signing">
+                    <ds:KeyInfo>
+                        <ds:X509Data>
+                            <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                        </ds:X509Data>
+                    </ds:KeyInfo>
+                </KeyDescriptor>
+                <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                     Location="https://idp.university-north.edu/sso"/>
+            </IDPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">University of the North</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+
+        <EntityDescriptor entityID="https://idp.university-south.edu">
+            <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <KeyDescriptor use="signing">
+                    <ds:KeyInfo>
+                        <ds:X509Data>
+                            <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                        </ds:X509Data>
+                    </ds:KeyInfo>
+                </KeyDescriptor>
+                <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                     Location="https://idp.university-south.edu/sso"/>
+            </IDPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">University of the South</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+
+        <!-- SP in universities group (should be skipped) -->
+        <EntityDescriptor entityID="https://sp.library.edu">
+            <SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+                                          Location="https://sp.library.edu/acs" index="0"/>
+            </SPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">University Library</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+    </EntitiesDescriptor>
+
+    <!-- Nested: Research Institutes group -->
+    <EntitiesDescriptor Name="Research Institutes">
+        <EntityDescriptor entityID="https://idp.research-center.org">
+            <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <KeyDescriptor use="signing">
+                    <ds:KeyInfo>
+                        <ds:X509Data>
+                            <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                        </ds:X509Data>
+                    </ds:KeyInfo>
+                </KeyDescriptor>
+                <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                     Location="https://idp.research-center.org/sso"/>
+            </IDPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">National Research Center</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+
+        <!-- Deeply nested: Labs subgroup -->
+        <EntitiesDescriptor Name="Labs">
+            <EntityDescriptor entityID="https://idp.physics-lab.org">
+                <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                    <KeyDescriptor use="signing">
+                        <ds:KeyInfo>
+                            <ds:X509Data>
+                                <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                            </ds:X509Data>
+                        </ds:KeyInfo>
+                    </KeyDescriptor>
+                    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                         Location="https://idp.physics-lab.org/sso"/>
+                </IDPSSODescriptor>
+                <Organization>
+                    <OrganizationDisplayName xml:lang="en">Physics Laboratory</OrganizationDisplayName>
+                </Organization>
+            </EntityDescriptor>
+        </EntitiesDescriptor>
+    </EntitiesDescriptor>
+
+</EntitiesDescriptor>
