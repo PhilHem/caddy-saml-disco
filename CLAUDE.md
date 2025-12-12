@@ -190,13 +190,13 @@ The in-memory implementations are not test doubles - they're production-ready. U
 
 After completing any significant implementation, review for roadmap opportunities:
 
-1. **Read ROADMAP.md first** to understand current phases and avoid duplicates
+1. **Read ROADMAP.md first** to understand current phases, existing items, and future directions - suggestions must NOT duplicate anything already listed
 
 2. **Identify 3 quick wins** that:
    - Build directly on what was just implemented
    - Are small in scope (1-2 TDD cycles)
    - Complete a natural workflow or fill an obvious gap
-   - Are NOT already in the roadmap
+   - Are NOT already in the roadmap (check all phases including Future)
 
 3. **Present to user** before adding to `ROADMAP.md`
 
