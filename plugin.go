@@ -226,14 +226,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	// Set session cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     s.SessionCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-	})
+	s.setSessionCookie(w, r, token)
 
 	// Redirect to relay state or default page
 	relayState := r.FormValue("RelayState")
@@ -242,6 +235,19 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	}
 	http.Redirect(w, r, relayState, http.StatusFound)
 	return nil
+}
+
+// setSessionCookie sets the session cookie on the response.
+func (s *SAMLDisco) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.SessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(s.sessionDuration.Seconds()),
+	})
 }
 
 // resolveAcsURL computes the ACS URL from the request and configuration.

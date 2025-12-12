@@ -561,6 +561,34 @@ func TestHandleACS_UsesConfiguredSessionDuration(t *testing.T) {
 	}
 }
 
+// TestSetSessionCookie_MaxAge verifies that session cookies have MaxAge set
+// to match the configured session duration.
+func TestSetSessionCookie_MaxAge(t *testing.T) {
+	customDuration := 2 * time.Hour
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionDuration: customDuration,
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+
+	s.setSessionCookie(rec, req, "test-token")
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected 1 cookie, got %d", len(cookies))
+	}
+
+	expectedMaxAge := int(customDuration.Seconds()) // 7200 for 2 hours
+	if cookies[0].MaxAge != expectedMaxAge {
+		t.Errorf("MaxAge = %d, want %d (session duration in seconds)", cookies[0].MaxAge, expectedMaxAge)
+	}
+}
+
 // TestServeHTTP_NoSession_NoSAMLService_ReturnsError verifies that when
 // SAML service is not configured, an appropriate error is returned.
 func TestServeHTTP_NoSession_NoSAMLService_ReturnsError(t *testing.T) {
