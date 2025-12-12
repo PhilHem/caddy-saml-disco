@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-12-12
+
+### Added
+- Session logout endpoint (`/saml/logout`) with `return_to` parameter support
+- Open redirect protection via `validateRelayState()` for RelayState and return_to parameters
+- E2E test suite covering full authentication redirect flow
+- Unit test for expired JWT tokens using real tokens (not hardcoded strings)
+
+### Security
+- RelayState validation blocks absolute URLs, protocol-relative URLs, dangerous schemes (javascript:, data:), and header injection attempts
+
+### Changed
+- Phase 1 complete - plugin can now protect routes with SAML auth using a single IdP
+
 ## [0.4.1] - 2025-12-12
 
 ### Changed
