@@ -17,7 +17,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 func init() {
 	caddy.RegisterModule(SAMLDisco{})

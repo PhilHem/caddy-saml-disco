@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2025-12-13
+
+### Added
+- **Template override system** (`templates_dir` config):
+  - Support for custom HTML templates via `templates_dir` configuration
+  - Embedded default templates for discovery UI and error pages
+  - Automatic fallback to embedded templates when custom files are missing
+  - XSS protection via `html/template` escaping
+- Default `disco.html` template (extracted from hardcoded HTML)
+- Default `error.html` template for error page rendering
+- `TemplateRenderer` with `RenderDisco()` and `RenderError()` methods
+- `SetTemplateRenderer()` method for testing
+- Integration tests for custom template loading
+
+### Changed
+- Discovery UI now rendered via Go templates instead of hardcoded HTML
+- Phase 3 (Customization) started - template override is first feature complete
+
 ## [0.6.0] - 2025-12-12
 
 ### Added
