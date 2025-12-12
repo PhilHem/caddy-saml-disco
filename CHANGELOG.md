@@ -7,10 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-12-12
+
 ### Added
-- IdP filtering by pattern via `idp_filter` config option
-- Supports glob-like patterns: `*substring*`, `prefix*`, `*suffix`
-- Filter is applied at provisioning time for efficiency with large aggregates
+- **Discovery Service JSON API**:
+  - `GET /saml/api/idps` - List IdPs with optional `?q=` search filtering
+  - `POST /saml/api/select` - Select IdP and start SAML authentication
+  - `GET /saml/api/session` - Return current session info (authenticated, subject, attributes)
+  - `GET /saml/disco` - Default discovery UI with search and IdP selection
+- **Auto-redirect for single IdP**: Skip discovery page when only one IdP is configured
+- **mdui:UIInfo metadata parsing**:
+  - Parse DisplayName, Description, Logo, InformationURL from SAML metadata
+  - Prefer English localized values (falls back to first available)
+  - Select largest logo by area when multiple logos exist
+- `Description`, `LogoURL`, `InformationURL` fields added to `IdPInfo` struct
+- IdP filtering by pattern via `idp_filter` config option (glob-like: `*substring*`, `prefix*`, `*suffix`)
+- URL-based metadata loading with caching (`metadata_url` config)
+- TTL-based metadata refresh (`metadata_refresh_interval` config)
+- User-Agent header for metadata HTTP requests (`caddy-saml-disco/<version>`)
+- Integration tests for discovery flow
+
+### Changed
+- Phase 2 complete - plugin now supports multi-IdP discovery with JSON API and default UI
 
 ## [0.5.0] - 2025-12-12
 
