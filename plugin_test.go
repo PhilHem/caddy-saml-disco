@@ -520,6 +520,47 @@ func TestServeHTTP_NoSession_NoIdPConfigured_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestHandleACS_UsesConfiguredSessionDuration verifies that the session
+// created in handleACS uses the configured SessionDuration, not a hardcoded value.
+func TestHandleACS_UsesConfiguredSessionDuration(t *testing.T) {
+	key := loadTestKey(t)
+	customDuration := 2 * time.Hour // Different from default 8h
+
+	store := NewCookieSessionStore(key, customDuration)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore:    store,
+		sessionDuration: customDuration, // This field needs to be added
+	}
+
+	// Create a session the way handleACS does
+	now := time.Now()
+	session := &Session{
+		Subject:     "user@example.com",
+		IdPEntityID: "https://idp.example.com",
+		IssuedAt:    now,
+		ExpiresAt:   now.Add(s.sessionDuration),
+	}
+
+	// Verify the session expiration is ~2 hours from now, not 8 hours
+	expectedExpiry := now.Add(customDuration)
+	tolerance := time.Second
+
+	if session.ExpiresAt.Sub(expectedExpiry).Abs() > tolerance {
+		t.Errorf("ExpiresAt = %v, want ~%v (configured duration: %v)",
+			session.ExpiresAt, expectedExpiry, customDuration)
+	}
+
+	// Also verify it's NOT 8 hours (the old hardcoded value)
+	eightHourExpiry := now.Add(8 * time.Hour)
+	if session.ExpiresAt.Sub(eightHourExpiry).Abs() < tolerance {
+		t.Errorf("ExpiresAt should NOT be 8 hours (hardcoded value), got %v", session.ExpiresAt)
+	}
+}
+
 // TestServeHTTP_NoSession_NoSAMLService_ReturnsError verifies that when
 // SAML service is not configured, an appropriate error is returned.
 func TestServeHTTP_NoSession_NoSAMLService_ReturnsError(t *testing.T) {

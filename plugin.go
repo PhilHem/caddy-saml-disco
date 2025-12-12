@@ -30,9 +30,10 @@ type SAMLDisco struct {
 	Config
 
 	// Runtime state (not serialized)
-	metadataStore MetadataStore
-	sessionStore  SessionStore
-	samlService   *SAMLService
+	metadataStore   MetadataStore
+	sessionStore    SessionStore
+	samlService     *SAMLService
+	sessionDuration time.Duration
 }
 
 // CaddyModule returns the Caddy module information.
@@ -70,6 +71,7 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		}
 
 		s.sessionStore = NewCookieSessionStore(privateKey, duration)
+		s.sessionDuration = duration
 
 		// Initialize SAML service if certificate is also configured
 		if s.CertFile != "" {
@@ -214,7 +216,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 		Attributes:  result.Attributes,
 		IdPEntityID: result.IdPEntityID,
 		IssuedAt:    time.Now(),
-		ExpiresAt:   time.Now().Add(8 * time.Hour), // TODO: use configured duration
+		ExpiresAt:   time.Now().Add(s.sessionDuration),
 	}
 
 	token, err := s.sessionStore.Create(session)
