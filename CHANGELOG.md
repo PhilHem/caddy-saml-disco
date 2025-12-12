@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-12
+
+### Added
+- Direct IdP redirect for unauthenticated users (single IdP flow)
+- RelayState support for post-login redirect to original URL
+- Error handling for missing metadata store, SAML service, or IdPs
+
+### Changed
+- Replaced discovery redirect with direct IdP redirect for Phase 1
+
 ## [0.2.0] - 2025-12-12
 
 ### Added
