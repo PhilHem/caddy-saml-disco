@@ -3,9 +3,11 @@
 package caddysamldisco
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -99,17 +101,53 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		if r.Method == http.MethodPost {
 			return s.handleACS(w, r)
 		}
-	// Phase 2: Discovery routes
-	// case "/saml/disco":
-	// case "/saml/api/idps":
-	// case "/saml/api/select":
+		// Phase 2: Discovery routes
+		// case "/saml/disco":
+		// case "/saml/api/idps":
+		// case "/saml/api/select":
 	}
 
-	// TODO: Check session for protected routes
-	// TODO: Redirect to discovery if no session
+	// Check session for protected routes (skip SAML endpoints)
+	if s.sessionStore != nil && !strings.HasPrefix(r.URL.Path, "/saml/") {
+		cookie, err := r.Cookie(s.SessionCookieName)
+		if err != nil || cookie.Value == "" {
+			s.redirectToLogin(w, r)
+			return nil
+		}
+
+		// Validate session token
+		session, err := s.sessionStore.Get(cookie.Value)
+		if err != nil {
+			s.redirectToLogin(w, r)
+			return nil
+		}
+
+		// Store session in context for downstream handlers
+		ctx := context.WithValue(r.Context(), sessionContextKey{}, session)
+		r = r.WithContext(ctx)
+	}
 
 	// Pass through to next handler
 	return next.ServeHTTP(w, r)
+}
+
+// redirectToLogin redirects the user to the login page.
+// Uses LoginRedirect if configured, otherwise defaults to /saml/disco.
+// Includes the original URL as a return_to query parameter.
+func (s *SAMLDisco) redirectToLogin(w http.ResponseWriter, r *http.Request) {
+	target := "/saml/disco"
+	if s.LoginRedirect != "" {
+		target = s.LoginRedirect
+	}
+
+	// Preserve original URL for post-login redirect
+	originalURL := r.URL.RequestURI()
+	redirectURL, _ := url.Parse(target)
+	q := redirectURL.Query()
+	q.Set("return_to", originalURL)
+	redirectURL.RawQuery = q.Encode()
+
+	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 
 // handleMetadata serves the SP metadata XML.

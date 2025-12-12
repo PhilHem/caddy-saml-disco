@@ -6,11 +6,22 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// sessionContextKey is the context key for storing session data.
+type sessionContextKey struct{}
+
+// GetSession retrieves the authenticated session from the request context.
+// Returns nil if no session is present (unauthenticated request).
+func GetSession(r *http.Request) *Session {
+	session, _ := r.Context().Value(sessionContextKey{}).(*Session)
+	return session
+}
 
 // Session holds authenticated user information.
 // This is the core domain model - it has no external dependencies.

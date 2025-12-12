@@ -80,11 +80,11 @@ func TestFileMetadataStore_ListIdPs_Filter(t *testing.T) {
 		filter   string
 		expected int
 	}{
-		{"", 1},           // no filter
-		{"example", 1},    // matches display name and entity ID
-		{"IdP", 1},        // matches display name (case insensitive)
-		{"unknown", 0},    // no match
-		{"EXAMPLE", 1},    // case insensitive
+		{"", 1},        // no filter
+		{"example", 1}, // matches display name and entity ID
+		{"IdP", 1},     // matches display name (case insensitive)
+		{"unknown", 0}, // no match
+		{"EXAMPLE", 1}, // case insensitive
 	}
 
 	for _, tc := range tests {

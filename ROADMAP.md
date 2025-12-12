@@ -16,8 +16,10 @@ Development phases for caddy-saml-disco.
 - [x] SAML SP logic: AuthnRequest, ACS (`saml.go`)
 - [x] SP metadata endpoint
 - [x] Integration test validating full SAML flow against test IdP
-- [ ] Session checking middleware for protected routes
+- [x] Session checking middleware for protected routes
 - [ ] Redirect unauthenticated users to IdP (`redirectToIdP`)
+- [ ] Session logout endpoint (`/saml/logout`) - clear cookie, redirect
+- [ ] Use `return_to` after successful ACS for post-login redirect
 
 **Outcome:** Can protect a route with SAML auth using a single configured IdP.
 
@@ -44,9 +46,9 @@ Development phases for caddy-saml-disco.
 
 **Goal:** Enable custom frontends and UI customization.
 
+- [ ] Session info endpoint (`/saml/api/session`) - returns JSON with subject, attributes, expiry
 - [ ] Template override via `templates_dir` config
 - [ ] `login_redirect` for fully custom UIs
-- [ ] Session info endpoint (`/saml/api/session`)
 - [ ] Remember last-used IdP cookie
 - [ ] Custom frontend example in `examples/`
 - [ ] CORS headers for SPA frontends (optional)

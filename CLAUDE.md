@@ -186,6 +186,24 @@ This architecture is designed for test-driven development. Always write tests fi
 
 The in-memory implementations are not test doubles - they're production-ready. Unit tests use them directly, keeping tests fast and deterministic.
 
+### Planning Review
+
+After completing any significant implementation, review for roadmap opportunities:
+
+1. **Read ROADMAP.md first** to understand current phases and avoid duplicates
+
+2. **Identify 3 quick wins** that:
+   - Build directly on what was just implemented
+   - Are small in scope (1-2 TDD cycles)
+   - Complete a natural workflow or fill an obvious gap
+   - Are NOT already in the roadmap
+
+3. **Present to user** before adding to `ROADMAP.md`
+
+4. **Use `/update-roadmap`** command to trigger this review
+
+This keeps the roadmap fresh with achievable next steps that leverage recent work.
+
 ### Test Organization
 
 - **Unit tests** (`*_test.go`): Core only, use in-memory stores, no I/O
