@@ -111,14 +111,14 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	if s.sessionStore != nil && !strings.HasPrefix(r.URL.Path, "/saml/") {
 		cookie, err := r.Cookie(s.SessionCookieName)
 		if err != nil || cookie.Value == "" {
-			s.redirectToLogin(w, r)
+			s.redirectToIdP(w, r)
 			return nil
 		}
 
 		// Validate session token
 		session, err := s.sessionStore.Get(cookie.Value)
 		if err != nil {
-			s.redirectToLogin(w, r)
+			s.redirectToIdP(w, r)
 			return nil
 		}
 
@@ -131,21 +131,38 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	return next.ServeHTTP(w, r)
 }
 
-// redirectToLogin redirects the user to the login page.
-// Uses LoginRedirect if configured, otherwise defaults to /saml/disco.
-// Includes the original URL as a return_to query parameter.
-func (s *SAMLDisco) redirectToLogin(w http.ResponseWriter, r *http.Request) {
-	target := "/saml/disco"
-	if s.LoginRedirect != "" {
-		target = s.LoginRedirect
+// redirectToIdP redirects the user directly to the IdP for authentication.
+// For Phase 1 (single IdP scenario), this bypasses the discovery UI.
+// The original URL is passed as RelayState so ACS can redirect back after login.
+func (s *SAMLDisco) redirectToIdP(w http.ResponseWriter, r *http.Request) {
+	// Check if required services are configured
+	if s.metadataStore == nil {
+		http.Error(w, "Metadata store not configured", http.StatusInternalServerError)
+		return
+	}
+	if s.samlService == nil {
+		http.Error(w, "SAML service not configured", http.StatusInternalServerError)
+		return
 	}
 
-	// Preserve original URL for post-login redirect
-	originalURL := r.URL.RequestURI()
-	redirectURL, _ := url.Parse(target)
-	q := redirectURL.Query()
-	q.Set("return_to", originalURL)
-	redirectURL.RawQuery = q.Encode()
+	// Get single IdP from metadata store (Phase 1: only one IdP)
+	idps, err := s.metadataStore.ListIdPs("")
+	if err != nil || len(idps) == 0 {
+		http.Error(w, "No identity provider configured", http.StatusInternalServerError)
+		return
+	}
+	idp := &idps[0]
+
+	// Compute ACS URL and use original URL as RelayState
+	acsURL := s.resolveAcsURL(r)
+	relayState := r.URL.RequestURI()
+
+	// Generate AuthnRequest and redirect URL
+	redirectURL, err := s.samlService.StartAuth(idp, acsURL, relayState)
+	if err != nil {
+		http.Error(w, "Failed to start authentication: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }

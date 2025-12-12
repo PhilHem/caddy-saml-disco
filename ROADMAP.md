@@ -17,7 +17,7 @@ Development phases for caddy-saml-disco.
 - [x] SP metadata endpoint
 - [x] Integration test validating full SAML flow against test IdP
 - [x] Session checking middleware for protected routes
-- [ ] Redirect unauthenticated users to IdP (`redirectToIdP`)
+- [x] Redirect unauthenticated users to IdP (`redirectToIdP`)
 - [ ] Session logout endpoint (`/saml/logout`) - clear cookie, redirect
 - [ ] Use `return_to` after successful ACS for post-login redirect
 
