@@ -326,6 +326,9 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 
+	// Set User-Agent header for identification
+	req.Header.Set("User-Agent", "caddy-saml-disco/"+Version)
+
 	// Add conditional request headers if we have cached values
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)

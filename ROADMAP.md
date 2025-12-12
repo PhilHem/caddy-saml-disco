@@ -41,7 +41,7 @@ Development phases for caddy-saml-disco.
 - [x] Test aggregate metadata refresh (file changes)
 - [x] URL-based metadata loading with caching
 - [x] TTL-based metadata refresh
-- [ ] User-Agent header for metadata requests (`caddy-saml-disco/<version>`)
+- [x] User-Agent header for metadata requests (`caddy-saml-disco/<version>`)
 - [ ] IdP filtering by pattern
 - [ ] Discovery Service JSON API (`/saml/api/idps`, `/saml/api/select`)
 - [ ] Default discovery UI (embedded HTML template)

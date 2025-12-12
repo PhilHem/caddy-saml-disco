@@ -943,6 +943,31 @@ func TestURLMetadataStore_Load_DFNAAISample(t *testing.T) {
 	}
 }
 
+func TestURLMetadataStore_UserAgent(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	var receivedUserAgent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedUserAgent = r.Header.Get("User-Agent")
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Verify User-Agent header was sent
+	expectedUserAgent := "caddy-saml-disco/" + Version
+	if receivedUserAgent != expectedUserAgent {
+		t.Errorf("User-Agent = %q, want %q", receivedUserAgent, expectedUserAgent)
+	}
+}
+
 func TestURLMetadataStore_ListIdPs_Filter(t *testing.T) {
 	metadata, err := os.ReadFile("testdata/aggregate-metadata.xml")
 	if err != nil {
