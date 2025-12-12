@@ -4,6 +4,7 @@ package caddysamldisco
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -124,10 +125,22 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		if r.Method == http.MethodGet {
 			return s.handleLogout(w, r)
 		}
-		// Phase 2: Discovery routes
-		// case "/saml/disco":
-		// case "/saml/api/idps":
-		// case "/saml/api/select":
+	case "/saml/api/idps":
+		if r.Method == http.MethodGet {
+			return s.handleListIdPs(w, r)
+		}
+	case "/saml/api/select":
+		if r.Method == http.MethodPost {
+			return s.handleSelectIdP(w, r)
+		}
+	case "/saml/api/session":
+		if r.Method == http.MethodGet {
+			return s.handleSessionInfo(w, r)
+		}
+	case "/saml/disco":
+		if r.Method == http.MethodGet {
+			return s.handleDiscoveryUI(w, r)
+		}
 	}
 
 	// Check session for protected routes (skip SAML endpoints)
@@ -255,6 +268,247 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// selectIdPRequest is the JSON request body for POST /saml/api/select.
+type selectIdPRequest struct {
+	EntityID  string `json:"entity_id"`
+	ReturnURL string `json:"return_url"`
+}
+
+// handleSelectIdP handles POST /saml/api/select to start SAML auth with a selected IdP.
+func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) error {
+	// Parse JSON request body
+	var req selectIdPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return nil
+	}
+
+	// Validate entity_id is provided
+	if req.EntityID == "" {
+		http.Error(w, "entity_id is required", http.StatusBadRequest)
+		return nil
+	}
+
+	// Look up IdP in metadata store
+	if s.metadataStore == nil {
+		http.Error(w, "Metadata store not configured", http.StatusInternalServerError)
+		return nil
+	}
+
+	idp, err := s.metadataStore.GetIdP(req.EntityID)
+	if err != nil {
+		http.Error(w, "IdP not found", http.StatusNotFound)
+		return nil
+	}
+
+	// Check SAML service is configured
+	if s.samlService == nil {
+		http.Error(w, "SAML service not configured", http.StatusInternalServerError)
+		return nil
+	}
+
+	// Determine RelayState (return URL after authentication)
+	relayState := req.ReturnURL
+	if relayState == "" {
+		relayState = "/"
+	}
+	relayState = validateRelayState(relayState)
+
+	// Compute ACS URL and start SAML auth
+	acsURL := s.resolveAcsURL(r)
+	redirectURL, err := s.samlService.StartAuth(idp, acsURL, relayState)
+	if err != nil {
+		http.Error(w, "Failed to start authentication: "+err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+
+	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+	return nil
+}
+
+// sessionInfoResponse is the JSON response for GET /saml/api/session.
+type sessionInfoResponse struct {
+	Authenticated bool              `json:"authenticated"`
+	Subject       string            `json:"subject,omitempty"`
+	IdPEntityID   string            `json:"idp_entity_id,omitempty"`
+	Attributes    map[string]string `json:"attributes,omitempty"`
+}
+
+// handleDiscoveryUI handles GET /saml/disco and serves the IdP selection page.
+// If only one IdP is configured, it auto-redirects to that IdP.
+func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) error {
+	if s.metadataStore == nil {
+		http.Error(w, "Metadata store not configured", http.StatusInternalServerError)
+		return nil
+	}
+
+	idps, err := s.metadataStore.ListIdPs("")
+	if err != nil {
+		http.Error(w, "Failed to list IdPs: "+err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+
+	// Get return_url from query param (where to redirect after auth)
+	returnURL := validateRelayState(r.URL.Query().Get("return_url"))
+
+	// Auto-redirect if only one IdP
+	if len(idps) == 1 && s.samlService != nil {
+		idp := &idps[0]
+		acsURL := s.resolveAcsURL(r)
+		redirectURL, err := s.samlService.StartAuth(idp, acsURL, returnURL)
+		if err != nil {
+			http.Error(w, "Failed to start authentication: "+err.Error(), http.StatusInternalServerError)
+			return nil
+		}
+		http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+		return nil
+	}
+
+	// Serve discovery UI HTML
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return s.renderDiscoveryHTML(w, idps, returnURL)
+}
+
+// renderDiscoveryHTML renders the IdP selection page.
+func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, idps []IdPInfo, returnURL string) error {
+	html := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Identity Provider</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 30px; }
+        h1 { margin-top: 0; color: #333; }
+        .search { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 20px; box-sizing: border-box; }
+        .idp-list { list-style: none; padding: 0; margin: 0; }
+        .idp-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; }
+        .idp-item:hover { background: #f8f9fa; border-color: #007bff; }
+        .idp-logo { width: 40px; height: 40px; margin-right: 15px; object-fit: contain; }
+        .idp-info { flex: 1; }
+        .idp-name { font-weight: 600; color: #333; }
+        .idp-desc { font-size: 0.9em; color: #666; margin-top: 4px; }
+        .no-results { text-align: center; color: #666; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Select your Identity Provider</h1>
+        <input type="text" class="search" id="search" placeholder="Search for your institution..." autocomplete="off">
+        <ul class="idp-list" id="idpList">`
+
+	for _, idp := range idps {
+		logoHTML := ""
+		if idp.LogoURL != "" {
+			logoHTML = `<img class="idp-logo" src="` + idp.LogoURL + `" alt="">`
+		}
+		descHTML := ""
+		if idp.Description != "" {
+			descHTML = `<div class="idp-desc">` + idp.Description + `</div>`
+		}
+		html += `
+            <li class="idp-item" data-entity-id="` + idp.EntityID + `" data-name="` + idp.DisplayName + `">
+                ` + logoHTML + `
+                <div class="idp-info">
+                    <div class="idp-name">` + idp.DisplayName + `</div>
+                    ` + descHTML + `
+                </div>
+            </li>`
+	}
+
+	html += `
+        </ul>
+        <div class="no-results" id="noResults" style="display:none;">No matching institutions found</div>
+    </div>
+    <script>
+        const returnUrl = '` + returnURL + `';
+        const items = document.querySelectorAll('.idp-item');
+        const search = document.getElementById('search');
+        const noResults = document.getElementById('noResults');
+
+        search.addEventListener('input', function() {
+            const query = this.value.toLowerCase();
+            let visible = 0;
+            items.forEach(item => {
+                const name = item.dataset.name.toLowerCase();
+                const match = name.includes(query);
+                item.style.display = match ? '' : 'none';
+                if (match) visible++;
+            });
+            noResults.style.display = visible === 0 ? '' : 'none';
+        });
+
+        items.forEach(item => {
+            item.addEventListener('click', function() {
+                const entityId = this.dataset.entityId;
+                fetch('/saml/api/select', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({entity_id: entityId, return_url: returnUrl})
+                }).then(resp => {
+                    if (resp.redirected) {
+                        window.location.href = resp.url;
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>`
+
+	_, err := w.Write([]byte(html))
+	return err
+}
+
+// handleSessionInfo handles GET /saml/api/session and returns current session info.
+func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) error {
+	response := sessionInfoResponse{Authenticated: false}
+
+	// Try to get session from cookie
+	if s.sessionStore != nil {
+		cookie, err := r.Cookie(s.SessionCookieName)
+		if err == nil && cookie.Value != "" {
+			session, err := s.sessionStore.Get(cookie.Value)
+			if err == nil && session != nil {
+				response.Authenticated = true
+				response.Subject = session.Subject
+				response.IdPEntityID = session.IdPEntityID
+				response.Attributes = session.Attributes
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(response)
+}
+
+// handleListIdPs handles GET /saml/api/idps and returns available IdPs as JSON.
+// Supports optional ?q=search query parameter to filter IdPs.
+func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error {
+	if s.metadataStore == nil {
+		http.Error(w, "Metadata store not configured", http.StatusInternalServerError)
+		return nil
+	}
+
+	// Get optional search filter from query parameter
+	filter := r.URL.Query().Get("q")
+
+	idps, err := s.metadataStore.ListIdPs(filter)
+	if err != nil {
+		http.Error(w, "Failed to list IdPs: "+err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+
+	// Return empty array instead of null for empty list
+	if idps == nil {
+		idps = []IdPInfo{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(idps)
+}
+
 // handleLogout handles the logout endpoint by clearing the session cookie
 // and redirecting to the return_to URL or root.
 func (s *SAMLDisco) handleLogout(w http.ResponseWriter, r *http.Request) error {
@@ -361,6 +615,21 @@ func (s *SAMLDisco) resolveAcsURL(r *http.Request) *url.URL {
 		Host:   r.Host,
 		Path:   "/saml/acs",
 	}
+}
+
+// SetMetadataStore sets the metadata store for testing.
+func (s *SAMLDisco) SetMetadataStore(store MetadataStore) {
+	s.metadataStore = store
+}
+
+// SetSAMLService sets the SAML service for testing.
+func (s *SAMLDisco) SetSAMLService(service *SAMLService) {
+	s.samlService = service
+}
+
+// SetSessionStore sets the session store for testing.
+func (s *SAMLDisco) SetSessionStore(store SessionStore) {
+	s.sessionStore = store
 }
 
 // Interface guards

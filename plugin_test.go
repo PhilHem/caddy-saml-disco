@@ -932,3 +932,719 @@ func TestServeHTTP_LogoutEndpoint_ValidatesReturnTo(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// Discovery API Tests (Phase 2)
+// =============================================================================
+
+// TestDiscoveryAPI_ListIdPs verifies that GET /saml/api/idps returns all IdPs
+// as a JSON array.
+func TestDiscoveryAPI_ListIdPs(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp1.example.com",
+				DisplayName: "University One",
+				SSOURL:      "https://idp1.example.com/sso",
+			},
+			{
+				EntityID:    "https://idp2.example.com",
+				DisplayName: "University Two",
+				SSOURL:      "https://idp2.example.com/sso",
+			},
+			{
+				EntityID:    "https://idp3.example.com",
+				DisplayName: "College Three",
+				SSOURL:      "https://idp3.example.com/sso",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "application/json")
+	}
+
+	// Parse JSON response
+	body := rec.Body.String()
+	if !strings.Contains(body, "https://idp1.example.com") {
+		t.Errorf("response should contain idp1 entity ID, got: %s", body)
+	}
+	if !strings.Contains(body, "University One") {
+		t.Errorf("response should contain idp1 display name, got: %s", body)
+	}
+	if !strings.Contains(body, "https://idp2.example.com") {
+		t.Errorf("response should contain idp2 entity ID, got: %s", body)
+	}
+	if !strings.Contains(body, "https://idp3.example.com") {
+		t.Errorf("response should contain idp3 entity ID, got: %s", body)
+	}
+}
+
+// TestDiscoveryAPI_ListIdPs_EmptyStore verifies that GET /saml/api/idps returns
+// an empty JSON array when no IdPs are configured.
+func TestDiscoveryAPI_ListIdPs_EmptyStore(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	body := strings.TrimSpace(rec.Body.String())
+	if body != "[]" {
+		t.Errorf("response = %q, want %q", body, "[]")
+	}
+}
+
+// TestDiscoveryAPI_ListIdPs_Search verifies that GET /saml/api/idps?q=term
+// filters IdPs by the search term.
+func TestDiscoveryAPI_ListIdPs_Search(t *testing.T) {
+	// Use a mock that actually filters (update mockMetadataStore.ListIdPs)
+	metadataStore := &mockMetadataStoreWithFilter{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://uni-berlin.de/idp",
+				DisplayName: "University of Berlin",
+				SSOURL:      "https://uni-berlin.de/sso",
+			},
+			{
+				EntityID:    "https://uni-munich.de/idp",
+				DisplayName: "University of Munich",
+				SSOURL:      "https://uni-munich.de/sso",
+			},
+			{
+				EntityID:    "https://college-hamburg.de/idp",
+				DisplayName: "College of Hamburg",
+				SSOURL:      "https://college-hamburg.de/sso",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps?q=University", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	body := rec.Body.String()
+	// Should contain both universities
+	if !strings.Contains(body, "Berlin") {
+		t.Errorf("response should contain Berlin, got: %s", body)
+	}
+	if !strings.Contains(body, "Munich") {
+		t.Errorf("response should contain Munich, got: %s", body)
+	}
+	// Should NOT contain college
+	if strings.Contains(body, "Hamburg") {
+		t.Errorf("response should NOT contain Hamburg (college, not university), got: %s", body)
+	}
+}
+
+// TestDiscoveryAPI_ListIdPs_NoMetadataStore verifies proper error handling
+// when metadata store is not configured.
+func TestDiscoveryAPI_ListIdPs_NoMetadataStore(t *testing.T) {
+	s := &SAMLDisco{
+		metadataStore: nil,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+// mockMetadataStoreWithFilter is a mock that actually implements search filtering.
+type mockMetadataStoreWithFilter struct {
+	idps []IdPInfo
+}
+
+func (m *mockMetadataStoreWithFilter) GetIdP(entityID string) (*IdPInfo, error) {
+	for i := range m.idps {
+		if m.idps[i].EntityID == entityID {
+			return &m.idps[i], nil
+		}
+	}
+	return nil, ErrIdPNotFound
+}
+
+func (m *mockMetadataStoreWithFilter) ListIdPs(filter string) ([]IdPInfo, error) {
+	if filter == "" {
+		return m.idps, nil
+	}
+	filter = strings.ToLower(filter)
+	var result []IdPInfo
+	for _, idp := range m.idps {
+		if strings.Contains(strings.ToLower(idp.DisplayName), filter) ||
+			strings.Contains(strings.ToLower(idp.EntityID), filter) {
+			result = append(result, idp)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockMetadataStoreWithFilter) Refresh(ctx context.Context) error {
+	return nil
+}
+
+// =============================================================================
+// Discovery API: /saml/api/select Tests
+// =============================================================================
+
+// TestDiscoveryAPI_SelectIdP verifies that POST /saml/api/select with a valid
+// entity_id redirects to the IdP SSO URL with a SAMLRequest.
+func TestDiscoveryAPI_SelectIdP(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp.example.com/saml",
+				DisplayName: "Example IdP",
+				SSOURL:      "https://idp.example.com/saml/sso",
+				SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID: "https://sp.example.com",
+		},
+		samlService:   samlService,
+		metadataStore: metadataStore,
+	}
+
+	// POST with JSON body containing entity_id
+	body := strings.NewReader(`{"entity_id": "https://idp.example.com/saml"}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.HasPrefix(location, "https://idp.example.com/saml/sso") {
+		t.Errorf("Location = %q, should start with IdP SSO URL", location)
+	}
+
+	// Verify SAMLRequest is in the redirect URL
+	redirectURL, _ := url.Parse(location)
+	if redirectURL.Query().Get("SAMLRequest") == "" {
+		t.Error("redirect URL should contain SAMLRequest parameter")
+	}
+}
+
+// TestDiscoveryAPI_SelectIdP_NotFound verifies that POST /saml/api/select with
+// an unknown entity_id returns 404.
+func TestDiscoveryAPI_SelectIdP_NotFound(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp.example.com/saml",
+				DisplayName: "Example IdP",
+				SSOURL:      "https://idp.example.com/saml/sso",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+	}
+
+	body := strings.NewReader(`{"entity_id": "https://unknown.example.com/saml"}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestDiscoveryAPI_SelectIdP_MissingEntityID verifies that POST /saml/api/select
+// with an empty or missing entity_id returns 400.
+func TestDiscoveryAPI_SelectIdP_MissingEntityID(t *testing.T) {
+	s := &SAMLDisco{
+		metadataStore: &mockMetadataStore{idps: []IdPInfo{}},
+	}
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"empty body", ""},
+		{"empty object", "{}"},
+		{"empty entity_id", `{"entity_id": ""}`},
+		{"invalid JSON", `{invalid}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/saml/api/select", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			next := &mockNextHandler{}
+
+			err := s.ServeHTTP(rec, req, next)
+
+			if err != nil {
+				t.Fatalf("ServeHTTP returned error: %v", err)
+			}
+
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want %d for body %q", rec.Code, http.StatusBadRequest, tc.body)
+			}
+		})
+	}
+}
+
+// TestDiscoveryAPI_SelectIdP_PreservesReturnURL verifies that the return_url
+// query parameter is passed as RelayState.
+func TestDiscoveryAPI_SelectIdP_PreservesReturnURL(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:   "https://idp.example.com/saml",
+				SSOURL:     "https://idp.example.com/saml/sso",
+				SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID: "https://sp.example.com",
+		},
+		samlService:   samlService,
+		metadataStore: metadataStore,
+	}
+
+	body := strings.NewReader(`{"entity_id": "https://idp.example.com/saml", "return_url": "/dashboard"}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	redirectURL, _ := url.Parse(location)
+	relayState := redirectURL.Query().Get("RelayState")
+	if relayState != "/dashboard" {
+		t.Errorf("RelayState = %q, want %q", relayState, "/dashboard")
+	}
+}
+
+// TestDiscoveryAPI_SelectIdP_NoSAMLService verifies proper error handling
+// when SAML service is not configured.
+func TestDiscoveryAPI_SelectIdP_NoSAMLService(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID: "https://idp.example.com/saml",
+				SSOURL:   "https://idp.example.com/saml/sso",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+		samlService:   nil,
+	}
+
+	body := strings.NewReader(`{"entity_id": "https://idp.example.com/saml"}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+// =============================================================================
+// Discovery API: /saml/api/session Tests
+// =============================================================================
+
+// TestDiscoveryAPI_SessionInfo_Authenticated verifies that GET /saml/api/session
+// returns session info for authenticated users.
+func TestDiscoveryAPI_SessionInfo_Authenticated(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore: store,
+	}
+
+	// Create a valid session token
+	session := &Session{
+		Subject:     "user@example.com",
+		IdPEntityID: "https://idp.example.com/saml",
+		Attributes: map[string]string{
+			"email":     "user@example.com",
+			"firstName": "Test",
+			"lastName":  "User",
+		},
+	}
+	token, err := store.Create(session)
+	if err != nil {
+		t.Fatalf("failed to create session token: %v", err)
+	}
+
+	// Create request with valid session cookie
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/session", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  "saml_session",
+		Value: token,
+	})
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "application/json")
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"authenticated":true`) {
+		t.Errorf("response should contain authenticated:true, got: %s", body)
+	}
+	if !strings.Contains(body, "user@example.com") {
+		t.Errorf("response should contain subject, got: %s", body)
+	}
+	if !strings.Contains(body, "https://idp.example.com/saml") {
+		t.Errorf("response should contain idp_entity_id, got: %s", body)
+	}
+}
+
+// TestDiscoveryAPI_SessionInfo_Unauthenticated verifies that GET /saml/api/session
+// returns authenticated:false when no session exists.
+func TestDiscoveryAPI_SessionInfo_Unauthenticated(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore: store,
+	}
+
+	// Request WITHOUT session cookie
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/session", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"authenticated":false`) {
+		t.Errorf("response should contain authenticated:false, got: %s", body)
+	}
+}
+
+// TestDiscoveryAPI_SessionInfo_InvalidSession verifies that GET /saml/api/session
+// returns authenticated:false when session is invalid/expired.
+func TestDiscoveryAPI_SessionInfo_InvalidSession(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore: store,
+	}
+
+	// Request with invalid session cookie
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/session", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  "saml_session",
+		Value: "invalid-token",
+	})
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"authenticated":false`) {
+		t.Errorf("response should contain authenticated:false for invalid session, got: %s", body)
+	}
+}
+
+// =============================================================================
+// Discovery UI Tests
+// =============================================================================
+
+// TestDiscoveryUI_ServesHTML verifies that GET /saml/disco serves HTML.
+func TestDiscoveryUI_ServesHTML(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp1.example.com", DisplayName: "IdP One"},
+			{EntityID: "https://idp2.example.com", DisplayName: "IdP Two"},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/disco", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", contentType)
+	}
+
+	body := rec.Body.String()
+	// Should contain basic HTML structure
+	if !strings.Contains(body, "<html") {
+		t.Errorf("response should contain <html>, got: %s", body)
+	}
+	// Should contain IdP selection elements
+	if !strings.Contains(body, "IdP") || !strings.Contains(body, "select") {
+		t.Errorf("response should contain IdP selection UI elements")
+	}
+}
+
+// TestDiscoveryUI_SingleIdP_AutoRedirect verifies that GET /saml/disco
+// with only one IdP auto-redirects to that IdP.
+func TestDiscoveryUI_SingleIdP_AutoRedirect(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:   "https://single-idp.example.com/saml",
+				SSOURL:     "https://single-idp.example.com/sso",
+				SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID: "https://sp.example.com",
+		},
+		metadataStore: metadataStore,
+		samlService:   samlService,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/disco?return_url=/dashboard", nil)
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// Should redirect directly to IdP when only one exists
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d (redirect to single IdP)", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.HasPrefix(location, "https://single-idp.example.com/sso") {
+		t.Errorf("Location = %q, should redirect to single IdP SSO URL", location)
+	}
+
+	// Verify SAMLRequest is present
+	redirectURL, _ := url.Parse(location)
+	if redirectURL.Query().Get("SAMLRequest") == "" {
+		t.Error("redirect URL should contain SAMLRequest parameter")
+	}
+
+	// Verify RelayState contains return_url
+	relayState := redirectURL.Query().Get("RelayState")
+	if relayState != "/dashboard" {
+		t.Errorf("RelayState = %q, want %q", relayState, "/dashboard")
+	}
+}
+
+// TestDiscoveryUI_PreservesReturnURL verifies that return_url is preserved
+// when showing the discovery page.
+func TestDiscoveryUI_PreservesReturnURL(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp1.example.com", DisplayName: "IdP One"},
+			{EntityID: "https://idp2.example.com", DisplayName: "IdP Two"},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/disco?return_url=/protected/page", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	body := rec.Body.String()
+	// The return_url should be embedded in the HTML for the selection form
+	if !strings.Contains(body, "/protected/page") {
+		t.Errorf("response should contain return_url, got: %s", body)
+	}
+}

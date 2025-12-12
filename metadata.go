@@ -18,19 +18,32 @@ import (
 // This is the core domain model - it has no external dependencies.
 type IdPInfo struct {
 	// EntityID is the unique identifier for this IdP.
-	EntityID string
+	EntityID string `json:"entity_id"`
 
 	// DisplayName is a human-readable name for the IdP.
-	DisplayName string
+	// Prefers mdui:DisplayName over Organization/OrganizationDisplayName.
+	DisplayName string `json:"display_name"`
+
+	// Description is a human-readable description of the IdP.
+	// Extracted from mdui:Description.
+	Description string `json:"description,omitempty"`
+
+	// LogoURL is the URL to the IdP's logo image.
+	// Extracted from mdui:Logo (prefers larger logos).
+	LogoURL string `json:"logo_url,omitempty"`
+
+	// InformationURL is a URL to more information about the IdP.
+	// Extracted from mdui:InformationURL.
+	InformationURL string `json:"information_url,omitempty"`
 
 	// SSOURL is the Single Sign-On endpoint URL.
-	SSOURL string
+	SSOURL string `json:"sso_url"`
 
 	// SSOBinding is the SAML binding for the SSO endpoint.
-	SSOBinding string
+	SSOBinding string `json:"sso_binding"`
 
 	// Certificates are the IdP's signing certificates (PEM encoded).
-	Certificates []string
+	Certificates []string `json:"-"` // Excluded from JSON API for security
 }
 
 // MetadataStore is the port interface for accessing IdP metadata.
@@ -92,6 +105,58 @@ func WithIdPFilter(pattern string) MetadataOption {
 	return func(o *metadataOptions) {
 		o.idpFilter = pattern
 	}
+}
+
+// InMemoryMetadataStore is a simple in-memory metadata store for testing.
+type InMemoryMetadataStore struct {
+	mu   sync.RWMutex
+	idps []IdPInfo
+}
+
+// NewInMemoryMetadataStore creates a new InMemoryMetadataStore with the given IdPs.
+func NewInMemoryMetadataStore(idps []IdPInfo) *InMemoryMetadataStore {
+	return &InMemoryMetadataStore{idps: idps}
+}
+
+// GetIdP returns the IdP with the given entity ID.
+func (s *InMemoryMetadataStore) GetIdP(entityID string) (*IdPInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for i := range s.idps {
+		if s.idps[i].EntityID == entityID {
+			idp := s.idps[i]
+			return &idp, nil
+		}
+	}
+	return nil, ErrIdPNotFound
+}
+
+// ListIdPs returns all IdPs, optionally filtered by a search term.
+func (s *InMemoryMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if filter == "" {
+		result := make([]IdPInfo, len(s.idps))
+		copy(result, s.idps)
+		return result, nil
+	}
+
+	filter = strings.ToLower(filter)
+	var result []IdPInfo
+	for _, idp := range s.idps {
+		if strings.Contains(strings.ToLower(idp.DisplayName), filter) ||
+			strings.Contains(strings.ToLower(idp.EntityID), filter) {
+			result = append(result, idp)
+		}
+	}
+	return result, nil
+}
+
+// Refresh is a no-op for in-memory store.
+func (s *InMemoryMetadataStore) Refresh(ctx context.Context) error {
+	return nil
 }
 
 // FileMetadataStore loads IdP metadata from a local file.
@@ -211,28 +276,89 @@ func filterIdPs(idps []IdPInfo, pattern string) []IdPInfo {
 // parseMetadata parses SAML metadata XML, supporting both single EntityDescriptor
 // and aggregate EntitiesDescriptor formats.
 func parseMetadata(data []byte) ([]IdPInfo, error) {
+	// Parse UIInfo separately since crewjam/saml doesn't expose it
+	uiInfoMap := parseAllUIInfo(data)
+
 	// Try EntitiesDescriptor first (aggregate metadata)
 	var entities saml.EntitiesDescriptor
 	if err := xml.Unmarshal(data, &entities); err == nil && len(entities.EntityDescriptors) > 0 {
-		return parseEntitiesDescriptor(&entities)
+		return parseEntitiesDescriptorWithUIInfo(&entities, uiInfoMap)
 	}
 
 	// Fall back to single EntityDescriptor
-	idp, err := parseEntityDescriptor(data)
+	idp, err := parseEntityDescriptorWithUIInfo(data, uiInfoMap)
 	if err != nil {
 		return nil, err
 	}
 	return []IdPInfo{*idp}, nil
 }
 
-// parseEntitiesDescriptor extracts all IdPs from an aggregate metadata document.
+// entityUIInfo holds parsed UIInfo for a specific entity.
+type entityUIInfo struct {
+	EntityID string
+	UIInfo   *UIInfo
+}
+
+// rawEntityDescriptor is used to parse UIInfo from raw XML.
+type rawEntityDescriptor struct {
+	EntityID          string `xml:"entityID,attr"`
+	IDPSSODescriptors []struct {
+		Extensions struct {
+			UIInfo *UIInfo `xml:"urn:oasis:names:tc:SAML:metadata:ui UIInfo"`
+		} `xml:"urn:oasis:names:tc:SAML:2.0:metadata Extensions"`
+	} `xml:"urn:oasis:names:tc:SAML:2.0:metadata IDPSSODescriptor"`
+}
+
+// rawEntitiesDescriptor is used to parse UIInfo from aggregate metadata.
+type rawEntitiesDescriptor struct {
+	EntityDescriptors    []rawEntityDescriptor    `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
+	EntitiesDescriptors  []rawEntitiesDescriptor  `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
+}
+
+// parseAllUIInfo extracts UIInfo for all entities from raw XML.
+func parseAllUIInfo(data []byte) map[string]*UIInfo {
+	result := make(map[string]*UIInfo)
+
+	// Try parsing as EntitiesDescriptor (aggregate)
+	var entities rawEntitiesDescriptor
+	if err := xml.Unmarshal(data, &entities); err == nil {
+		extractUIInfoFromEntities(&entities, result)
+		if len(result) > 0 {
+			return result
+		}
+	}
+
+	// Try parsing as single EntityDescriptor
+	var entity rawEntityDescriptor
+	if err := xml.Unmarshal(data, &entity); err == nil {
+		if len(entity.IDPSSODescriptors) > 0 && entity.IDPSSODescriptors[0].Extensions.UIInfo != nil {
+			result[entity.EntityID] = entity.IDPSSODescriptors[0].Extensions.UIInfo
+		}
+	}
+
+	return result
+}
+
+// extractUIInfoFromEntities recursively extracts UIInfo from EntitiesDescriptor.
+func extractUIInfoFromEntities(entities *rawEntitiesDescriptor, result map[string]*UIInfo) {
+	for _, ed := range entities.EntityDescriptors {
+		if len(ed.IDPSSODescriptors) > 0 && ed.IDPSSODescriptors[0].Extensions.UIInfo != nil {
+			result[ed.EntityID] = ed.IDPSSODescriptors[0].Extensions.UIInfo
+		}
+	}
+	for i := range entities.EntitiesDescriptors {
+		extractUIInfoFromEntities(&entities.EntitiesDescriptors[i], result)
+	}
+}
+
+// parseEntitiesDescriptorWithUIInfo extracts all IdPs from an aggregate metadata document.
 // It skips entities without IDPSSODescriptor (e.g., SP metadata).
-func parseEntitiesDescriptor(entities *saml.EntitiesDescriptor) ([]IdPInfo, error) {
+func parseEntitiesDescriptorWithUIInfo(entities *saml.EntitiesDescriptor, uiInfoMap map[string]*UIInfo) ([]IdPInfo, error) {
 	var idps []IdPInfo
 
 	// Process direct EntityDescriptor children
 	for i := range entities.EntityDescriptors {
-		idp, err := extractIdPInfo(&entities.EntityDescriptors[i])
+		idp, err := extractIdPInfoWithUIInfo(&entities.EntityDescriptors[i], uiInfoMap)
 		if err != nil {
 			// Skip entities without IDPSSODescriptor (SPs, etc.)
 			continue
@@ -242,7 +368,7 @@ func parseEntitiesDescriptor(entities *saml.EntitiesDescriptor) ([]IdPInfo, erro
 
 	// Process nested EntitiesDescriptor elements (recursive)
 	for i := range entities.EntitiesDescriptors {
-		nestedIdps, err := parseEntitiesDescriptor(&entities.EntitiesDescriptors[i])
+		nestedIdps, err := parseEntitiesDescriptorWithUIInfo(&entities.EntitiesDescriptors[i], uiInfoMap)
 		if err != nil {
 			continue
 		}
@@ -256,8 +382,45 @@ func parseEntitiesDescriptor(entities *saml.EntitiesDescriptor) ([]IdPInfo, erro
 	return idps, nil
 }
 
-// extractIdPInfo extracts IdPInfo from a single EntityDescriptor.
-func extractIdPInfo(ed *saml.EntityDescriptor) (*IdPInfo, error) {
+// parseEntityDescriptorWithUIInfo extracts IdPInfo from a single EntityDescriptor XML.
+func parseEntityDescriptorWithUIInfo(data []byte, uiInfoMap map[string]*UIInfo) (*IdPInfo, error) {
+	var ed saml.EntityDescriptor
+	if err := xml.Unmarshal(data, &ed); err != nil {
+		return nil, fmt.Errorf("unmarshal xml: %w", err)
+	}
+
+	return extractIdPInfoWithUIInfo(&ed, uiInfoMap)
+}
+
+// UIInfo represents the mdui:UIInfo element for IdP display metadata.
+type UIInfo struct {
+	DisplayNames    []LocalizedValue `xml:"DisplayName"`
+	Descriptions    []LocalizedValue `xml:"Description"`
+	InformationURLs []LocalizedValue `xml:"InformationURL"`
+	Logos           []Logo           `xml:"Logo"`
+}
+
+// LocalizedValue represents an element with xml:lang attribute.
+type LocalizedValue struct {
+	Lang  string `xml:"lang,attr"`
+	Value string `xml:",chardata"`
+}
+
+// Logo represents an mdui:Logo element.
+type Logo struct {
+	URL    string `xml:",chardata"`
+	Height int    `xml:"height,attr"`
+	Width  int    `xml:"width,attr"`
+}
+
+// IDPSSODescriptorExtensions wraps Extensions to extract UIInfo.
+type IDPSSODescriptorExtensions struct {
+	UIInfo *UIInfo `xml:"UIInfo"`
+}
+
+// extractIdPInfoWithUIInfo extracts IdPInfo from a single EntityDescriptor,
+// using pre-parsed UIInfo from the uiInfoMap.
+func extractIdPInfoWithUIInfo(ed *saml.EntityDescriptor, uiInfoMap map[string]*UIInfo) (*IdPInfo, error) {
 	if len(ed.IDPSSODescriptors) == 0 {
 		return nil, fmt.Errorf("no IDPSSODescriptor found")
 	}
@@ -278,10 +441,33 @@ func extractIdPInfo(ed *saml.EntityDescriptor) (*IdPInfo, error) {
 		}
 	}
 
-	// Extract display name from Organization or fall back to EntityID
+	// Get UIInfo from pre-parsed map
+	uiInfo := uiInfoMap[ed.EntityID]
+
+	// Extract display name - prefer mdui:DisplayName, fall back to Organization
 	displayName := ed.EntityID
-	if ed.Organization != nil && len(ed.Organization.OrganizationDisplayNames) > 0 {
+	if uiInfo != nil && len(uiInfo.DisplayNames) > 0 {
+		displayName = selectLocalizedValue(uiInfo.DisplayNames, "en")
+	} else if ed.Organization != nil && len(ed.Organization.OrganizationDisplayNames) > 0 {
 		displayName = ed.Organization.OrganizationDisplayNames[0].Value
+	}
+
+	// Extract description from UIInfo
+	var description string
+	if uiInfo != nil && len(uiInfo.Descriptions) > 0 {
+		description = selectLocalizedValue(uiInfo.Descriptions, "en")
+	}
+
+	// Extract logo URL from UIInfo (prefer larger logos)
+	var logoURL string
+	if uiInfo != nil && len(uiInfo.Logos) > 0 {
+		logoURL = selectBestLogo(uiInfo.Logos)
+	}
+
+	// Extract information URL from UIInfo
+	var informationURL string
+	if uiInfo != nil && len(uiInfo.InformationURLs) > 0 {
+		informationURL = selectLocalizedValue(uiInfo.InformationURLs, "en")
 	}
 
 	// Extract certificates
@@ -295,22 +481,60 @@ func extractIdPInfo(ed *saml.EntityDescriptor) (*IdPInfo, error) {
 	}
 
 	return &IdPInfo{
-		EntityID:     ed.EntityID,
-		DisplayName:  displayName,
-		SSOURL:       ssoURL,
-		SSOBinding:   ssoBinding,
-		Certificates: certs,
+		EntityID:       ed.EntityID,
+		DisplayName:    displayName,
+		Description:    description,
+		LogoURL:        logoURL,
+		InformationURL: informationURL,
+		SSOURL:         ssoURL,
+		SSOBinding:     ssoBinding,
+		Certificates:   certs,
 	}, nil
 }
 
-// parseEntityDescriptor extracts IdPInfo from a single EntityDescriptor XML.
-func parseEntityDescriptor(data []byte) (*IdPInfo, error) {
-	var ed saml.EntityDescriptor
-	if err := xml.Unmarshal(data, &ed); err != nil {
-		return nil, fmt.Errorf("unmarshal xml: %w", err)
+// selectLocalizedValue returns the value for the preferred language,
+// falling back to any available value.
+func selectLocalizedValue(values []LocalizedValue, preferLang string) string {
+	if len(values) == 0 {
+		return ""
 	}
 
-	return extractIdPInfo(&ed)
+	// First pass: look for preferred language
+	for _, v := range values {
+		if v.Lang == preferLang {
+			return strings.TrimSpace(v.Value)
+		}
+	}
+
+	// Second pass: look for any English variant
+	for _, v := range values {
+		if strings.HasPrefix(v.Lang, "en") {
+			return strings.TrimSpace(v.Value)
+		}
+	}
+
+	// Fall back to first available value
+	return strings.TrimSpace(values[0].Value)
+}
+
+// selectBestLogo returns the URL of the largest logo (by area).
+func selectBestLogo(logos []Logo) string {
+	if len(logos) == 0 {
+		return ""
+	}
+
+	best := logos[0]
+	bestArea := best.Height * best.Width
+
+	for _, logo := range logos[1:] {
+		area := logo.Height * logo.Width
+		if area > bestArea {
+			best = logo
+			bestArea = area
+		}
+	}
+
+	return strings.TrimSpace(best.URL)
 }
 
 // URLMetadataStore loads IdP metadata from a URL with caching.

@@ -43,14 +43,16 @@ Development phases for caddy-saml-disco.
 - [x] TTL-based metadata refresh
 - [x] User-Agent header for metadata requests (`caddy-saml-disco/<version>`)
 - [x] IdP filtering by pattern
-- [ ] Discovery Service JSON API (`/saml/api/idps`, `/saml/api/select`)
-- [ ] Default discovery UI (embedded HTML template)
-- [ ] Auto-redirect for single IdP scenarios
-- [ ] Search/filter IdPs in API
-- [ ] Parse mdui:UIInfo extensions (DisplayName, Description, Logo URLs)
-- [ ] Add `Description`, `LogoURL`, `Scopes` fields to `IdPInfo` struct
-- [ ] Prefer mdui:DisplayName over Organization/OrganizationDisplayName
+- [x] Discovery Service JSON API (`/saml/api/idps`, `/saml/api/select`)
+- [x] Default discovery UI (embedded HTML template)
+- [x] Auto-redirect for single IdP scenarios
+- [x] Search/filter IdPs in API
+- [x] Parse mdui:UIInfo extensions (DisplayName, Description, Logo URLs)
+- [x] Add `Description`, `LogoURL`, `InformationURL` fields to `IdPInfo` struct
+- [x] Prefer mdui:DisplayName over Organization/OrganizationDisplayName
 - [x] Create realistic test metadata with mdui extensions (dfn-aai-sample.xml)
+- [x] Session info endpoint (`/saml/api/session`) - returns JSON with subject, attributes
+- [x] Integration tests for discovery flow (`tests/integration/discovery_test.go`)
 
 **Outcome:** Can load federation metadata and present IdP selection to users.
 
@@ -60,7 +62,6 @@ Development phases for caddy-saml-disco.
 
 **Goal:** Enable custom frontends and UI customization.
 
-- [ ] Session info endpoint (`/saml/api/session`) - returns JSON with subject, attributes, expiry
 - [ ] Template override via `templates_dir` config
 - [ ] `login_redirect` for fully custom UIs
 - [ ] Remember last-used IdP cookie

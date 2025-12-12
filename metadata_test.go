@@ -321,18 +321,18 @@ func TestFileMetadataStore_Load_DFNAAISample(t *testing.T) {
 		t.Errorf("ListIdPs() returned %d IdPs, want 6", len(idps))
 	}
 
-	// Verify specific German universities/institutions are present
-	// Note: DisplayName comes from Organization/OrganizationDisplayName (not yet mdui:UIInfo)
+	// Verify specific universities/institutions are present
+	// Note: DisplayName now prefers mdui:DisplayName (English if available)
 	tests := []struct {
 		entityID    string
 		displayName string
 	}{
 		{"https://identity.fu-berlin.de/idp-fub", "Freie Universität Berlin"},
 		{"https://tumidp.lrz.de/idp/shibboleth", "Technical University of Munich (TUM)"},
-		{"https://login.rz.rwth-aachen.de/shibboleth", "Rheinisch-Westfälische Technische Hochschule Aachen"},
-		{"https://shib-idp.awi.de/idp/shibboleth", "Alfred Wegener Institute (AWI)"},
-		{"https://idp.mpg.de/idp/shibboleth", "Max Planck Society"},
-		{"https://mylogin.uni-freiburg.de/shibboleth", "Albert-Ludwigs-Universität Freiburg"},
+		{"https://login.rz.rwth-aachen.de/shibboleth", "RWTH Aachen University"},           // English from mdui
+		{"https://shib-idp.awi.de/idp/shibboleth", "Alfred Wegener Institute (AWI)"},       // English from mdui
+		{"https://idp.mpg.de/idp/shibboleth", "Max Planck Society"},                        // English from mdui
+		{"https://mylogin.uni-freiburg.de/shibboleth", "Albert-Ludwigs-Universität Freiburg"}, // German only
 	}
 
 	for _, tc := range tests {
@@ -353,15 +353,15 @@ func TestFileMetadataStore_Load_DFNAAISample_FilterByUniversity(t *testing.T) {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
-	// Filter for "University" should match TUM only (1 of 6)
-	// RWTH uses German "Hochschule" in OrganizationDisplayName
+	// Filter for "University" should match TUM and RWTH (2 of 6)
+	// Both have "University" in their English mdui:DisplayName
 	idps, err := store.ListIdPs("University")
 	if err != nil {
 		t.Fatalf("ListIdPs(University) failed: %v", err)
 	}
 
-	if len(idps) != 1 {
-		t.Errorf("ListIdPs(University) returned %d IdPs, want 1 (TUM)", len(idps))
+	if len(idps) != 2 {
+		t.Errorf("ListIdPs(University) returned %d IdPs, want 2 (TUM, RWTH)", len(idps))
 	}
 
 	// Filter for "Berlin" should match FU Berlin (1 of 6)
@@ -385,15 +385,15 @@ func TestFileMetadataStore_Load_DFNAAISample_FilterByUniversity(t *testing.T) {
 		t.Errorf("ListIdPs(Universität) returned %d IdPs, want 2", len(idps))
 	}
 
-	// Filter for "Hochschule" should match RWTH Aachen only (1 of 6)
-	// (Rheinisch-Westfälische Technische Hochschule Aachen)
+	// Filter for "Hochschule" no longer matches RWTH since it now uses English name
+	// "RWTH Aachen University" (from mdui:DisplayName)
 	idps, err = store.ListIdPs("Hochschule")
 	if err != nil {
 		t.Fatalf("ListIdPs(Hochschule) failed: %v", err)
 	}
 
-	if len(idps) != 1 {
-		t.Errorf("ListIdPs(Hochschule) returned %d IdPs, want 1 (RWTH)", len(idps))
+	if len(idps) != 0 {
+		t.Errorf("ListIdPs(Hochschule) returned %d IdPs, want 0 (RWTH now uses English name)", len(idps))
 	}
 
 	// Filter for "Max Planck" should match Max Planck Society (1 of 6)
@@ -1232,5 +1232,136 @@ func TestURLMetadataStore_ListIdPs_Filter(t *testing.T) {
 		if len(idps) != tc.expected {
 			t.Errorf("ListIdPs(%q) returned %d IdPs, want %d", tc.filter, len(idps), tc.expected)
 		}
+	}
+}
+
+// =============================================================================
+// mdui:UIInfo Parsing Tests (Phase 2)
+// =============================================================================
+
+// TestParseIdP_UIInfo_DisplayName verifies that mdui:DisplayName is preferred
+// over Organization/OrganizationDisplayName.
+func TestParseIdP_UIInfo_DisplayName(t *testing.T) {
+	// DFN-AAI sample has both mdui:DisplayName and OrganizationDisplayName
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// FU Berlin has mdui:DisplayName in both German and English
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// Should use mdui:DisplayName (prefer English if available)
+	// The English mdui:DisplayName is "Freie Universität Berlin"
+	if idp.DisplayName != "Freie Universität Berlin" {
+		t.Errorf("DisplayName = %q, want %q (from mdui:DisplayName)",
+			idp.DisplayName, "Freie Universität Berlin")
+	}
+}
+
+// TestParseIdP_UIInfo_Description verifies that mdui:Description is extracted.
+func TestParseIdP_UIInfo_Description(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// FU Berlin has mdui:Description in both German and English
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// Should have description (prefer English)
+	expectedDesc := "Freie Universität Berlin is one of the leading research universities in Germany."
+	if idp.Description != expectedDesc {
+		t.Errorf("Description = %q, want %q", idp.Description, expectedDesc)
+	}
+}
+
+// TestParseIdP_UIInfo_Logo verifies that mdui:Logo URL is extracted.
+func TestParseIdP_UIInfo_Logo(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// FU Berlin has mdui:Logo
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// Should have logo URL (prefer larger logo)
+	expectedLogo := "https://www.fu-berlin.de/assets/img/fu-logo.png"
+	if idp.LogoURL != expectedLogo {
+		t.Errorf("LogoURL = %q, want %q", idp.LogoURL, expectedLogo)
+	}
+}
+
+// TestParseIdP_UIInfo_InformationURL verifies that mdui:InformationURL is extracted.
+func TestParseIdP_UIInfo_InformationURL(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// FU Berlin has mdui:InformationURL in both German and English
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// Should have information URL (prefer English)
+	expectedURL := "https://www.fu-berlin.de/en/"
+	if idp.InformationURL != expectedURL {
+		t.Errorf("InformationURL = %q, want %q", idp.InformationURL, expectedURL)
+	}
+}
+
+// TestParseIdP_UIInfo_FallbackToOrganization verifies that Organization is used
+// as fallback when mdui:DisplayName is not present.
+func TestParseIdP_UIInfo_FallbackToOrganization(t *testing.T) {
+	// Create metadata without mdui:UIInfo
+	store := NewFileMetadataStore("testdata/idp-metadata.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idp, err := store.GetIdP("https://idp.example.com/saml")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// Should fall back to OrganizationDisplayName
+	if idp.DisplayName != "Example IdP" {
+		t.Errorf("DisplayName = %q, want %q (from Organization)", idp.DisplayName, "Example IdP")
+	}
+}
+
+// TestParseIdP_UIInfo_MinimalEntry verifies parsing works for IdPs with minimal mdui.
+func TestParseIdP_UIInfo_MinimalEntry(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// University of Freiburg has minimal mdui (only German DisplayName)
+	idp, err := store.GetIdP("https://mylogin.uni-freiburg.de/shibboleth")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// Should have display name from mdui (only German available)
+	if idp.DisplayName != "Albert-Ludwigs-Universität Freiburg" {
+		t.Errorf("DisplayName = %q, want %q", idp.DisplayName, "Albert-Ludwigs-Universität Freiburg")
+	}
+
+	// Description, Logo, InformationURL should be empty (not present in metadata)
+	if idp.Description != "" {
+		t.Errorf("Description = %q, want empty string (not in metadata)", idp.Description)
 	}
 }
