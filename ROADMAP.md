@@ -6,15 +6,16 @@ Development phases for caddy-saml-disco.
 
 **Goal:** Minimal working plugin that can authenticate via a single IdP.
 
-- [ ] Project setup (go.mod, dependencies)
+- [x] Project setup (go.mod, dependencies)
 - [ ] Caddy module registration (`plugin.go`)
 - [ ] Configuration struct with JSON tags (`config.go`)
 - [ ] Basic Caddyfile parsing (`caddyfile.go`)
+- [ ] Test IdP fixture (`testfixtures/idp/`) using `crewjam/saml/samlidp`
 - [ ] Single IdP metadata loading (file only)
 - [ ] Session management with JWT cookies (`session.go`)
 - [ ] SAML SP logic: AuthnRequest, ACS (`saml.go`)
 - [ ] SP metadata endpoint
-- [ ] Basic integration test with mock IdP
+- [ ] Integration test validating full SAML flow against test IdP
 
 **Outcome:** Can protect a route with SAML auth using a single configured IdP.
 

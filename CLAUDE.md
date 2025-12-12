@@ -131,6 +131,9 @@ caddy-saml-disco/
 │   └── error.html      # Default error page (embedded)
 ├── examples/
 │   └── Caddyfile       # Example configuration
+├── testfixtures/
+│   └── idp/
+│       └── idp.go          # Test IdP using crewjam/saml/samlidp
 └── tests/
     ├── metadata_test.go
     ├── session_test.go
@@ -187,7 +190,36 @@ The in-memory implementations are not test doubles - they're production-ready. U
 
 - **Unit tests** (`*_test.go`): Core only, use in-memory stores, no I/O
 - **Integration tests** (`tests/integration/`): Test with real HTTP, real metadata files
-- **E2E tests**: Full Caddy server with plugin, test against mock IdP
+- **E2E tests**: Full Caddy server with plugin, test against test IdP fixture
+
+### Test IdP Fixture
+
+Integration and E2E tests use a test IdP built on `crewjam/saml/samlidp`. This provides:
+
+- In-process IdP server (no external dependencies)
+- Programmatic user/SP management
+- Full SAML flow support (AuthnRequest → Response)
+
+Location: `testfixtures/idp/`
+
+```go
+// Usage in tests
+idp := testfixtures.NewTestIdP(t)
+defer idp.Close()
+
+// Register SP and create test user
+idp.AddServiceProvider(spMetadataURL)
+idp.AddUser("testuser", "password")
+
+// Get IdP metadata URL for SP configuration
+idpMetadataURL := idp.MetadataURL()
+```
+
+The test IdP:
+- Runs on `httptest.Server` (random port)
+- Uses `samlidp.MemoryStore` (no persistence)
+- Auto-generates certificates for signing
+- Provides endpoints: `/metadata`, `/sso`, `/login`
 
 ### Test Tags & CI
 
