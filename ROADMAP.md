@@ -22,11 +22,11 @@ Development phases for caddy-saml-disco.
 - [x] Set session cookie `MaxAge` to match `SessionDuration`
 - [x] Add `session_duration` to example Caddyfile
 - [x] Test session expiry behavior in integration tests
-- [ ] Unit test for expired JWT tokens in middleware (real tokens, not hardcoded strings)
-- [ ] Validate RelayState is relative path before redirect (prevent open redirect)
-- [ ] E2E test for full auth redirect flow (protected → IdP → ACS → original)
-- [ ] Session logout endpoint (`/saml/logout`) - clear cookie, redirect
-- [ ] Use `return_to` after successful ACS for post-login redirect
+- [x] Unit test for expired JWT tokens in middleware (real tokens, not hardcoded strings)
+- [x] Validate RelayState is relative path before redirect (prevent open redirect)
+- [x] E2E test for full auth redirect flow (protected → IdP → ACS → original)
+- [x] Session logout endpoint (`/saml/logout`) - clear cookie, redirect
+- [x] Use `return_to` after successful ACS for post-login redirect (via RelayState)
 
 **Outcome:** Can protect a route with SAML auth using a single configured IdP.
 

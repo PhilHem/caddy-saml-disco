@@ -103,6 +103,10 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		if r.Method == http.MethodPost {
 			return s.handleACS(w, r)
 		}
+	case "/saml/logout":
+		if r.Method == http.MethodGet {
+			return s.handleLogout(w, r)
+		}
 		// Phase 2: Discovery routes
 		// case "/saml/disco":
 		// case "/saml/api/idps":
@@ -229,12 +233,79 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	s.setSessionCookie(w, r, token)
 
 	// Redirect to relay state or default page
-	relayState := r.FormValue("RelayState")
-	if relayState == "" {
-		relayState = "/"
-	}
+	relayState := validateRelayState(r.FormValue("RelayState"))
 	http.Redirect(w, r, relayState, http.StatusFound)
 	return nil
+}
+
+// handleLogout handles the logout endpoint by clearing the session cookie
+// and redirecting to the return_to URL or root.
+func (s *SAMLDisco) handleLogout(w http.ResponseWriter, r *http.Request) error {
+	// Clear the session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Delete cookie
+	})
+
+	// Redirect to return_to or root (validate to prevent open redirect)
+	returnTo := validateRelayState(r.URL.Query().Get("return_to"))
+	http.Redirect(w, r, returnTo, http.StatusFound)
+	return nil
+}
+
+// validateRelayState ensures the RelayState is a safe relative path.
+// Returns "/" for any invalid, absolute, or potentially dangerous URLs.
+// This prevents open redirect vulnerabilities.
+func validateRelayState(relayState string) string {
+	// Empty or whitespace-only defaults to root
+	relayState = strings.TrimSpace(relayState)
+	if relayState == "" {
+		return "/"
+	}
+
+	// Must start with single forward slash (relative path)
+	// Reject protocol-relative URLs (//evil.com)
+	if !strings.HasPrefix(relayState, "/") || strings.HasPrefix(relayState, "//") {
+		return "/"
+	}
+
+	// Parse to detect schemes and other tricks
+	parsed, err := url.Parse(relayState)
+	if err != nil {
+		return "/"
+	}
+
+	// Reject if it has a scheme (http:, javascript:, data:, etc.)
+	if parsed.Scheme != "" {
+		return "/"
+	}
+
+	// Reject if it has a host (shouldn't happen with leading / but be safe)
+	if parsed.Host != "" {
+		return "/"
+	}
+
+	// Reject paths with newlines (header injection)
+	if strings.ContainsAny(relayState, "\r\n") {
+		return "/"
+	}
+
+	// Check for encoded characters that could bypass validation
+	// Decode and re-check for protocol-relative URLs
+	decoded, err := url.QueryUnescape(relayState)
+	if err != nil {
+		return "/"
+	}
+	if strings.HasPrefix(decoded, "//") {
+		return "/"
+	}
+
+	return relayState
 }
 
 // setSessionCookie sets the session cookie on the response.

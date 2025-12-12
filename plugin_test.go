@@ -633,3 +633,302 @@ func TestServeHTTP_NoSession_NoSAMLService_ReturnsError(t *testing.T) {
 		t.Errorf("error message should mention SAML service, got: %q", body)
 	}
 }
+
+// TestServeHTTP_ExpiredToken_RealJWT_RedirectsToIdP verifies that requests with
+// a real but expired JWT token are redirected to the IdP.
+// This tests the actual JWT expiry mechanism, not hardcoded invalid strings.
+func TestServeHTTP_ExpiredToken_RealJWT_RedirectsToIdP(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	// Create store with very short duration (1ms)
+	shortDuration := 1 * time.Millisecond
+	store := NewCookieSessionStore(key, shortDuration)
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:   "https://idp.example.com/saml",
+				SSOURL:     "https://idp.example.com/saml/sso",
+				SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:          "https://sp.example.com",
+			SessionCookieName: "saml_session",
+		},
+		sessionStore:  store,
+		samlService:   samlService,
+		metadataStore: metadataStore,
+	}
+
+	// Create a REAL valid session token
+	session := &Session{
+		Subject:     "user@example.com",
+		IdPEntityID: "https://idp.example.com/saml",
+		Attributes:  map[string]string{"email": "user@example.com"},
+	}
+	token, err := store.Create(session)
+	if err != nil {
+		t.Fatalf("failed to create session token: %v", err)
+	}
+
+	// Verify token is valid JWT format (3 parts)
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("token should be valid JWT format, got %d parts", len(parts))
+	}
+
+	// Wait for token to expire
+	time.Sleep(10 * time.Millisecond)
+
+	// Create request with the now-expired real JWT
+	req := httptest.NewRequest(http.MethodGet, "/protected/resource", nil)
+	req.Host = "sp.example.com"
+	req.AddCookie(&http.Cookie{
+		Name:  "saml_session",
+		Value: token,
+	})
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	// Execute
+	err = s.ServeHTTP(rec, req, next)
+
+	// Verify
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// Should redirect to IdP (not pass to next handler)
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d (redirect to IdP)", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.HasPrefix(location, "https://idp.example.com/saml/sso") {
+		t.Errorf("Location = %q, should redirect to IdP SSO URL", location)
+	}
+
+	// Verify RelayState contains original URL
+	redirectURL, _ := url.Parse(location)
+	relayState := redirectURL.Query().Get("RelayState")
+	if relayState != "/protected/resource" {
+		t.Errorf("RelayState = %q, want %q", relayState, "/protected/resource")
+	}
+
+	// Next handler should NOT be called (session is expired)
+	if next.called {
+		t.Error("next handler should NOT be called with expired session")
+	}
+}
+
+// TestValidateRelayState verifies that RelayState validation prevents open redirects.
+func TestValidateRelayState(t *testing.T) {
+	tests := []struct {
+		name       string
+		relayState string
+		want       string
+	}{
+		// Valid relative paths - should be allowed
+		{"empty", "", "/"},
+		{"root", "/", "/"},
+		{"simple path", "/dashboard", "/dashboard"},
+		{"path with query", "/page?foo=bar", "/page?foo=bar"},
+		{"path with fragment", "/page#section", "/page#section"},
+		{"nested path", "/app/settings/profile", "/app/settings/profile"},
+
+		// Absolute URLs - should be rejected (open redirect)
+		{"absolute http", "http://evil.com", "/"},
+		{"absolute https", "https://evil.com/path", "/"},
+		{"absolute with port", "https://evil.com:8080/path", "/"},
+
+		// Protocol-relative URLs - should be rejected
+		{"protocol relative", "//evil.com", "/"},
+		{"protocol relative with path", "//evil.com/path", "/"},
+
+		// Dangerous schemes - should be rejected
+		{"javascript scheme", "javascript:alert(1)", "/"},
+		{"data scheme", "data:text/html,<script>alert(1)</script>", "/"},
+		{"vbscript scheme", "vbscript:msgbox(1)", "/"},
+
+		// Edge cases
+		{"backslash escape", "\\\\evil.com", "/"},
+		{"encoded slashes", "%2f%2fevil.com", "/"},
+		{"whitespace prefix becomes valid", " /valid", "/valid"},           // trimmed, then valid
+		{"tab prefix becomes valid", "\t/valid", "/valid"},                 // trimmed, then valid
+		{"only whitespace", "   ", "/"},                                    // trimmed to empty
+		{"newline in path", "/path\nHeader: injection", "/"},               // header injection blocked
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validateRelayState(tc.relayState)
+			if got != tc.want {
+				t.Errorf("validateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestServeHTTP_LogoutEndpoint_ClearsCookie verifies that GET /saml/logout
+// clears the session cookie by setting MaxAge to -1.
+func TestServeHTTP_LogoutEndpoint_ClearsCookie(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore: store,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/logout", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// Check that a Set-Cookie header is present with MaxAge=-1 (delete cookie)
+	cookies := rec.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "saml_session" {
+			sessionCookie = c
+			break
+		}
+	}
+
+	if sessionCookie == nil {
+		t.Fatal("expected Set-Cookie header for session cookie")
+	}
+
+	if sessionCookie.MaxAge != -1 {
+		t.Errorf("cookie MaxAge = %d, want -1 (delete)", sessionCookie.MaxAge)
+	}
+
+	if sessionCookie.Value != "" {
+		t.Errorf("cookie Value = %q, want empty", sessionCookie.Value)
+	}
+}
+
+// TestServeHTTP_LogoutEndpoint_RedirectsToRoot verifies that GET /saml/logout
+// redirects to "/" by default.
+func TestServeHTTP_LogoutEndpoint_RedirectsToRoot(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore: store,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/logout", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	if location != "/" {
+		t.Errorf("Location = %q, want %q", location, "/")
+	}
+}
+
+// TestServeHTTP_LogoutEndpoint_RedirectsToReturnTo verifies that GET /saml/logout
+// with return_to query parameter redirects to that path.
+func TestServeHTTP_LogoutEndpoint_RedirectsToReturnTo(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore: store,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/logout?return_to=/goodbye", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	if location != "/goodbye" {
+		t.Errorf("Location = %q, want %q", location, "/goodbye")
+	}
+}
+
+// TestServeHTTP_LogoutEndpoint_ValidatesReturnTo verifies that absolute URLs
+// in return_to are rejected (preventing open redirect).
+func TestServeHTTP_LogoutEndpoint_ValidatesReturnTo(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore: store,
+	}
+
+	tests := []struct {
+		name     string
+		returnTo string
+		want     string
+	}{
+		{"absolute URL", "https://evil.com", "/"},
+		{"protocol relative", "//evil.com", "/"},
+		{"javascript", "javascript:alert(1)", "/"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/saml/logout?return_to="+url.QueryEscape(tc.returnTo), nil)
+			rec := httptest.NewRecorder()
+			next := &mockNextHandler{}
+
+			err := s.ServeHTTP(rec, req, next)
+
+			if err != nil {
+				t.Fatalf("ServeHTTP returned error: %v", err)
+			}
+
+			location := rec.Header().Get("Location")
+			if location != tc.want {
+				t.Errorf("Location = %q, want %q", location, tc.want)
+			}
+		})
+	}
+}
