@@ -25,6 +25,16 @@ func loadFileMetadataStore(t *testing.T, path string) *caddysamldisco.FileMetada
 	return store
 }
 
+// testTemplateRenderer creates a template renderer for integration tests.
+func testTemplateRenderer(t *testing.T) *caddysamldisco.TemplateRenderer {
+	t.Helper()
+	renderer, err := caddysamldisco.NewTemplateRenderer()
+	if err != nil {
+		t.Fatalf("create template renderer: %v", err)
+	}
+	return renderer
+}
+
 // TestDiscoveryFlow_ListIdPs_ReturnsMultipleIdPs tests that the discovery API
 // lists multiple IdPs from the metadata store.
 func TestDiscoveryFlow_ListIdPs_ReturnsMultipleIdPs(t *testing.T) {
@@ -257,6 +267,7 @@ func TestDiscoveryFlow_DiscoUI_MultipleIdPs_ShowsPage(t *testing.T) {
 	// Create plugin with file metadata store (multiple IdPs)
 	disco := &caddysamldisco.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
+	disco.SetTemplateRenderer(testTemplateRenderer(t))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		disco.ServeHTTP(w, r, nil)

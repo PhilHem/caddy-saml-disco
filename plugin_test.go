@@ -49,6 +49,17 @@ func (m *mockNextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) erro
 
 var _ caddyhttp.Handler = (*mockNextHandler)(nil)
 
+// testTemplateRenderer returns a template renderer for tests.
+// This uses the embedded templates.
+func testTemplateRenderer(t *testing.T) *TemplateRenderer {
+	t.Helper()
+	renderer, err := NewTemplateRenderer()
+	if err != nil {
+		t.Fatalf("failed to create template renderer: %v", err)
+	}
+	return renderer
+}
+
 // Note: TestServeHTTP_NoSession_RedirectsToDiscovery was removed.
 // The new behavior is tested by TestServeHTTP_NoSession_RedirectsToIdP.
 // Phase 1 redirects directly to IdP; discovery UI comes in Phase 2.
@@ -1518,7 +1529,8 @@ func TestDiscoveryUI_ServesHTML(t *testing.T) {
 	}
 
 	s := &SAMLDisco{
-		metadataStore: metadataStore,
+		metadataStore:    metadataStore,
+		templateRenderer: testTemplateRenderer(t),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/saml/disco", nil)
@@ -1576,8 +1588,9 @@ func TestDiscoveryUI_SingleIdP_AutoRedirect(t *testing.T) {
 		Config: Config{
 			EntityID: "https://sp.example.com",
 		},
-		metadataStore: metadataStore,
-		samlService:   samlService,
+		metadataStore:    metadataStore,
+		samlService:      samlService,
+		templateRenderer: testTemplateRenderer(t),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/saml/disco?return_url=/dashboard", nil)
@@ -1625,7 +1638,8 @@ func TestDiscoveryUI_PreservesReturnURL(t *testing.T) {
 	}
 
 	s := &SAMLDisco{
-		metadataStore: metadataStore,
+		metadataStore:    metadataStore,
+		templateRenderer: testTemplateRenderer(t),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/saml/disco?return_url=/protected/page", nil)
@@ -1644,7 +1658,8 @@ func TestDiscoveryUI_PreservesReturnURL(t *testing.T) {
 
 	body := rec.Body.String()
 	// The return_url should be embedded in the HTML for the selection form
-	if !strings.Contains(body, "/protected/page") {
+	// Note: html/template escapes forward slashes in JS strings as \/
+	if !strings.Contains(body, "/protected/page") && !strings.Contains(body, `\/protected\/page`) {
 		t.Errorf("response should contain return_url, got: %s", body)
 	}
 }

@@ -31,10 +31,11 @@ type SAMLDisco struct {
 	Config
 
 	// Runtime state (not serialized)
-	metadataStore   MetadataStore
-	sessionStore    SessionStore
-	samlService     *SAMLService
-	sessionDuration time.Duration
+	metadataStore    MetadataStore
+	sessionStore     SessionStore
+	samlService      *SAMLService
+	sessionDuration  time.Duration
+	templateRenderer *TemplateRenderer
 }
 
 // CaddyModule returns the Caddy module information.
@@ -99,6 +100,21 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			}
 			s.samlService = NewSAMLService(s.EntityID, privateKey, certificate)
 		}
+	}
+
+	// Initialize template renderer
+	if s.TemplatesDir != "" {
+		renderer, err := NewTemplateRendererWithDir(s.TemplatesDir)
+		if err != nil {
+			return fmt.Errorf("load templates from %s: %w", s.TemplatesDir, err)
+		}
+		s.templateRenderer = renderer
+	} else {
+		renderer, err := NewTemplateRenderer()
+		if err != nil {
+			return fmt.Errorf("load embedded templates: %w", err)
+		}
+		s.templateRenderer = renderer
 	}
 
 	return nil
@@ -369,96 +385,12 @@ func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) er
 	return s.renderDiscoveryHTML(w, idps, returnURL)
 }
 
-// renderDiscoveryHTML renders the IdP selection page.
+// renderDiscoveryHTML renders the IdP selection page using the template renderer.
 func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, idps []IdPInfo, returnURL string) error {
-	html := `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Select Identity Provider</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 30px; }
-        h1 { margin-top: 0; color: #333; }
-        .search { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 20px; box-sizing: border-box; }
-        .idp-list { list-style: none; padding: 0; margin: 0; }
-        .idp-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; }
-        .idp-item:hover { background: #f8f9fa; border-color: #007bff; }
-        .idp-logo { width: 40px; height: 40px; margin-right: 15px; object-fit: contain; }
-        .idp-info { flex: 1; }
-        .idp-name { font-weight: 600; color: #333; }
-        .idp-desc { font-size: 0.9em; color: #666; margin-top: 4px; }
-        .no-results { text-align: center; color: #666; padding: 20px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Select your Identity Provider</h1>
-        <input type="text" class="search" id="search" placeholder="Search for your institution..." autocomplete="off">
-        <ul class="idp-list" id="idpList">`
-
-	for _, idp := range idps {
-		logoHTML := ""
-		if idp.LogoURL != "" {
-			logoHTML = `<img class="idp-logo" src="` + idp.LogoURL + `" alt="">`
-		}
-		descHTML := ""
-		if idp.Description != "" {
-			descHTML = `<div class="idp-desc">` + idp.Description + `</div>`
-		}
-		html += `
-            <li class="idp-item" data-entity-id="` + idp.EntityID + `" data-name="` + idp.DisplayName + `">
-                ` + logoHTML + `
-                <div class="idp-info">
-                    <div class="idp-name">` + idp.DisplayName + `</div>
-                    ` + descHTML + `
-                </div>
-            </li>`
-	}
-
-	html += `
-        </ul>
-        <div class="no-results" id="noResults" style="display:none;">No matching institutions found</div>
-    </div>
-    <script>
-        const returnUrl = '` + returnURL + `';
-        const items = document.querySelectorAll('.idp-item');
-        const search = document.getElementById('search');
-        const noResults = document.getElementById('noResults');
-
-        search.addEventListener('input', function() {
-            const query = this.value.toLowerCase();
-            let visible = 0;
-            items.forEach(item => {
-                const name = item.dataset.name.toLowerCase();
-                const match = name.includes(query);
-                item.style.display = match ? '' : 'none';
-                if (match) visible++;
-            });
-            noResults.style.display = visible === 0 ? '' : 'none';
-        });
-
-        items.forEach(item => {
-            item.addEventListener('click', function() {
-                const entityId = this.dataset.entityId;
-                fetch('/saml/api/select', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({entity_id: entityId, return_url: returnUrl})
-                }).then(resp => {
-                    if (resp.redirected) {
-                        window.location.href = resp.url;
-                    }
-                });
-            });
-        });
-    </script>
-</body>
-</html>`
-
-	_, err := w.Write([]byte(html))
-	return err
+	return s.templateRenderer.RenderDisco(w, DiscoData{
+		IdPs:      idps,
+		ReturnURL: returnURL,
+	})
 }
 
 // handleSessionInfo handles GET /saml/api/session and returns current session info.
@@ -630,6 +562,11 @@ func (s *SAMLDisco) SetSAMLService(service *SAMLService) {
 // SetSessionStore sets the session store for testing.
 func (s *SAMLDisco) SetSessionStore(store SessionStore) {
 	s.sessionStore = store
+}
+
+// SetTemplateRenderer sets the template renderer for testing.
+func (s *SAMLDisco) SetTemplateRenderer(renderer *TemplateRenderer) {
+	s.templateRenderer = renderer
 }
 
 // Interface guards
