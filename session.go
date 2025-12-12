@@ -149,3 +149,23 @@ func LoadPrivateKey(path string) (*rsa.PrivateKey, error) {
 
 	return rsaKey, nil
 }
+
+// LoadCertificate loads an X.509 certificate from a PEM file.
+func LoadCertificate(path string) (*x509.Certificate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read certificate file: %w", err)
+	}
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse certificate: %w", err)
+	}
+
+	return cert, nil
+}

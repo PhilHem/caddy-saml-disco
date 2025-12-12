@@ -13,9 +13,11 @@ Development phases for caddy-saml-disco.
 - [x] Test IdP fixture (`testfixtures/idp/`) using `crewjam/saml/samlidp`
 - [x] Single IdP metadata loading (file only)
 - [x] Session management with JWT cookies (`session.go`)
-- [ ] SAML SP logic: AuthnRequest, ACS (`saml.go`)
-- [ ] SP metadata endpoint
-- [ ] Integration test validating full SAML flow against test IdP
+- [x] SAML SP logic: AuthnRequest, ACS (`saml.go`)
+- [x] SP metadata endpoint
+- [x] Integration test validating full SAML flow against test IdP
+- [ ] Session checking middleware for protected routes
+- [ ] Redirect unauthenticated users to IdP (`redirectToIdP`)
 
 **Outcome:** Can protect a route with SAML auth using a single configured IdP.
 

@@ -5,6 +5,7 @@ package caddysamldisco
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -29,6 +30,7 @@ type SAMLDisco struct {
 	// Runtime state (not serialized)
 	metadataStore MetadataStore
 	sessionStore  SessionStore
+	samlService   *SAMLService
 }
 
 // CaddyModule returns the Caddy module information.
@@ -53,7 +55,7 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	}
 	// TODO: Add URL-based metadata loading in Phase 2
 
-	// Initialize session store if key file is configured
+	// Initialize session store and SAML service if key file is configured
 	if s.KeyFile != "" {
 		privateKey, err := LoadPrivateKey(s.KeyFile)
 		if err != nil {
@@ -66,6 +68,15 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		}
 
 		s.sessionStore = NewCookieSessionStore(privateKey, duration)
+
+		// Initialize SAML service if certificate is also configured
+		if s.CertFile != "" {
+			certificate, err := LoadCertificate(s.CertFile)
+			if err != nil {
+				return fmt.Errorf("load SP certificate: %w", err)
+			}
+			s.samlService = NewSAMLService(s.EntityID, privateKey, certificate)
+		}
 	}
 
 	return nil
@@ -78,12 +89,127 @@ func (s *SAMLDisco) Validate() error {
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
 func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	// TODO: Route SAML endpoints (/saml/acs, /saml/metadata, /saml/disco, /saml/api/*)
+	// Route SAML endpoints
+	switch r.URL.Path {
+	case "/saml/metadata":
+		if r.Method == http.MethodGet {
+			return s.handleMetadata(w, r)
+		}
+	case "/saml/acs":
+		if r.Method == http.MethodPost {
+			return s.handleACS(w, r)
+		}
+	// Phase 2: Discovery routes
+	// case "/saml/disco":
+	// case "/saml/api/idps":
+	// case "/saml/api/select":
+	}
+
 	// TODO: Check session for protected routes
 	// TODO: Redirect to discovery if no session
 
-	// For now, pass through to next handler
+	// Pass through to next handler
 	return next.ServeHTTP(w, r)
+}
+
+// handleMetadata serves the SP metadata XML.
+func (s *SAMLDisco) handleMetadata(w http.ResponseWriter, r *http.Request) error {
+	if s.samlService == nil {
+		http.Error(w, "SAML not configured", http.StatusInternalServerError)
+		return nil
+	}
+
+	acsURL := s.resolveAcsURL(r)
+	metadata, err := s.samlService.GenerateSPMetadata(acsURL)
+	if err != nil {
+		http.Error(w, "Failed to generate metadata", http.StatusInternalServerError)
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/samlmetadata+xml")
+	w.Write(metadata)
+	return nil
+}
+
+// handleACS processes the SAML Response from the IdP.
+func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
+	if s.samlService == nil {
+		http.Error(w, "SAML not configured", http.StatusInternalServerError)
+		return nil
+	}
+
+	// For Phase 1 with single IdP, get the first IdP from metadata store
+	idps, err := s.metadataStore.ListIdPs("")
+	if err != nil || len(idps) == 0 {
+		http.Error(w, "No IdP configured", http.StatusInternalServerError)
+		return err
+	}
+	idp := &idps[0]
+
+	acsURL := s.resolveAcsURL(r)
+	result, err := s.samlService.HandleACS(r, acsURL, idp)
+	if err != nil {
+		http.Error(w, "SAML authentication failed: "+err.Error(), http.StatusUnauthorized)
+		return nil
+	}
+
+	// Create session
+	session := &Session{
+		Subject:     result.Subject,
+		Attributes:  result.Attributes,
+		IdPEntityID: result.IdPEntityID,
+		IssuedAt:    time.Now(),
+		ExpiresAt:   time.Now().Add(8 * time.Hour), // TODO: use configured duration
+	}
+
+	token, err := s.sessionStore.Create(session)
+	if err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return err
+	}
+
+	// Set session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.SessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Redirect to relay state or default page
+	relayState := r.FormValue("RelayState")
+	if relayState == "" {
+		relayState = "/"
+	}
+	http.Redirect(w, r, relayState, http.StatusFound)
+	return nil
+}
+
+// resolveAcsURL computes the ACS URL from the request and configuration.
+func (s *SAMLDisco) resolveAcsURL(r *http.Request) *url.URL {
+	if s.AcsURL != "" {
+		u, _ := url.Parse(s.AcsURL)
+		return u
+	}
+
+	// Compute from request
+	scheme := "https"
+	if r.TLS == nil {
+		// Check X-Forwarded-Proto header
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		} else {
+			scheme = "http"
+		}
+	}
+
+	return &url.URL{
+		Scheme: scheme,
+		Host:   r.Host,
+		Path:   "/saml/acs",
+	}
 }
 
 // Interface guards

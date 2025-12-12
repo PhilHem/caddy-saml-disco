@@ -297,3 +297,42 @@ func TestLoadPrivateKey_InvalidPEM(t *testing.T) {
 		t.Error("LoadPrivateKey() should fail for invalid PEM")
 	}
 }
+
+// TestLoadCertificate loads a valid PEM certificate file.
+func TestLoadCertificate(t *testing.T) {
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("LoadCertificate() failed: %v", err)
+	}
+
+	if cert == nil {
+		t.Fatal("LoadCertificate() returned nil certificate")
+	}
+
+	// Verify it's a valid certificate by checking subject
+	if cert.Subject.CommonName == "" && len(cert.Subject.Organization) == 0 {
+		t.Error("LoadCertificate() returned certificate with empty subject")
+	}
+}
+
+// TestLoadCertificate_FileNotFound returns error for missing file.
+func TestLoadCertificate_FileNotFound(t *testing.T) {
+	_, err := LoadCertificate("testdata/nonexistent.pem")
+	if err == nil {
+		t.Error("LoadCertificate() should fail for missing file")
+	}
+}
+
+// TestLoadCertificate_InvalidPEM returns error for invalid PEM.
+func TestLoadCertificate_InvalidPEM(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/invalid.pem"
+	if err := os.WriteFile(path, []byte("not a pem file"), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	_, err := LoadCertificate(path)
+	if err == nil {
+		t.Error("LoadCertificate() should fail for invalid PEM")
+	}
+}
