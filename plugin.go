@@ -3,6 +3,7 @@
 package caddysamldisco
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/caddyserver/caddy/v2"
@@ -25,7 +26,7 @@ type SAMLDisco struct {
 	Config
 
 	// Runtime state (not serialized)
-	// metadataStore MetadataStore
+	metadataStore MetadataStore
 	// sessionStore  SessionStore
 }
 
@@ -39,7 +40,18 @@ func (SAMLDisco) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the module.
 func (s *SAMLDisco) Provision(ctx caddy.Context) error {
-	// TODO: Initialize metadata store based on config
+	s.Config.SetDefaults()
+
+	// Initialize metadata store based on config
+	if s.MetadataFile != "" {
+		store := NewFileMetadataStore(s.MetadataFile)
+		if err := store.Load(); err != nil {
+			return fmt.Errorf("load metadata from file: %w", err)
+		}
+		s.metadataStore = store
+	}
+	// TODO: Add URL-based metadata loading in Phase 2
+
 	// TODO: Initialize session store
 	// TODO: Load SAML SP certificate and key
 	return nil
