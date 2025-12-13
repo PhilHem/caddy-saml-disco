@@ -1158,7 +1158,7 @@ func (m *mockMetadataStoreWithFilter) Refresh(ctx context.Context) error {
 // =============================================================================
 
 // TestDiscoveryAPI_SelectIdP verifies that POST /saml/api/select with a valid
-// entity_id redirects to the IdP SSO URL with a SAMLRequest.
+// entity_id returns JSON with redirect_url pointing to IdP SSO URL with SAMLRequest.
 func TestDiscoveryAPI_SelectIdP(t *testing.T) {
 	key := loadTestKey(t)
 	cert, err := LoadCertificate("testdata/sp-cert.pem")
@@ -1201,17 +1201,25 @@ func TestDiscoveryAPI_SelectIdP(t *testing.T) {
 		t.Fatalf("ServeHTTP returned error: %v", err)
 	}
 
-	if rec.Code != http.StatusFound {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	// API returns 200 with JSON containing redirect_url (not 302)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	location := rec.Header().Get("Location")
-	if !strings.HasPrefix(location, "https://idp.example.com/saml/sso") {
-		t.Errorf("Location = %q, should start with IdP SSO URL", location)
+	// Parse JSON response
+	var resp struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+
+	if !strings.HasPrefix(resp.RedirectURL, "https://idp.example.com/saml/sso") {
+		t.Errorf("redirect_url = %q, should start with IdP SSO URL", resp.RedirectURL)
 	}
 
 	// Verify SAMLRequest is in the redirect URL
-	redirectURL, _ := url.Parse(location)
+	redirectURL, _ := url.Parse(resp.RedirectURL)
 	if redirectURL.Query().Get("SAMLRequest") == "" {
 		t.Error("redirect URL should contain SAMLRequest parameter")
 	}
@@ -1289,7 +1297,7 @@ func TestDiscoveryAPI_SelectIdP_MissingEntityID(t *testing.T) {
 }
 
 // TestDiscoveryAPI_SelectIdP_PreservesReturnURL verifies that the return_url
-// query parameter is passed as RelayState.
+// from request body is passed as RelayState in the redirect URL.
 func TestDiscoveryAPI_SelectIdP_PreservesReturnURL(t *testing.T) {
 	key := loadTestKey(t)
 	cert, err := LoadCertificate("testdata/sp-cert.pem")
@@ -1330,12 +1338,20 @@ func TestDiscoveryAPI_SelectIdP_PreservesReturnURL(t *testing.T) {
 		t.Fatalf("ServeHTTP returned error: %v", err)
 	}
 
-	if rec.Code != http.StatusFound {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	// API returns 200 with JSON containing redirect_url (not 302)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	location := rec.Header().Get("Location")
-	redirectURL, _ := url.Parse(location)
+	// Parse JSON response
+	var resp struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+
+	redirectURL, _ := url.Parse(resp.RedirectURL)
 	relayState := redirectURL.Query().Get("RelayState")
 	if relayState != "/dashboard" {
 		t.Errorf("RelayState = %q, want %q", relayState, "/dashboard")
@@ -1816,9 +1832,9 @@ func TestHandleACS_SAMLNotConfigured_ReturnsHTMLError(t *testing.T) {
 	}
 }
 
-// TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsHTMLError verifies that
-// /saml/api/idps returns HTML error when metadata store is not configured.
-func TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsHTMLError(t *testing.T) {
+// TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsJSONError verifies that
+// /saml/api/idps returns JSON error when metadata store is not configured.
+func TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsJSONError(t *testing.T) {
 	s := &SAMLDisco{
 		metadataStore:    nil,
 		templateRenderer: testTemplateRenderer(t),
@@ -1839,14 +1855,23 @@ func TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsHTMLError(t *testing.T) {
 	}
 
 	contentType := rec.Header().Get("Content-Type")
-	if contentType != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "application/json")
+	}
+
+	// Verify JSON error structure
+	var resp JSONErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if resp.Error.Code != "config_missing" {
+		t.Errorf("error.code = %q, want config_missing", resp.Error.Code)
 	}
 }
 
-// TestDiscoveryAPI_SelectIdP_NotFound_ReturnsHTMLError verifies that
-// 404 errors return HTML error pages.
-func TestDiscoveryAPI_SelectIdP_NotFound_ReturnsHTMLError(t *testing.T) {
+// TestDiscoveryAPI_SelectIdP_NotFound_ReturnsJSONError verifies that
+// 404 errors for API endpoints return JSON error responses.
+func TestDiscoveryAPI_SelectIdP_NotFound_ReturnsJSONError(t *testing.T) {
 	metadataStore := &mockMetadataStore{
 		idps: []IdPInfo{
 			{EntityID: "https://idp.example.com/saml"},
@@ -1875,13 +1900,17 @@ func TestDiscoveryAPI_SelectIdP_NotFound_ReturnsHTMLError(t *testing.T) {
 	}
 
 	contentType := rec.Header().Get("Content-Type")
-	if contentType != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "application/json")
 	}
 
-	bodyStr := rec.Body.String()
-	if !strings.Contains(bodyStr, "IdP Not Found") {
-		t.Errorf("error response should contain 'IdP Not Found', got: %s", bodyStr)
+	// Verify JSON error structure
+	var resp JSONErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if resp.Error.Code != "idp_not_found" {
+		t.Errorf("error.code = %q, want idp_not_found", resp.Error.Code)
 	}
 }
 
@@ -2797,6 +2826,135 @@ func TestParseAcceptLanguage(t *testing.T) {
 					t.Errorf("parseAcceptLanguage(%q)[%d] = %q, want %q",
 						tc.header, i, result[i], tc.expected[i])
 				}
+			}
+		})
+	}
+}
+
+// =============================================================================
+// AppError Rendering Tests
+// =============================================================================
+
+// TestRenderAppError_JSON_ForAPIEndpoint verifies that renderAppError returns JSON
+// for requests to /saml/api/* paths.
+func TestRenderAppError_JSON_ForAPIEndpoint(t *testing.T) {
+	s := &SAMLDisco{
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+
+	err := IdPNotFoundError("https://idp.example.com")
+	s.renderAppError(rec, req, err)
+
+	// Should return JSON for API endpoint
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	// Verify JSON structure
+	var resp JSONErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if resp.Error.Code != "idp_not_found" {
+		t.Errorf("error.code = %q, want idp_not_found", resp.Error.Code)
+	}
+}
+
+// TestRenderAppError_HTML_ForNonAPIEndpoint verifies that renderAppError returns HTML
+// for requests to non-API paths like /saml/disco.
+func TestRenderAppError_HTML_ForNonAPIEndpoint(t *testing.T) {
+	s := &SAMLDisco{
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/disco", nil)
+	rec := httptest.NewRecorder()
+
+	err := ConfigError("Metadata store is not configured")
+	s.renderAppError(rec, req, err)
+
+	// Should return HTML for non-API endpoint
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	// Verify HTML contains title
+	body := rec.Body.String()
+	if !strings.Contains(body, "Configuration Error") {
+		t.Error("HTML should contain error title")
+	}
+}
+
+// TestRenderAppError_AllErrorCodes verifies correct HTTP status for each error code.
+func TestRenderAppError_AllErrorCodes(t *testing.T) {
+	s := &SAMLDisco{
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	tests := []struct {
+		name       string
+		err        *AppError
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "config error",
+			err:        ConfigError("Missing config"),
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "config_missing",
+		},
+		{
+			name:       "idp not found",
+			err:        IdPNotFoundError("https://idp.example.com"),
+			wantStatus: http.StatusNotFound,
+			wantCode:   "idp_not_found",
+		},
+		{
+			name:       "bad request",
+			err:        BadRequestError("Invalid input"),
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "bad_request",
+		},
+		{
+			name:       "auth error",
+			err:        AuthError("Auth failed", nil),
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "auth_failed",
+		},
+		{
+			name:       "service error",
+			err:        ServiceError("Service unavailable"),
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "service_error",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/saml/api/test", nil)
+			rec := httptest.NewRecorder()
+
+			s.renderAppError(rec, req, tc.err)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tc.wantStatus)
+			}
+
+			var resp JSONErrorResponse
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode JSON: %v", err)
+			}
+			if resp.Error.Code != tc.wantCode {
+				t.Errorf("error.code = %q, want %q", resp.Error.Code, tc.wantCode)
 			}
 		})
 	}

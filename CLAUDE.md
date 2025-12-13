@@ -89,7 +89,7 @@ Before releasing, check if these files need updates based on commits since last 
 
 - **Pure Go only** - no Caddy imports, no HTTP, no I/O
 - Contains: data models, interfaces (ports), domain logic
-- Models: `Session`, `IdPInfo`, `SAMLConfig`
+- Models: `Session`, `IdPInfo`, `SAMLConfig`, `ErrorCode`, `AppError`
 
 ### Ports (Interfaces)
 
@@ -132,6 +132,7 @@ caddy-saml-disco/
 ├── saml.go             # SAML SP logic (AuthnRequest, ACS)
 ├── discovery.go        # Discovery Service JSON API & default UI
 ├── session.go          # Cookie-based JWT session management
+├── errors.go           # Structured error types (ErrorCode, AppError)
 ├── templates/
 │   ├── disco.html      # Default IdP selection page (embedded)
 │   └── error.html      # Default error page (embedded)

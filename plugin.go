@@ -261,18 +261,18 @@ func (s *SAMLDisco) redirectToIdP(w http.ResponseWriter, r *http.Request) {
 
 	// Check if required services are configured
 	if s.metadataStore == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "Metadata store is not configured")
+		s.renderAppError(w, r, ConfigError("Metadata store is not configured"))
 		return
 	}
 	if s.samlService == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "SAML service is not configured")
+		s.renderAppError(w, r, ConfigError("SAML service is not configured"))
 		return
 	}
 
 	// Get single IdP from metadata store (Phase 1: only one IdP)
 	idps, err := s.metadataStore.ListIdPs("")
 	if err != nil || len(idps) == 0 {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "No identity provider is configured")
+		s.renderAppError(w, r, ConfigError("No identity provider is configured"))
 		return
 	}
 	idp := &idps[0]
@@ -284,7 +284,7 @@ func (s *SAMLDisco) redirectToIdP(w http.ResponseWriter, r *http.Request) {
 	// Generate AuthnRequest and redirect URL
 	redirectURL, err := s.samlService.StartAuth(idp, acsURL, relayState)
 	if err != nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Authentication Error", "Failed to start authentication")
+		s.renderAppError(w, r, AuthError("Failed to start authentication", err))
 		return
 	}
 
@@ -294,14 +294,14 @@ func (s *SAMLDisco) redirectToIdP(w http.ResponseWriter, r *http.Request) {
 // handleMetadata serves the SP metadata XML.
 func (s *SAMLDisco) handleMetadata(w http.ResponseWriter, r *http.Request) error {
 	if s.samlService == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "SAML service is not configured")
+		s.renderAppError(w, r, ConfigError("SAML service is not configured"))
 		return nil
 	}
 
 	acsURL := s.resolveAcsURL(r)
 	metadata, err := s.samlService.GenerateSPMetadata(acsURL)
 	if err != nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Service Error", "Failed to generate metadata")
+		s.renderAppError(w, r, ServiceError("Failed to generate metadata"))
 		return err
 	}
 
@@ -313,14 +313,14 @@ func (s *SAMLDisco) handleMetadata(w http.ResponseWriter, r *http.Request) error
 // handleACS processes the SAML Response from the IdP.
 func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	if s.samlService == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "SAML service is not configured")
+		s.renderAppError(w, r, ConfigError("SAML service is not configured"))
 		return nil
 	}
 
 	// For Phase 1 with single IdP, get the first IdP from metadata store
 	idps, err := s.metadataStore.ListIdPs("")
 	if err != nil || len(idps) == 0 {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "No identity provider is configured")
+		s.renderAppError(w, r, ConfigError("No identity provider is configured"))
 		return err
 	}
 	idp := &idps[0]
@@ -332,7 +332,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
 		)
-		s.renderHTTPError(w, http.StatusUnauthorized, "Authentication Failed", "SAML authentication failed")
+		s.renderAppError(w, r, AuthError("SAML authentication failed", err))
 		return nil
 	}
 
@@ -352,7 +352,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 
 	token, err := s.sessionStore.Create(session)
 	if err != nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Session Error", "Failed to create session")
+		s.renderAppError(w, r, ServiceError("Failed to create session"))
 		return err
 	}
 
@@ -377,19 +377,19 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 	// Parse JSON request body
 	var req selectIdPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.renderHTTPError(w, http.StatusBadRequest, "Invalid Request", "Request body is invalid")
+		s.renderAppError(w, r, BadRequestError("Request body is invalid"))
 		return nil
 	}
 
 	// Validate entity_id is provided
 	if req.EntityID == "" {
-		s.renderHTTPError(w, http.StatusBadRequest, "Invalid Request", "entity_id is required")
+		s.renderAppError(w, r, BadRequestError("entity_id is required"))
 		return nil
 	}
 
 	// Look up IdP in metadata store
 	if s.metadataStore == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "Metadata store is not configured")
+		s.renderAppError(w, r, ConfigError("Metadata store is not configured"))
 		return nil
 	}
 
@@ -399,7 +399,7 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 			zap.String("entity_id", req.EntityID),
 			zap.Error(err),
 		)
-		s.renderHTTPError(w, http.StatusNotFound, "IdP Not Found", "The requested identity provider was not found")
+		s.renderAppError(w, r, IdPNotFoundError(req.EntityID))
 		return nil
 	}
 
@@ -414,7 +414,7 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 
 	// Check SAML service is configured
 	if s.samlService == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "SAML service is not configured")
+		s.renderAppError(w, r, ConfigError("SAML service is not configured"))
 		return nil
 	}
 
@@ -429,7 +429,7 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 	acsURL := s.resolveAcsURL(r)
 	redirectURL, err := s.samlService.StartAuth(idp, acsURL, relayState)
 	if err != nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Authentication Error", "Failed to start authentication")
+		s.renderAppError(w, r, AuthError("Failed to start authentication", err))
 		return nil
 	}
 
@@ -453,13 +453,13 @@ type sessionInfoResponse struct {
 // If only one IdP is configured, it auto-redirects to that IdP.
 func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) error {
 	if s.metadataStore == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "Metadata store is not configured")
+		s.renderAppError(w, r, ConfigError("Metadata store is not configured"))
 		return nil
 	}
 
 	idps, err := s.metadataStore.ListIdPs("")
 	if err != nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Service Error", "Failed to retrieve identity providers")
+		s.renderAppError(w, r, ServiceError("Failed to retrieve identity providers"))
 		return nil
 	}
 
@@ -472,7 +472,7 @@ func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) er
 		acsURL := s.resolveAcsURL(r)
 		redirectURL, err := s.samlService.StartAuth(idp, acsURL, returnURL)
 		if err != nil {
-			s.renderHTTPError(w, http.StatusInternalServerError, "Authentication Error", "Failed to start authentication")
+			s.renderAppError(w, r, AuthError("Failed to start authentication", err))
 			return nil
 		}
 		http.Redirect(w, r, redirectURL.String(), http.StatusFound)
@@ -558,6 +558,23 @@ func (s *SAMLDisco) renderHTTPError(w http.ResponseWriter, statusCode int, title
 	})
 }
 
+// renderAppError renders an AppError as JSON for API endpoints or HTML for others.
+// API endpoints are detected by the /saml/api/ path prefix.
+func (s *SAMLDisco) renderAppError(w http.ResponseWriter, r *http.Request, err *AppError) {
+	statusCode := err.Code.HTTPStatus()
+
+	// API endpoints get JSON responses
+	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		json.NewEncoder(w).Encode(NewJSONErrorResponse(err))
+		return
+	}
+
+	// Non-API endpoints get HTML
+	s.renderHTTPError(w, statusCode, err.Code.Title(), err.Message)
+}
+
 // handleSessionInfo handles GET /saml/api/session and returns current session info.
 func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) error {
 	response := sessionInfoResponse{Authenticated: false}
@@ -618,7 +635,7 @@ type idpListResponse struct {
 // Pinned IdPs are separated into their own list and filtered from the main list.
 func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error {
 	if s.metadataStore == nil {
-		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "Metadata store is not configured")
+		s.renderAppError(w, r, ConfigError("Metadata store is not configured"))
 		return nil
 	}
 
@@ -630,7 +647,7 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 		s.getLogger().Error("failed to list idps",
 			zap.Error(err),
 		)
-		s.renderHTTPError(w, http.StatusInternalServerError, "Service Error", "Failed to retrieve identity providers")
+		s.renderAppError(w, r, ServiceError("Failed to retrieve identity providers"))
 		return nil
 	}
 

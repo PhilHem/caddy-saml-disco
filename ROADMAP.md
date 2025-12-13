@@ -83,7 +83,7 @@ Development phases for caddy-saml-disco.
 **Goal:** Production-ready with proper error handling and logging.
 
 - [x] Structured logging via Caddy's logger
-- [ ] Comprehensive error pages
+- [x] Comprehensive error pages
 - [ ] Request ID tracking
 - [ ] Metrics exposure (optional)
 - [ ] Security review (cookie flags, CSRF, etc.)
