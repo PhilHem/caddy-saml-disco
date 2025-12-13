@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-12-14
+
+### Added
+- **Metadata signature verification** (`signature_cert` config):
+  - XML signature verification using `russellhaering/goxmldsig`
+  - `SignatureVerifier` port with `XMLDsigVerifier` and `NoopVerifier` adapters
+  - Reject unsigned or invalidly signed metadata when certificate configured
+- **Structured error handling**:
+  - `ErrorCode` enum and `AppError` type for consistent error responses
+  - JSON error responses for API endpoints (`/saml/api/*`)
+  - HTML error pages for browser requests
+- **Logo proxy/caching endpoint** (`GET /saml/api/logo/{entityID}`):
+  - `LogoStore` port with `InMemoryLogoStore` and `CachingLogoStore` adapters
+  - Avoids hotlinking federation logos
+  - Caches logos in memory with configurable TTL
+- **Multi-language display name support**:
+  - Parse all `xml:lang` variants from metadata
+  - Select display name based on `Accept-Language` header
+  - Configurable default language fallback (`default_language` config)
+  - Search across all language variants (find "München" with `Accept-Language: en`)
+- **Structured logging** via Caddy's zap logger
+- **CORS support** for SPA frontends (`cors_origins` config)
+- **FeLS-style discovery template** with autocomplete search
+- **Custom frontend example** with Alpine.js in `examples/`
+- **Remember last-used IdP** cookie for returning users
+- **`login_redirect`** config option for custom UI integration
+
+### Changed
+- Phase 3 (Customization) complete
+- Significant progress on Phase 4 (Production Hardening)
+
 ## [0.7.0] - 2025-12-13
 
 ### Added
