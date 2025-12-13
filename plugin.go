@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -433,17 +435,22 @@ func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) er
 
 // renderDiscoveryHTML renders the IdP selection page using the template renderer.
 func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, r *http.Request, idps []IdPInfo, returnURL string) error {
+	// Localize IdPs based on Accept-Language header
+	langPrefs := parseAcceptLanguage(r.Header.Get("Accept-Language"))
+	localizedIdPs := localizeIdPList(idps, langPrefs)
+
 	// Separate pinned IdPs from the main list
-	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(idps)
+	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(localizedIdPs)
 
 	// Get the remembered IdP entity ID
 	rememberedIdPID := s.getRememberIdPCookie(r)
 
-	// Look up full IdP info for the remembered IdP
+	// Look up full IdP info for the remembered IdP (and localize it)
 	var rememberedIdP *IdPInfo
 	if rememberedIdPID != "" && s.metadataStore != nil {
 		if idp, err := s.metadataStore.GetIdP(rememberedIdPID); err == nil {
-			rememberedIdP = idp
+			localized := LocalizeIdPInfo(*idp, langPrefs)
+			rememberedIdP = &localized
 		}
 	}
 
@@ -533,6 +540,10 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 	if idps == nil {
 		idps = []IdPInfo{}
 	}
+
+	// Localize IdPs based on Accept-Language header
+	langPrefs := parseAcceptLanguage(r.Header.Get("Accept-Language"))
+	idps = localizeIdPList(idps, langPrefs)
 
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(idps)
@@ -831,6 +842,82 @@ func (s *SAMLDisco) SetTemplateRenderer(renderer *TemplateRenderer) {
 // SetRememberIdPDuration sets the remember IdP duration for testing.
 func (s *SAMLDisco) SetRememberIdPDuration(d time.Duration) {
 	s.rememberIdPDuration = d
+}
+
+// localizeIdPList applies localization to a slice of IdPInfo based on
+// language preferences.
+func localizeIdPList(idps []IdPInfo, prefs []string) []IdPInfo {
+	if len(idps) == 0 {
+		return idps
+	}
+	localized := make([]IdPInfo, len(idps))
+	for i, idp := range idps {
+		localized[i] = LocalizeIdPInfo(idp, prefs)
+	}
+	return localized
+}
+
+// parseAcceptLanguage parses the Accept-Language header and returns
+// language tags sorted by quality value (highest first).
+// For language tags with region (e.g., "en-US"), the base language
+// is also included (e.g., "en") as a fallback.
+func parseAcceptLanguage(header string) []string {
+	if header == "" {
+		return []string{}
+	}
+
+	type langQ struct {
+		lang string
+		q    float64
+	}
+
+	var langs []langQ
+
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		lang := part
+		q := 1.0
+
+		if idx := strings.Index(part, ";"); idx != -1 {
+			lang = strings.TrimSpace(part[:idx])
+			qPart := strings.TrimSpace(part[idx+1:])
+			if strings.HasPrefix(qPart, "q=") {
+				if parsed, err := strconv.ParseFloat(qPart[2:], 64); err == nil {
+					q = parsed
+				}
+			}
+		}
+
+		if q > 0 {
+			langs = append(langs, langQ{lang: lang, q: q})
+			// Add base language for regional variants (en-US -> en)
+			if idx := strings.Index(lang, "-"); idx != -1 {
+				base := lang[:idx]
+				langs = append(langs, langQ{lang: base, q: q - 0.0001}) // Slightly lower
+			}
+		}
+	}
+
+	// Sort by quality descending
+	sort.Slice(langs, func(i, j int) bool {
+		return langs[i].q > langs[j].q
+	})
+
+	// Deduplicate while preserving order
+	seen := make(map[string]bool)
+	var result []string
+	for _, lq := range langs {
+		if !seen[lq.lang] {
+			seen[lq.lang] = true
+			result = append(result, lq.lang)
+		}
+	}
+
+	return result
 }
 
 // Interface guards

@@ -774,3 +774,163 @@ func TestLogout_ClearsRememberCookie(t *testing.T) {
 		t.Error("expected saml_last_idp cookie to be cleared on logout")
 	}
 }
+
+// =============================================================================
+// Multi-Language Support Tests (Phase 3)
+// =============================================================================
+
+// TestDiscoveryFlow_MultiLanguage_GermanPreference tests that the JSON API
+// returns German display names when Accept-Language: de is set.
+func TestDiscoveryFlow_MultiLanguage_GermanPreference(t *testing.T) {
+	// Create plugin with DFN sample metadata (has German/English variants)
+	disco := &caddysamldisco.SAMLDisco{}
+	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		disco.ServeHTTP(w, r, nil)
+	}))
+	defer server.Close()
+
+	// Request with German Accept-Language header
+	req, _ := http.NewRequest("GET", server.URL+"/saml/api/idps", nil)
+	req.Header.Set("Accept-Language", "de, en;q=0.8")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /saml/api/idps: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var result struct {
+		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+
+	// Find TUM which has different German/English names
+	var tumIdP *caddysamldisco.IdPInfo
+	for i := range result.IdPs {
+		if result.IdPs[i].EntityID == "https://tumidp.lrz.de/idp/shibboleth" {
+			tumIdP = &result.IdPs[i]
+			break
+		}
+	}
+
+	if tumIdP == nil {
+		t.Fatal("TUM IdP not found in response")
+	}
+
+	// Should have German display name when Accept-Language: de
+	expectedName := "Technische Universität München (TUM)"
+	if tumIdP.DisplayName != expectedName {
+		t.Errorf("TUM DisplayName = %q, want %q", tumIdP.DisplayName, expectedName)
+	}
+
+	// Should have German description
+	expectedDesc := "Die TUM ist eine der führenden technischen Universitäten Europas."
+	if tumIdP.Description != expectedDesc {
+		t.Errorf("TUM Description = %q, want %q", tumIdP.Description, expectedDesc)
+	}
+}
+
+// TestDiscoveryFlow_MultiLanguage_EnglishDefault tests that the JSON API
+// returns English display names by default (no Accept-Language header).
+func TestDiscoveryFlow_MultiLanguage_EnglishDefault(t *testing.T) {
+	disco := &caddysamldisco.SAMLDisco{}
+	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		disco.ServeHTTP(w, r, nil)
+	}))
+	defer server.Close()
+
+	// Request without Accept-Language header
+	resp, err := http.Get(server.URL + "/saml/api/idps")
+	if err != nil {
+		t.Fatalf("GET /saml/api/idps: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+
+	// Find TUM
+	var tumIdP *caddysamldisco.IdPInfo
+	for i := range result.IdPs {
+		if result.IdPs[i].EntityID == "https://tumidp.lrz.de/idp/shibboleth" {
+			tumIdP = &result.IdPs[i]
+			break
+		}
+	}
+
+	if tumIdP == nil {
+		t.Fatal("TUM IdP not found in response")
+	}
+
+	// Should have English display name by default
+	expectedName := "Technical University of Munich (TUM)"
+	if tumIdP.DisplayName != expectedName {
+		t.Errorf("TUM DisplayName = %q, want %q", tumIdP.DisplayName, expectedName)
+	}
+}
+
+// TestDiscoveryFlow_MultiLanguage_IncludesAllVariants tests that the JSON API
+// includes the DisplayNames map with all language variants.
+func TestDiscoveryFlow_MultiLanguage_IncludesAllVariants(t *testing.T) {
+	disco := &caddysamldisco.SAMLDisco{}
+	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		disco.ServeHTTP(w, r, nil)
+	}))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/saml/api/idps")
+	if err != nil {
+		t.Fatalf("GET /saml/api/idps: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+
+	// Find TUM
+	var tumIdP *caddysamldisco.IdPInfo
+	for i := range result.IdPs {
+		if result.IdPs[i].EntityID == "https://tumidp.lrz.de/idp/shibboleth" {
+			tumIdP = &result.IdPs[i]
+			break
+		}
+	}
+
+	if tumIdP == nil {
+		t.Fatal("TUM IdP not found in response")
+	}
+
+	// Should include all language variants in the DisplayNames map
+	if tumIdP.DisplayNames == nil {
+		t.Fatal("DisplayNames map should not be nil")
+	}
+
+	if tumIdP.DisplayNames["en"] != "Technical University of Munich (TUM)" {
+		t.Errorf("DisplayNames[en] = %q, want English name", tumIdP.DisplayNames["en"])
+	}
+
+	if tumIdP.DisplayNames["de"] != "Technische Universität München (TUM)" {
+		t.Errorf("DisplayNames[de] = %q, want German name", tumIdP.DisplayNames["de"])
+	}
+}

@@ -22,11 +22,20 @@ type IdPInfo struct {
 
 	// DisplayName is a human-readable name for the IdP.
 	// Prefers mdui:DisplayName over Organization/OrganizationDisplayName.
+	// This is the default (usually English) for backward compatibility.
 	DisplayName string `json:"display_name"`
+
+	// DisplayNames contains all language variants of the display name.
+	// Key is the language code (e.g., "en", "de").
+	DisplayNames map[string]string `json:"display_names,omitempty"`
 
 	// Description is a human-readable description of the IdP.
 	// Extracted from mdui:Description.
 	Description string `json:"description,omitempty"`
+
+	// Descriptions contains all language variants of the description.
+	// Key is the language code (e.g., "en", "de").
+	Descriptions map[string]string `json:"descriptions,omitempty"`
 
 	// LogoURL is the URL to the IdP's logo image.
 	// Extracted from mdui:Logo (prefers larger logos).
@@ -35,6 +44,10 @@ type IdPInfo struct {
 	// InformationURL is a URL to more information about the IdP.
 	// Extracted from mdui:InformationURL.
 	InformationURL string `json:"information_url,omitempty"`
+
+	// InformationURLs contains all language variants of the information URL.
+	// Key is the language code (e.g., "en", "de").
+	InformationURLs map[string]string `json:"information_urls,omitempty"`
 
 	// SSOURL is the Single Sign-On endpoint URL.
 	SSOURL string `json:"sso_url"`
@@ -444,17 +457,21 @@ func extractIdPInfoWithUIInfo(ed *saml.EntityDescriptor, uiInfoMap map[string]*U
 	// Get UIInfo from pre-parsed map
 	uiInfo := uiInfoMap[ed.EntityID]
 
-	// Extract display name - prefer mdui:DisplayName, fall back to Organization
+	// Extract all language variants and default display name
+	var displayNames map[string]string
 	displayName := ed.EntityID
 	if uiInfo != nil && len(uiInfo.DisplayNames) > 0 {
+		displayNames = localizedValuesToMap(uiInfo.DisplayNames)
 		displayName = selectLocalizedValue(uiInfo.DisplayNames, "en")
 	} else if ed.Organization != nil && len(ed.Organization.OrganizationDisplayNames) > 0 {
 		displayName = ed.Organization.OrganizationDisplayNames[0].Value
 	}
 
-	// Extract description from UIInfo
+	// Extract all language variants and default description
+	var descriptions map[string]string
 	var description string
 	if uiInfo != nil && len(uiInfo.Descriptions) > 0 {
+		descriptions = localizedValuesToMap(uiInfo.Descriptions)
 		description = selectLocalizedValue(uiInfo.Descriptions, "en")
 	}
 
@@ -464,9 +481,11 @@ func extractIdPInfoWithUIInfo(ed *saml.EntityDescriptor, uiInfoMap map[string]*U
 		logoURL = selectBestLogo(uiInfo.Logos)
 	}
 
-	// Extract information URL from UIInfo
+	// Extract all language variants and default information URL
+	var informationURLs map[string]string
 	var informationURL string
 	if uiInfo != nil && len(uiInfo.InformationURLs) > 0 {
+		informationURLs = localizedValuesToMap(uiInfo.InformationURLs)
 		informationURL = selectLocalizedValue(uiInfo.InformationURLs, "en")
 	}
 
@@ -481,14 +500,17 @@ func extractIdPInfoWithUIInfo(ed *saml.EntityDescriptor, uiInfoMap map[string]*U
 	}
 
 	return &IdPInfo{
-		EntityID:       ed.EntityID,
-		DisplayName:    displayName,
-		Description:    description,
-		LogoURL:        logoURL,
-		InformationURL: informationURL,
-		SSOURL:         ssoURL,
-		SSOBinding:     ssoBinding,
-		Certificates:   certs,
+		EntityID:        ed.EntityID,
+		DisplayName:     displayName,
+		DisplayNames:    displayNames,
+		Description:     description,
+		Descriptions:    descriptions,
+		LogoURL:         logoURL,
+		InformationURL:  informationURL,
+		InformationURLs: informationURLs,
+		SSOURL:          ssoURL,
+		SSOBinding:      ssoBinding,
+		Certificates:    certs,
 	}, nil
 }
 
@@ -515,6 +537,83 @@ func selectLocalizedValue(values []LocalizedValue, preferLang string) string {
 
 	// Fall back to first available value
 	return strings.TrimSpace(values[0].Value)
+}
+
+// localizedValuesToMap converts a slice of LocalizedValue to a map
+// keyed by language code.
+func localizedValuesToMap(values []LocalizedValue) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(values))
+	for _, v := range values {
+		m[v.Lang] = strings.TrimSpace(v.Value)
+	}
+	return m
+}
+
+// selectFromMap selects the value for the first matching language preference.
+// Falls back to English if no preference matches, then to any available value.
+func selectFromMap(m map[string]string, prefs []string) string {
+	if len(m) == 0 {
+		return ""
+	}
+
+	// Try each preference in order
+	for _, pref := range prefs {
+		if val, ok := m[pref]; ok {
+			return val
+		}
+		// Try base language for regional variants (en-US -> en)
+		if idx := strings.Index(pref, "-"); idx != -1 {
+			if val, ok := m[pref[:idx]]; ok {
+				return val
+			}
+		}
+	}
+
+	// Fallback to English
+	if val, ok := m["en"]; ok {
+		return val
+	}
+
+	// Fallback to any English variant
+	for lang, val := range m {
+		if strings.HasPrefix(lang, "en") {
+			return val
+		}
+	}
+
+	// Last resort: return any value
+	for _, val := range m {
+		return val
+	}
+
+	return ""
+}
+
+// LocalizeIdPInfo returns a copy of the IdPInfo with localized fields
+// selected based on the language preferences.
+func LocalizeIdPInfo(idp IdPInfo, prefs []string) IdPInfo {
+	// Create a copy (IdPInfo is a value type, so this is already a copy)
+	localized := idp
+
+	// Localize DisplayName if we have language variants
+	if len(idp.DisplayNames) > 0 {
+		localized.DisplayName = selectFromMap(idp.DisplayNames, prefs)
+	}
+
+	// Localize Description if we have language variants
+	if len(idp.Descriptions) > 0 {
+		localized.Description = selectFromMap(idp.Descriptions, prefs)
+	}
+
+	// Localize InformationURL if we have language variants
+	if len(idp.InformationURLs) > 0 {
+		localized.InformationURL = selectFromMap(idp.InformationURLs, prefs)
+	}
+
+	return localized
 }
 
 // selectBestLogo returns the URL of the largest logo (by area).

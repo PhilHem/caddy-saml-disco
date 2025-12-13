@@ -2614,3 +2614,190 @@ func TestCORS_PreflightNonApiEndpoint(t *testing.T) {
 		t.Error("next handler should be called for non-API OPTIONS request")
 	}
 }
+
+// =============================================================================
+// Multi-Language / Accept-Language Support Tests (Phase 3)
+// =============================================================================
+
+// TestDiscoveryUI_RespectsAcceptLanguage verifies that the discovery HTML page
+// shows localized IdP names based on Accept-Language header.
+func TestDiscoveryUI_RespectsAcceptLanguage(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp.example.com/saml",
+				DisplayName: "English Name",
+				DisplayNames: map[string]string{
+					"en": "English Name",
+					"de": "Deutscher Name",
+				},
+				SSOURL: "https://idp.example.com/saml/sso",
+			},
+		},
+	}
+
+	renderer, err := NewTemplateRenderer()
+	if err != nil {
+		t.Fatalf("NewTemplateRenderer: %v", err)
+	}
+
+	s := &SAMLDisco{
+		metadataStore:    metadataStore,
+		templateRenderer: renderer,
+	}
+
+	tests := []struct {
+		name         string
+		acceptLang   string
+		expectedName string
+	}{
+		{"german", "de", "Deutscher Name"},
+		{"english", "en", "English Name"},
+		{"no header", "", "English Name"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/saml/disco", nil)
+			if tc.acceptLang != "" {
+				req.Header.Set("Accept-Language", tc.acceptLang)
+			}
+			rec := httptest.NewRecorder()
+
+			err := s.renderDiscoveryHTML(rec, req, metadataStore.idps, "/")
+			if err != nil {
+				t.Fatalf("renderDiscoveryHTML returned error: %v", err)
+			}
+
+			body := rec.Body.String()
+			if !strings.Contains(body, tc.expectedName) {
+				t.Errorf("response body should contain %q, got:\n%s", tc.expectedName, body)
+			}
+		})
+	}
+}
+
+// TestDiscoveryAPI_ListIdPs_RespectsAcceptLanguage verifies that the JSON API
+// returns localized IdP names based on Accept-Language header.
+func TestDiscoveryAPI_ListIdPs_RespectsAcceptLanguage(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp.example.com/saml",
+				DisplayName: "English Name",
+				DisplayNames: map[string]string{
+					"en": "English Name",
+					"de": "Deutscher Name",
+				},
+				Description: "English description",
+				Descriptions: map[string]string{
+					"en": "English description",
+					"de": "Deutsche Beschreibung",
+				},
+				SSOURL: "https://idp.example.com/saml/sso",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore: metadataStore,
+	}
+
+	tests := []struct {
+		name         string
+		acceptLang   string
+		expectedName string
+		expectedDesc string
+	}{
+		{"german", "de", "Deutscher Name", "Deutsche Beschreibung"},
+		{"english", "en", "English Name", "English description"},
+		{"german regional", "de-AT", "Deutscher Name", "Deutsche Beschreibung"},
+		{"fallback to german", "fr, de;q=0.9", "Deutscher Name", "Deutsche Beschreibung"},
+		{"no header defaults to english", "", "English Name", "English description"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+			if tc.acceptLang != "" {
+				req.Header.Set("Accept-Language", tc.acceptLang)
+			}
+			rec := httptest.NewRecorder()
+
+			err := s.handleListIdPs(rec, req)
+			if err != nil {
+				t.Fatalf("handleListIdPs returned error: %v", err)
+			}
+
+			var response idpListResponse
+			if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+
+			if len(response.IdPs) != 1 {
+				t.Fatalf("expected 1 IdP, got %d", len(response.IdPs))
+			}
+
+			if response.IdPs[0].DisplayName != tc.expectedName {
+				t.Errorf("DisplayName = %q, want %q",
+					response.IdPs[0].DisplayName, tc.expectedName)
+			}
+			if response.IdPs[0].Description != tc.expectedDesc {
+				t.Errorf("Description = %q, want %q",
+					response.IdPs[0].Description, tc.expectedDesc)
+			}
+		})
+	}
+}
+
+// TestParseAcceptLanguage verifies Accept-Language header parsing with
+// quality values and regional variant handling.
+func TestParseAcceptLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		header   string
+		expected []string
+	}{
+		// Simple cases
+		{"single language", "en", []string{"en"}},
+		{"single german", "de", []string{"de"}},
+
+		// Regional variants should include base language
+		{"regional variant", "en-US", []string{"en-US", "en"}},
+		{"german regional", "de-AT", []string{"de-AT", "de"}},
+
+		// Multiple languages
+		{"multiple languages", "de, en", []string{"de", "en"}},
+		{"multiple reversed", "en, de", []string{"en", "de"}},
+
+		// Quality values
+		{"with quality", "de, en;q=0.9", []string{"de", "en"}},
+		{"quality sorting", "en;q=0.5, de;q=0.9", []string{"de", "en"}},
+		{"complex quality", "en-US;q=0.8, de;q=0.9, fr;q=0.7", []string{"de", "en-US", "en", "fr"}},
+
+		// Edge cases
+		{"empty header", "", []string{}},
+		{"wildcard", "*", []string{"*"}},
+		{"q=0 excluded", "en;q=0, de", []string{"de"}},
+
+		// Whitespace handling
+		{"with spaces", "de , en ; q=0.8", []string{"de", "en"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := parseAcceptLanguage(tc.header)
+			if len(result) != len(tc.expected) {
+				t.Errorf("parseAcceptLanguage(%q) = %v (len=%d), want %v (len=%d)",
+					tc.header, result, len(result), tc.expected, len(tc.expected))
+				return
+			}
+			for i := range tc.expected {
+				if result[i] != tc.expected[i] {
+					t.Errorf("parseAcceptLanguage(%q)[%d] = %q, want %q",
+						tc.header, i, result[i], tc.expected[i])
+				}
+			}
+		})
+	}
+}

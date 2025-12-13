@@ -1365,3 +1365,218 @@ func TestParseIdP_UIInfo_MinimalEntry(t *testing.T) {
 		t.Errorf("Description = %q, want empty string (not in metadata)", idp.Description)
 	}
 }
+
+// =============================================================================
+// Multi-Language Support Tests (Phase 3)
+// =============================================================================
+
+// TestIdPInfo_StoresAllLanguageVariants verifies that IdPInfo stores all
+// language variants of display names, descriptions, and information URLs.
+func TestIdPInfo_StoresAllLanguageVariants(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// TUM has different English and German display names
+	idp, err := store.GetIdP("https://tumidp.lrz.de/idp/shibboleth")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// DisplayNames map should exist and contain both languages
+	if idp.DisplayNames == nil {
+		t.Fatal("DisplayNames map should not be nil")
+	}
+
+	if idp.DisplayNames["en"] != "Technical University of Munich (TUM)" {
+		t.Errorf("DisplayNames[en] = %q, want %q",
+			idp.DisplayNames["en"], "Technical University of Munich (TUM)")
+	}
+	if idp.DisplayNames["de"] != "Technische Universität München (TUM)" {
+		t.Errorf("DisplayNames[de] = %q, want %q",
+			idp.DisplayNames["de"], "Technische Universität München (TUM)")
+	}
+
+	// Descriptions map should exist and contain both languages
+	if idp.Descriptions == nil {
+		t.Fatal("Descriptions map should not be nil")
+	}
+
+	if idp.Descriptions["en"] != "TUM is one of Europe's leading technical universities, combining top-class facilities for cutting-edge research." {
+		t.Errorf("Descriptions[en] = %q, want TUM description", idp.Descriptions["en"])
+	}
+	if idp.Descriptions["de"] != "Die TUM ist eine der führenden technischen Universitäten Europas." {
+		t.Errorf("Descriptions[de] = %q, want German TUM description", idp.Descriptions["de"])
+	}
+
+	// InformationURLs map should exist (TUM only has English)
+	if idp.InformationURLs == nil {
+		t.Fatal("InformationURLs map should not be nil")
+	}
+	if idp.InformationURLs["en"] != "https://www.tum.de/en/" {
+		t.Errorf("InformationURLs[en] = %q, want %q",
+			idp.InformationURLs["en"], "https://www.tum.de/en/")
+	}
+}
+
+// TestSelectFromMap verifies language selection from a map based on preferences.
+func TestSelectFromMap(t *testing.T) {
+	m := map[string]string{
+		"en": "English",
+		"de": "Deutsch",
+		"fr": "Français",
+	}
+
+	tests := []struct {
+		name     string
+		prefs    []string
+		expected string
+	}{
+		// Direct match
+		{"direct match de", []string{"de"}, "Deutsch"},
+		{"direct match en", []string{"en"}, "English"},
+		{"direct match fr", []string{"fr"}, "Français"},
+
+		// Fallback to second preference
+		{"fallback to second", []string{"es", "de"}, "Deutsch"},
+		{"fallback to third", []string{"it", "es", "fr"}, "Français"},
+
+		// Regional variant matches base language
+		{"regional de-AT", []string{"de-AT"}, "Deutsch"},
+		{"regional en-GB", []string{"en-GB"}, "English"},
+		{"regional fr-CA", []string{"fr-CA"}, "Français"},
+
+		// Fallback to English when no match
+		{"fallback to English", []string{"es", "it"}, "English"},
+
+		// Empty preferences falls back to English
+		{"empty prefs", []string{}, "English"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := selectFromMap(m, tc.prefs)
+			if result != tc.expected {
+				t.Errorf("selectFromMap(m, %v) = %q, want %q",
+					tc.prefs, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestSelectFromMap_NoEnglish verifies fallback behavior when English is not available.
+func TestSelectFromMap_NoEnglish(t *testing.T) {
+	m := map[string]string{
+		"de": "Deutsch",
+		"fr": "Français",
+	}
+
+	// No English, no match - should return any available value
+	result := selectFromMap(m, []string{"es", "it"})
+	// Result should be one of the available values
+	if result != "Deutsch" && result != "Français" {
+		t.Errorf("selectFromMap should return any available value, got %q", result)
+	}
+}
+
+// TestSelectFromMap_Empty verifies handling of empty map.
+func TestSelectFromMap_Empty(t *testing.T) {
+	m := map[string]string{}
+	result := selectFromMap(m, []string{"en"})
+	if result != "" {
+		t.Errorf("selectFromMap on empty map = %q, want empty string", result)
+	}
+}
+
+// TestLocalizeIdPInfo verifies that IdPInfo is correctly localized based on
+// language preferences.
+func TestLocalizeIdPInfo(t *testing.T) {
+	idp := IdPInfo{
+		EntityID:    "https://example.com/idp",
+		DisplayName: "English Name", // Default (for backward compat)
+		DisplayNames: map[string]string{
+			"en": "English Name",
+			"de": "Deutscher Name",
+			"fr": "Nom Français",
+		},
+		Description: "English description",
+		Descriptions: map[string]string{
+			"en": "English description",
+			"de": "Deutsche Beschreibung",
+		},
+		InformationURL: "https://example.com/en/",
+		InformationURLs: map[string]string{
+			"en": "https://example.com/en/",
+			"de": "https://example.com/de/",
+		},
+		LogoURL:    "https://example.com/logo.png",
+		SSOURL:     "https://example.com/sso",
+		SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+	}
+
+	tests := []struct {
+		name            string
+		prefs           []string
+		expectedName    string
+		expectedDesc    string
+		expectedInfoURL string
+	}{
+		{"german", []string{"de"}, "Deutscher Name", "Deutsche Beschreibung", "https://example.com/de/"},
+		{"french name only", []string{"fr"}, "Nom Français", "English description", "https://example.com/en/"}, // fr desc not available
+		{"fallback to german", []string{"es", "de"}, "Deutscher Name", "Deutsche Beschreibung", "https://example.com/de/"},
+		{"empty prefs", []string{}, "English Name", "English description", "https://example.com/en/"},
+		{"regional de-AT", []string{"de-AT"}, "Deutscher Name", "Deutsche Beschreibung", "https://example.com/de/"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			localized := LocalizeIdPInfo(idp, tc.prefs)
+
+			if localized.DisplayName != tc.expectedName {
+				t.Errorf("DisplayName = %q, want %q", localized.DisplayName, tc.expectedName)
+			}
+			if localized.Description != tc.expectedDesc {
+				t.Errorf("Description = %q, want %q", localized.Description, tc.expectedDesc)
+			}
+			if localized.InformationURL != tc.expectedInfoURL {
+				t.Errorf("InformationURL = %q, want %q", localized.InformationURL, tc.expectedInfoURL)
+			}
+
+			// Non-localized fields should remain unchanged
+			if localized.EntityID != idp.EntityID {
+				t.Errorf("EntityID changed: %q != %q", localized.EntityID, idp.EntityID)
+			}
+			if localized.LogoURL != idp.LogoURL {
+				t.Errorf("LogoURL changed: %q != %q", localized.LogoURL, idp.LogoURL)
+			}
+			if localized.SSOURL != idp.SSOURL {
+				t.Errorf("SSOURL changed: %q != %q", localized.SSOURL, idp.SSOURL)
+			}
+		})
+	}
+}
+
+// TestLocalizeIdPInfo_EmptyMaps verifies backward compatibility when
+// language maps are empty (uses original single-value fields).
+func TestLocalizeIdPInfo_EmptyMaps(t *testing.T) {
+	idp := IdPInfo{
+		EntityID:       "https://example.com/idp",
+		DisplayName:    "Original Name",
+		Description:    "Original Description",
+		InformationURL: "https://example.com/",
+	}
+
+	localized := LocalizeIdPInfo(idp, []string{"de"})
+
+	// Should preserve original values when maps are empty
+	if localized.DisplayName != "Original Name" {
+		t.Errorf("DisplayName = %q, want %q", localized.DisplayName, "Original Name")
+	}
+	if localized.Description != "Original Description" {
+		t.Errorf("Description = %q, want %q", localized.Description, "Original Description")
+	}
+	if localized.InformationURL != "https://example.com/" {
+		t.Errorf("InformationURL = %q, want %q", localized.InformationURL, "https://example.com/")
+	}
+}

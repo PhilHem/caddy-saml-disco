@@ -69,7 +69,9 @@ Development phases for caddy-saml-disco.
 - [x] Remember last-used IdP cookie
 - [x] FeLS-style discovery UI (autocomplete search, "Remember me" checkbox, alternative login methods section)
 - [x] CORS headers for SPA frontends (optional)
-- [ ] Multi-language display name support (prefer user's Accept-Language locale)
+- [x] Multi-language display name support (prefer user's Accept-Language locale)
+- [ ] Configurable default language fallback (`default_language` config option)
+- [ ] Search across all language variants (match "München" even when Accept-Language is "en")
 - [ ] Logo proxy/caching endpoint (avoid hotlinking federation logos)
 
 **Outcome:** Users can build custom discovery UIs consuming the JSON API.
