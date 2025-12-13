@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - Select Your Institution</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Loading State */
+        .loading {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #666;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e0e0e0;
+            border-top-color: #0066cc;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* IdP List */
+        .idp-list {
+            list-style: none;
+        }
+
+        .idp-card {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            width: 100%;
+            padding: 1rem;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            cursor: pointer;
+            text-align: left;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .idp-card:hover,
+        .idp-card:focus {
+            border-color: #0066cc;
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.1);
+            outline: none;
+        }
+
+        .idp-card:focus-visible {
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
+        }
+
+        .idp-logo {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .idp-info {
+            display: block;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .idp-name {
+            display: block;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+
+        .idp-desc {
+            display: block;
+            font-size: 0.875rem;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Search */
+        .search-input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            font-size: 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .search-input:focus {
+            border-color: #0066cc;
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 2rem 1rem;
+            color: #666;
+        }
+
+        .text-link {
+            background: none;
+            border: none;
+            color: #0066cc;
+            cursor: pointer;
+            font-size: inherit;
+            padding: 0;
+            text-decoration: underline;
+        }
+
+        .text-link:hover {
+            color: #004499;
+        }
+
+        /* Remembered IdP Section */
+        .remembered-section {
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .remembered-section h2 {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #666;
+            margin-bottom: 0.75rem;
+        }
+
+        .idp-card.remembered {
+            border-color: #0066cc;
+            border-left-width: 4px;
+        }
+
+        .idp-card .arrow {
+            color: #0066cc;
+            font-size: 1.25rem;
+        }
+
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1rem 0;
+            color: #999;
+            font-size: 0.875rem;
+        }
+
+        .section-divider::before,
+        .section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e0e0e0;
+        }
+
+        /* Authenticated Panel */
+        .authenticated-panel {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .authenticated-panel h1 {
+            margin-bottom: 0.5rem;
+        }
+
+        .authenticated-panel .subject {
+            font-size: 1.125rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .idp-badge {
+            font-size: 0.875rem;
+            color: #666;
+            margin-bottom: 1.5rem;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.15s;
+        }
+
+        .btn-primary {
+            background: #0066cc;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0052a3;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        /* Error Panel */
+        .error-panel {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            color: #991b1b;
+        }
+
+        .error-panel .error-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .error-panel p {
+            margin-bottom: 1rem;
+        }
+
+        /* Selecting Overlay */
+        .selecting-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .selecting-overlay p {
+            margin-top: 1rem;
+            color: #666;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            body {
+                padding: 1rem 0.75rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .idp-card {
+                padding: 0.875rem;
+            }
+
+            .idp-logo {
+                width: 32px;
+                height: 32px;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" x-data="loginApp()">
+        <!-- Authenticated State -->
+        <div x-show="session.authenticated" x-transition class="authenticated-panel">
+            <h1>Welcome</h1>
+            <p class="subject">Signed in as <strong x-text="session.subject"></strong></p>
+            <p class="idp-badge">via <span x-text="getIdPName(session.idp_entity_id)"></span></p>
+            <div class="button-group">
+                <a :href="returnUrl" class="btn btn-primary">Continue</a>
+                <button type="button" @click="logout" class="btn btn-secondary">Sign Out</button>
+            </div>
+        </div>
+
+        <!-- Login Panel (Unauthenticated) -->
+        <div x-show="!session.authenticated">
+            <h1>Sign In</h1>
+            <p class="subtitle">Select your institution to continue</p>
+
+            <!-- Loading State -->
+            <div x-show="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Loading institutions...</p>
+            </div>
+
+            <!-- Error State -->
+            <div x-show="!loading && error" class="error-panel">
+                <p class="error-icon">&#9888;</p>
+                <p x-text="error"></p>
+                <button type="button" @click="fetchIdPs" class="btn btn-secondary">Try Again</button>
+            </div>
+
+            <!-- Remembered IdP Quick Access -->
+            <div x-show="!loading && !error && rememberedIdP && !showAllIdPs" class="remembered-section">
+                <h2>Continue with your last institution</h2>
+                <button type="button" @click="selectIdP(rememberedIdP)" class="idp-card remembered">
+                    <img x-show="rememberedIdP?.logo_url" :src="rememberedIdP?.logo_url"
+                         :alt="rememberedIdP?.display_name" class="idp-logo"
+                         src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt=""
+                         @error="$el.style.display='none'">
+                    <span class="idp-info">
+                        <span class="idp-name" x-text="rememberedIdP?.display_name"></span>
+                        <span x-show="rememberedIdP?.description" class="idp-desc" x-text="rememberedIdP?.description"></span>
+                    </span>
+                    <span class="arrow">&#8594;</span>
+                </button>
+                <button type="button" @click="showAllIdPs = true" class="text-link">Use a different institution</button>
+            </div>
+
+            <!-- Search -->
+            <div x-show="!loading && !error && (!rememberedIdP || showAllIdPs)">
+                <input type="text"
+                       id="institution-search"
+                       name="institution-search"
+                       x-model="searchQuery"
+                       @input.debounce.200ms="filterIdPs"
+                       placeholder="Search for your institution..."
+                       class="search-input"
+                       autocomplete="off">
+            </div>
+
+            <!-- IdP List -->
+            <ul x-show="!loading && !error && (!rememberedIdP || showAllIdPs) && filteredIdPs.length > 0" class="idp-list">
+                <template x-for="idp in filteredIdPs" :key="idp.entity_id">
+                    <li>
+                        <button type="button" @click="selectIdP(idp)" class="idp-card" :aria-label="'Select ' + idp.display_name">
+                            <img x-show="idp.logo_url" :src="idp.logo_url"
+                                 :alt="idp.display_name" class="idp-logo"
+                                 src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt=""
+                                 @error="$el.style.display='none'">
+                            <span class="idp-info">
+                                <span class="idp-name" x-text="idp.display_name">Select institution</span>
+                                <span x-show="idp.description" class="idp-desc" x-text="idp.description"></span>
+                            </span>
+                        </button>
+                    </li>
+                </template>
+            </ul>
+
+            <!-- Empty State -->
+            <div x-show="!loading && !error && (!rememberedIdP || showAllIdPs) && filteredIdPs.length === 0 && searchQuery" class="empty-state">
+                <p>No institutions found matching "<span x-text="searchQuery"></span>"</p>
+                <button type="button" @click="searchQuery = ''; filterIdPs()" class="text-link">Clear search</button>
+            </div>
+
+            <!-- Selecting Overlay -->
+            <div x-show="selecting" x-transition.opacity class="selecting-overlay">
+                <div class="spinner"></div>
+                <p>Redirecting to <span x-text="selecting?.display_name"></span>...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function loginApp() {
+        return {
+            // State
+            idps: [],
+            filteredIdPs: [],
+            searchQuery: '',
+            loading: true,
+            returnUrl: new URLSearchParams(window.location.search).get('return_url') || '/',
+            rememberedIdPId: null,
+            rememberedIdP: null,
+            showAllIdPs: false,
+            session: { authenticated: false },
+            error: null,
+            selecting: null,
+
+            // Lifecycle
+            async init() {
+                await Promise.all([
+                    this.fetchSession(),
+                    this.fetchIdPs()
+                ]);
+            },
+
+            // API Methods
+            async fetchSession() {
+                try {
+                    const resp = await fetch('/saml/api/session');
+                    if (resp.ok) {
+                        this.session = await resp.json();
+                    }
+                } catch (e) {
+                    // Session check failure is non-fatal
+                    console.error('Session check failed:', e);
+                }
+            },
+
+            async fetchIdPs() {
+                this.loading = true;
+                this.error = null;
+                try {
+                    const resp = await fetch('/saml/api/idps');
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    const data = await resp.json();
+                    this.idps = data.idps || [];
+                    this.filteredIdPs = this.idps;
+                    this.rememberedIdPId = data.remembered_idp_id || null;
+                    this.rememberedIdP = this.idps.find(
+                        idp => idp.entity_id === this.rememberedIdPId
+                    ) || null;
+                } catch (e) {
+                    this.error = 'Failed to load institutions. Please try again.';
+                    console.error('Fetch IdPs failed:', e);
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            filterIdPs() {
+                if (!this.searchQuery.trim()) {
+                    this.filteredIdPs = this.idps;
+                    return;
+                }
+                const q = this.searchQuery.toLowerCase();
+                this.filteredIdPs = this.idps.filter(idp =>
+                    idp.display_name.toLowerCase().includes(q) ||
+                    (idp.description && idp.description.toLowerCase().includes(q)) ||
+                    idp.entity_id.toLowerCase().includes(q)
+                );
+            },
+
+            async selectIdP(idp) {
+                this.selecting = idp;
+                this.error = null;
+                try {
+                    const resp = await fetch('/saml/api/select', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            entity_id: idp.entity_id,
+                            return_url: this.returnUrl
+                        }),
+                        redirect: 'follow'
+                    });
+                    // The browser should follow the redirect automatically
+                    // If we get here without redirect, check the response
+                    if (resp.redirected) {
+                        window.location.href = resp.url;
+                    }
+                } catch (e) {
+                    this.error = 'Failed to connect to identity provider. Please try again.';
+                    this.selecting = null;
+                    console.error('Select IdP failed:', e);
+                }
+            },
+
+            getIdPName(entityId) {
+                const idp = this.idps.find(i => i.entity_id === entityId);
+                return idp?.display_name || entityId || 'Unknown';
+            },
+
+            logout() {
+                const returnTo = window.location.pathname + window.location.search;
+                window.location.href = '/saml/logout?return_to=' + encodeURIComponent(returnTo);
+            }
+        };
+    }
+    </script>
+</body>
+</html>

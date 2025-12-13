@@ -1,0 +1,76 @@
+# Custom Login UI Example
+#
+# This demonstrates using login_redirect to serve a custom discovery UI
+# instead of the default embedded template.
+#
+# The custom UI (login.html) uses the JSON API at /saml/api/* to:
+# 1. Fetch available IdPs
+# 2. Show remembered IdP preference
+# 3. Initiate SAML authentication flow
+
+myapp.example.com {
+    # Serve the custom login page BEFORE saml_disco
+    # This ensures /login is accessible without authentication
+    handle /login {
+        root * /var/www/custom-ui
+        rewrite * /login.html
+        file_server
+    }
+
+    # SAML Discovery Service configuration
+    saml_disco {
+        # Required: SP Entity ID (must match IdP configuration)
+        entity_id https://myapp.example.com/saml
+
+        # Required: IdP metadata source
+        # Use URL for federation aggregates (recommended for production)
+        metadata_url https://federation.example.edu/metadata/idps.xml
+        # Or use a local file for testing/single IdP:
+        # metadata_file /etc/caddy/saml/federation-metadata.xml
+
+        # Required: SP credentials for signing AuthnRequests
+        cert_file /etc/caddy/saml/sp-cert.pem
+        key_file /etc/caddy/saml/sp-key.pem
+
+        # IMPORTANT: Redirect to custom login instead of default disco
+        login_redirect /login
+
+        # Remember user's last IdP choice (default: 30d)
+        remember_idp_duration 30d
+
+        # Session settings
+        session_duration 8h
+        session_cookie_name myapp_auth
+
+        # Optional: Filter to specific IdPs from large federation
+        # idp_filter *.example.edu
+
+        # Optional: Refresh metadata periodically (default: 1h)
+        # metadata_refresh_interval 1h
+    }
+
+    # Protected application - all other routes require authentication
+    reverse_proxy localhost:8080
+}
+
+# -------------------------------------------------------------------
+# Alternative: Minimal development setup
+# -------------------------------------------------------------------
+#
+# localhost {
+#     handle /login {
+#         root * .
+#         rewrite * /login.html
+#         file_server
+#     }
+#
+#     saml_disco {
+#         entity_id https://localhost/saml
+#         metadata_file ./testdata/sample-metadata.xml
+#         cert_file ./testdata/sp-cert.pem
+#         key_file ./testdata/sp-key.pem
+#         login_redirect /login
+#     }
+#
+#     respond "Hello, {http.request.header.X-SAML-Subject}!"
+# }
