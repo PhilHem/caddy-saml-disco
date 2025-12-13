@@ -482,7 +482,7 @@ func TestServeHTTP_NoSession_NoMetadataStore_ReturnsError(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "Metadata store not configured") {
+	if !strings.Contains(body, "Metadata store") {
 		t.Errorf("error message should mention metadata store, got: %q", body)
 	}
 }
@@ -640,7 +640,7 @@ func TestServeHTTP_NoSession_NoSAMLService_ReturnsError(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "SAML service not configured") {
+	if !strings.Contains(body, "SAML service") {
 		t.Errorf("error message should mention SAML service, got: %q", body)
 	}
 }
@@ -1624,6 +1624,263 @@ func TestDiscoveryUI_SingleIdP_AutoRedirect(t *testing.T) {
 	relayState := redirectURL.Query().Get("RelayState")
 	if relayState != "/dashboard" {
 		t.Errorf("RelayState = %q, want %q", relayState, "/dashboard")
+	}
+}
+
+// =============================================================================
+// Error Template Rendering Tests
+// =============================================================================
+
+// TestRenderHTTPError_SetsStatusAndRendersTemplate verifies that renderHTTPError
+// sets the correct status code, Content-Type, and renders the error template.
+func TestRenderHTTPError_SetsStatusAndRendersTemplate(t *testing.T) {
+	s := &SAMLDisco{
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	tests := []struct {
+		name       string
+		statusCode int
+		title      string
+		message    string
+	}{
+		{
+			name:       "500 configuration error",
+			statusCode: http.StatusInternalServerError,
+			title:      "Configuration Error",
+			message:    "SAML service is not configured",
+		},
+		{
+			name:       "401 authentication failed",
+			statusCode: http.StatusUnauthorized,
+			title:      "Authentication Failed",
+			message:    "SAML authentication failed",
+		},
+		{
+			name:       "400 bad request",
+			statusCode: http.StatusBadRequest,
+			title:      "Invalid Request",
+			message:    "entity_id is required",
+		},
+		{
+			name:       "404 not found",
+			statusCode: http.StatusNotFound,
+			title:      "IdP Not Found",
+			message:    "The requested identity provider was not found",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+
+			s.renderHTTPError(rec, tc.statusCode, tc.title, tc.message)
+
+			// Verify status code
+			if rec.Code != tc.statusCode {
+				t.Errorf("status = %d, want %d", rec.Code, tc.statusCode)
+			}
+
+			// Verify Content-Type
+			contentType := rec.Header().Get("Content-Type")
+			if contentType != "text/html; charset=utf-8" {
+				t.Errorf("Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
+			}
+
+			// Verify HTML contains title and message
+			body := rec.Body.String()
+			if !strings.Contains(body, tc.title) {
+				t.Errorf("response should contain title %q, got: %s", tc.title, body)
+			}
+			if !strings.Contains(body, tc.message) {
+				t.Errorf("response should contain message %q, got: %s", tc.message, body)
+			}
+
+			// Verify it's valid HTML
+			if !strings.Contains(body, "<html") {
+				t.Errorf("response should be HTML, got: %s", body)
+			}
+		})
+	}
+}
+
+// TestRenderHTTPError_EscapesHTML verifies that renderHTTPError escapes HTML
+// in title and message to prevent XSS attacks.
+func TestRenderHTTPError_EscapesHTML(t *testing.T) {
+	s := &SAMLDisco{
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	rec := httptest.NewRecorder()
+
+	// Try to inject HTML/JS via error message
+	s.renderHTTPError(rec, http.StatusInternalServerError,
+		"<script>alert('title')</script>",
+		"<script>alert('message')</script>")
+
+	body := rec.Body.String()
+
+	// Should NOT contain raw script tags (should be escaped)
+	if strings.Contains(body, "<script>") {
+		t.Errorf("response should escape HTML, got raw script tags: %s", body)
+	}
+
+	// Should contain escaped versions
+	if !strings.Contains(body, "&lt;script&gt;") {
+		t.Errorf("response should contain escaped script tags, got: %s", body)
+	}
+}
+
+// TestServeHTTP_NoMetadataStore_ReturnsHTMLError verifies that missing
+// metadata store returns an HTML error page, not plain text.
+func TestServeHTTP_NoMetadataStore_ReturnsHTMLError(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	store := NewCookieSessionStore(key, 8*time.Hour)
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+		},
+		sessionStore:     store,
+		samlService:      samlService,
+		metadataStore:    nil, // No metadata store configured
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	// Verify it's HTML, not plain text
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "<html") {
+		t.Errorf("error response should be HTML, got: %s", body)
+	}
+	if !strings.Contains(body, "Configuration Error") {
+		t.Errorf("error response should contain 'Configuration Error', got: %s", body)
+	}
+}
+
+// TestHandleACS_SAMLNotConfigured_ReturnsHTMLError verifies that ACS errors
+// return HTML error pages.
+func TestHandleACS_SAMLNotConfigured_ReturnsHTMLError(t *testing.T) {
+	s := &SAMLDisco{
+		samlService:      nil, // SAML not configured
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/saml/acs", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "<html") {
+		t.Errorf("error response should be HTML, got: %s", body)
+	}
+}
+
+// TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsHTMLError verifies that
+// /saml/api/idps returns HTML error when metadata store is not configured.
+func TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsHTMLError(t *testing.T) {
+	s := &SAMLDisco{
+		metadataStore:    nil,
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
+	}
+}
+
+// TestDiscoveryAPI_SelectIdP_NotFound_ReturnsHTMLError verifies that
+// 404 errors return HTML error pages.
+func TestDiscoveryAPI_SelectIdP_NotFound_ReturnsHTMLError(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp.example.com/saml"},
+		},
+	}
+
+	s := &SAMLDisco{
+		metadataStore:    metadataStore,
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	body := strings.NewReader(`{"entity_id": "https://unknown.example.com/saml"}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "text/html; charset=utf-8")
+	}
+
+	bodyStr := rec.Body.String()
+	if !strings.Contains(bodyStr, "IdP Not Found") {
+		t.Errorf("error response should contain 'IdP Not Found', got: %s", bodyStr)
 	}
 }
 

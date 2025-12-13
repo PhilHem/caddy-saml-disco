@@ -63,7 +63,7 @@ Development phases for caddy-saml-disco.
 **Goal:** Enable custom frontends and UI customization.
 
 - [x] Template override via `templates_dir` config
-- [ ] Wire up error template to HTTP error handlers (ACS errors, metadata errors)
+- [x] Wire up error template to HTTP error handlers (ACS errors, metadata errors)
 - [ ] `login_redirect` for fully custom UIs
 - [ ] Remember last-used IdP cookie
 - [ ] FeLS-style discovery UI (autocomplete search, "Remember me" checkbox, alternative login methods section)
