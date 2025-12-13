@@ -146,21 +146,14 @@ func (s *InMemoryMetadataStore) GetIdP(entityID string) (*IdPInfo, error) {
 }
 
 // ListIdPs returns all IdPs, optionally filtered by a search term.
+// Searches across EntityID, DisplayName, and all DisplayNames language variants.
 func (s *InMemoryMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if filter == "" {
-		result := make([]IdPInfo, len(s.idps))
-		copy(result, s.idps)
-		return result, nil
-	}
-
-	filter = strings.ToLower(filter)
 	var result []IdPInfo
 	for _, idp := range s.idps {
-		if strings.Contains(strings.ToLower(idp.DisplayName), filter) ||
-			strings.Contains(strings.ToLower(idp.EntityID), filter) {
+		if MatchesSearch(&idp, filter) {
 			result = append(result, idp)
 		}
 	}
@@ -216,7 +209,8 @@ func (s *FileMetadataStore) GetIdP(entityID string) (*IdPInfo, error) {
 	return nil, ErrIdPNotFound
 }
 
-// ListIdPs returns all IdPs, optionally filtered by display name or entity ID.
+// ListIdPs returns all IdPs, optionally filtered by a search term.
+// Searches across EntityID, DisplayName, and all DisplayNames language variants.
 func (s *FileMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -225,19 +219,9 @@ func (s *FileMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 		return nil, nil
 	}
 
-	// No filter - return all IdPs
-	if filter == "" {
-		result := make([]IdPInfo, len(s.idps))
-		copy(result, s.idps)
-		return result, nil
-	}
-
-	// Apply filter
-	filter = strings.ToLower(filter)
 	var result []IdPInfo
 	for _, idp := range s.idps {
-		if strings.Contains(strings.ToLower(idp.DisplayName), filter) ||
-			strings.Contains(strings.ToLower(idp.EntityID), filter) {
+		if MatchesSearch(&idp, filter) {
 			result = append(result, idp)
 		}
 	}
@@ -617,6 +601,35 @@ func LocalizeIdPInfo(idp IdPInfo, prefs []string, defaultLang string) IdPInfo {
 	return localized
 }
 
+// MatchesSearch returns true if the IdP matches the search query.
+// Searches across: EntityID, DisplayName, and ALL DisplayNames variants.
+// This enables searching in any language regardless of Accept-Language.
+func MatchesSearch(idp *IdPInfo, query string) bool {
+	if query == "" {
+		return true
+	}
+	query = strings.ToLower(query)
+
+	// Check EntityID
+	if strings.Contains(strings.ToLower(idp.EntityID), query) {
+		return true
+	}
+
+	// Check default DisplayName
+	if strings.Contains(strings.ToLower(idp.DisplayName), query) {
+		return true
+	}
+
+	// Check ALL language variants
+	for _, name := range idp.DisplayNames {
+		if strings.Contains(strings.ToLower(name), query) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // selectBestLogo returns the URL of the largest logo (by area).
 func selectBestLogo(logos []Logo) string {
 	if len(logos) == 0 {
@@ -688,7 +701,8 @@ func (s *URLMetadataStore) GetIdP(entityID string) (*IdPInfo, error) {
 	return nil, ErrIdPNotFound
 }
 
-// ListIdPs returns all IdPs, optionally filtered by display name or entity ID.
+// ListIdPs returns all IdPs, optionally filtered by a search term.
+// Searches across EntityID, DisplayName, and all DisplayNames language variants.
 func (s *URLMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -697,17 +711,9 @@ func (s *URLMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 		return nil, nil
 	}
 
-	if filter == "" {
-		result := make([]IdPInfo, len(s.idps))
-		copy(result, s.idps)
-		return result, nil
-	}
-
-	filter = strings.ToLower(filter)
 	var result []IdPInfo
 	for _, idp := range s.idps {
-		if strings.Contains(strings.ToLower(idp.DisplayName), filter) ||
-			strings.Contains(strings.ToLower(idp.EntityID), filter) {
+		if MatchesSearch(&idp, filter) {
 			result = append(result, idp)
 		}
 	}

@@ -374,26 +374,26 @@ func TestFileMetadataStore_Load_DFNAAISample_FilterByUniversity(t *testing.T) {
 		t.Errorf("ListIdPs(Berlin) returned %d IdPs, want 1", len(idps))
 	}
 
-	// Filter for German "Universität" should match 2 institutions:
-	// FU Berlin, Uni Freiburg (TUM uses "Technische Universität")
+	// Filter for German "Universität" matches all language variants:
+	// FU Berlin, TUM (Technische Universität München), Uni Freiburg = 3 matches
 	idps, err = store.ListIdPs("Universität")
 	if err != nil {
 		t.Fatalf("ListIdPs(Universität) failed: %v", err)
 	}
 
-	if len(idps) != 2 {
-		t.Errorf("ListIdPs(Universität) returned %d IdPs, want 2", len(idps))
+	if len(idps) != 3 {
+		t.Errorf("ListIdPs(Universität) returned %d IdPs, want 3", len(idps))
 	}
 
-	// Filter for "Hochschule" no longer matches RWTH since it now uses English name
-	// "RWTH Aachen University" (from mdui:DisplayName)
+	// Filter for "Hochschule" now matches RWTH's German name
+	// "Rheinisch-Westfälische Technische Hochschule Aachen" in DisplayNames["de"]
 	idps, err = store.ListIdPs("Hochschule")
 	if err != nil {
 		t.Fatalf("ListIdPs(Hochschule) failed: %v", err)
 	}
 
-	if len(idps) != 0 {
-		t.Errorf("ListIdPs(Hochschule) returned %d IdPs, want 0 (RWTH now uses English name)", len(idps))
+	if len(idps) != 1 {
+		t.Errorf("ListIdPs(Hochschule) returned %d IdPs, want 1 (RWTH German name)", len(idps))
 	}
 
 	// Filter for "Max Planck" should match Max Planck Society (1 of 6)
@@ -1673,6 +1673,86 @@ func TestLocalizeIdPInfo_ConfigurableDefault(t *testing.T) {
 			}
 			if localized.Description != tc.expectedDesc {
 				t.Errorf("Description = %q, want %q", localized.Description, tc.expectedDesc)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Multi-Language Search Tests (Phase 3)
+// =============================================================================
+
+// TestMatchesSearch_AllLanguageVariants verifies that search matches against
+// ALL language variants of DisplayNames, not just the default DisplayName.
+func TestMatchesSearch_AllLanguageVariants(t *testing.T) {
+	idp := IdPInfo{
+		EntityID:    "https://tum.de/idp",
+		DisplayName: "Technical University of Munich",
+		DisplayNames: map[string]string{
+			"en": "Technical University of Munich",
+			"de": "Technische Universität München",
+		},
+	}
+
+	tests := []struct {
+		query    string
+		expected bool
+	}{
+		// Empty query matches all
+		{"", true},
+
+		// English name matches
+		{"Munich", true},
+		{"Technical", true},
+		{"university", true}, // case insensitive
+
+		// German name matches (NEW BEHAVIOR!)
+		{"München", true},
+		{"Technische", true},
+		{"Universität", true},
+
+		// EntityID matches
+		{"tum.de", true},
+
+		// No match
+		{"Harvard", false},
+		{"Stanford", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.query, func(t *testing.T) {
+			result := MatchesSearch(&idp, tc.query)
+			if result != tc.expected {
+				t.Errorf("MatchesSearch(%q) = %v, want %v", tc.query, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestMatchesSearch_EmptyDisplayNames verifies backward compatibility when
+// DisplayNames map is nil (uses only DisplayName field).
+func TestMatchesSearch_EmptyDisplayNames(t *testing.T) {
+	idp := IdPInfo{
+		EntityID:    "https://example.com/idp",
+		DisplayName: "Example University",
+		// DisplayNames is nil
+	}
+
+	tests := []struct {
+		query    string
+		expected bool
+	}{
+		{"Example", true},
+		{"University", true},
+		{"example.com", true},
+		{"Unknown", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.query, func(t *testing.T) {
+			result := MatchesSearch(&idp, tc.query)
+			if result != tc.expected {
+				t.Errorf("MatchesSearch(%q) = %v, want %v", tc.query, result, tc.expected)
 			}
 		})
 	}
