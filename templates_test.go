@@ -340,3 +340,120 @@ func TestNewTemplateRendererWithDir_EmptyDir_UsesEmbedded(t *testing.T) {
 		t.Error("should use embedded disco template when custom dir is empty")
 	}
 }
+
+// Cycle 4: FeLS Template Data Extension
+
+func TestDiscoData_HasPinnedIdPs_Field(t *testing.T) {
+	data := DiscoData{
+		PinnedIdPs: []IdPInfo{
+			{EntityID: "https://pinned.edu", DisplayName: "Pinned University"},
+		},
+	}
+	if len(data.PinnedIdPs) != 1 {
+		t.Errorf("PinnedIdPs length = %d, want 1", len(data.PinnedIdPs))
+	}
+}
+
+func TestDiscoData_HasAltLogins_Field(t *testing.T) {
+	data := DiscoData{
+		AltLogins: []AltLoginOption{
+			{URL: "/local", Label: "Local Account"},
+		},
+	}
+	if len(data.AltLogins) != 1 {
+		t.Errorf("AltLogins length = %d, want 1", len(data.AltLogins))
+	}
+}
+
+func TestDiscoData_HasServiceName_Field(t *testing.T) {
+	data := DiscoData{
+		ServiceName: "My Research Portal",
+	}
+	if data.ServiceName != "My Research Portal" {
+		t.Errorf("ServiceName = %q, want %q", data.ServiceName, "My Research Portal")
+	}
+}
+
+func TestDiscoData_HasRememberedIdP_Field(t *testing.T) {
+	idp := &IdPInfo{EntityID: "https://remembered.edu", DisplayName: "Remembered University"}
+	data := DiscoData{
+		RememberedIdP: idp,
+	}
+	if data.RememberedIdP == nil {
+		t.Fatal("RememberedIdP should not be nil")
+	}
+	if data.RememberedIdP.EntityID != "https://remembered.edu" {
+		t.Errorf("RememberedIdP.EntityID = %q, want %q", data.RememberedIdP.EntityID, "https://remembered.edu")
+	}
+}
+
+func TestAltLoginOption_Struct(t *testing.T) {
+	opt := AltLoginOption{
+		URL:   "/guest",
+		Label: "Guest Access",
+	}
+	if opt.URL != "/guest" {
+		t.Errorf("URL = %q, want %q", opt.URL, "/guest")
+	}
+	if opt.Label != "Guest Access" {
+		t.Errorf("Label = %q, want %q", opt.Label, "Guest Access")
+	}
+}
+
+// Cycle 7: Template Selection Tests
+
+func TestNewTemplateRendererWithTemplate_Default_LoadsDiscoHtml(t *testing.T) {
+	renderer, err := NewTemplateRendererWithTemplate("")
+	if err != nil {
+		t.Fatalf("NewTemplateRendererWithTemplate(\"\") error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	err = renderer.RenderDisco(&buf, DiscoData{
+		IdPs:      []IdPInfo{{EntityID: "test", DisplayName: "Test IdP"}},
+		ReturnURL: "/",
+	})
+	if err != nil {
+		t.Fatalf("RenderDisco() error = %v", err)
+	}
+
+	// Default template should have the standard title
+	if !strings.Contains(buf.String(), "Select your Identity Provider") {
+		t.Error("default template should contain 'Select your Identity Provider'")
+	}
+}
+
+func TestNewTemplateRendererWithTemplate_Fels_LoadsDiscoFelsHtml(t *testing.T) {
+	renderer, err := NewTemplateRendererWithTemplate("fels")
+	if err != nil {
+		t.Fatalf("NewTemplateRendererWithTemplate(\"fels\") error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	err = renderer.RenderDisco(&buf, DiscoData{
+		IdPs:        []IdPInfo{{EntityID: "test", DisplayName: "Test IdP"}},
+		ReturnURL:   "/",
+		ServiceName: "My Portal",
+	})
+	if err != nil {
+		t.Fatalf("RenderDisco() error = %v", err)
+	}
+
+	output := buf.String()
+	// FeLS template should have a distinct marker we can test for
+	// It should display the service name
+	if !strings.Contains(output, "My Portal") {
+		t.Error("fels template should display ServiceName")
+	}
+	// FeLS template should have search autocomplete functionality marker
+	if !strings.Contains(output, "autocomplete") || !strings.Contains(output, "search") {
+		t.Error("fels template should have autocomplete search functionality")
+	}
+}
+
+func TestNewTemplateRendererWithTemplate_Invalid_ReturnsError(t *testing.T) {
+	_, err := NewTemplateRendererWithTemplate("invalid")
+	if err == nil {
+		t.Error("NewTemplateRendererWithTemplate(\"invalid\") should return error")
+	}
+}

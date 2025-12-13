@@ -120,7 +120,8 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		}
 		s.templateRenderer = renderer
 	} else {
-		renderer, err := NewTemplateRenderer()
+		// Use the configured discovery template (default, fels, etc.)
+		renderer, err := NewTemplateRendererWithTemplate(s.DiscoveryTemplate)
 		if err != nil {
 			return fmt.Errorf("load embedded templates: %w", err)
 		}
@@ -312,6 +313,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 type selectIdPRequest struct {
 	EntityID  string `json:"entity_id"`
 	ReturnURL string `json:"return_url"`
+	Remember  bool   `json:"remember"` // Explicit opt-in required for remember cookie
 }
 
 // handleSelectIdP handles POST /saml/api/select to start SAML auth with a selected IdP.
@@ -341,8 +343,10 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 		return nil
 	}
 
-	// Remember the selected IdP for next time
-	s.setRememberIdPCookie(w, r, req.EntityID)
+	// Only remember the selected IdP if explicitly requested (BREAKING CHANGE)
+	if req.Remember {
+		s.setRememberIdPCookie(w, r, req.EntityID)
+	}
 
 	// Check SAML service is configured
 	if s.samlService == nil {
@@ -365,7 +369,11 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 		return nil
 	}
 
-	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+	// Return JSON with redirect URL (instead of 302 which causes fetch issues)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"redirect_url": redirectURL.String(),
+	})
 	return nil
 }
 
@@ -414,10 +422,34 @@ func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) er
 
 // renderDiscoveryHTML renders the IdP selection page using the template renderer.
 func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, r *http.Request, idps []IdPInfo, returnURL string) error {
+	// Separate pinned IdPs from the main list
+	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(idps)
+
+	// Get the remembered IdP entity ID
+	rememberedIdPID := s.getRememberIdPCookie(r)
+
+	// Look up full IdP info for the remembered IdP
+	var rememberedIdP *IdPInfo
+	if rememberedIdPID != "" && s.metadataStore != nil {
+		if idp, err := s.metadataStore.GetIdP(rememberedIdPID); err == nil {
+			rememberedIdP = idp
+		}
+	}
+
+	// Convert alt login config to template data
+	altLogins := make([]AltLoginOption, len(s.AltLogins))
+	for i, alt := range s.AltLogins {
+		altLogins[i] = AltLoginOption{URL: alt.URL, Label: alt.Label}
+	}
+
 	return s.templateRenderer.RenderDisco(w, DiscoData{
-		IdPs:            idps,
+		IdPs:            filteredIdPs,
+		PinnedIdPs:      pinnedIdPs,
 		ReturnURL:       returnURL,
-		RememberedIdPID: s.getRememberIdPCookie(r),
+		RememberedIdPID: rememberedIdPID,
+		RememberedIdP:   rememberedIdP,
+		AltLogins:       altLogins,
+		ServiceName:     s.ServiceName,
 	})
 }
 
@@ -464,11 +496,13 @@ func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) er
 // idpListResponse is the JSON response for GET /saml/api/idps.
 type idpListResponse struct {
 	IdPs          []IdPInfo `json:"idps"`
+	PinnedIdPs    []IdPInfo `json:"pinned_idps,omitempty"`
 	RememberedIdP string    `json:"remembered_idp_id,omitempty"`
 }
 
 // handleListIdPs handles GET /saml/api/idps and returns available IdPs as JSON.
 // Supports optional ?q=search query parameter to filter IdPs.
+// Pinned IdPs are separated into their own list and filtered from the main list.
 func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error {
 	if s.metadataStore == nil {
 		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "Metadata store is not configured")
@@ -489,13 +523,64 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 		idps = []IdPInfo{}
 	}
 
+	// Separate pinned IdPs from the main list
+	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(idps)
+
 	response := idpListResponse{
-		IdPs:          idps,
+		IdPs:          filteredIdPs,
+		PinnedIdPs:    pinnedIdPs,
 		RememberedIdP: s.getRememberIdPCookie(r),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(response)
+}
+
+// separatePinnedIdPs separates configured pinned IdPs from the main list.
+// Returns (pinnedIdPs, remainingIdPs). Pinned IdPs are returned in the order
+// specified in the configuration, not in their original order in the list.
+func (s *SAMLDisco) separatePinnedIdPs(idps []IdPInfo) ([]IdPInfo, []IdPInfo) {
+	if len(s.PinnedIdPs) == 0 {
+		return nil, idps
+	}
+
+	// Create a map for quick lookup of pinned entity IDs
+	pinnedSet := make(map[string]bool, len(s.PinnedIdPs))
+	for _, entityID := range s.PinnedIdPs {
+		pinnedSet[entityID] = true
+	}
+
+	// Create a map to look up IdP info by entity ID
+	idpMap := make(map[string]IdPInfo, len(idps))
+	for _, idp := range idps {
+		idpMap[idp.EntityID] = idp
+	}
+
+	// Build pinned list in configuration order
+	var pinnedIdPs []IdPInfo
+	for _, entityID := range s.PinnedIdPs {
+		if idp, ok := idpMap[entityID]; ok {
+			pinnedIdPs = append(pinnedIdPs, idp)
+		}
+	}
+
+	// Build remaining list (excluding pinned)
+	var remainingIdPs []IdPInfo
+	for _, idp := range idps {
+		if !pinnedSet[idp.EntityID] {
+			remainingIdPs = append(remainingIdPs, idp)
+		}
+	}
+
+	// Ensure we return empty slices instead of nil
+	if pinnedIdPs == nil {
+		pinnedIdPs = []IdPInfo{}
+	}
+	if remainingIdPs == nil {
+		remainingIdPs = []IdPInfo{}
+	}
+
+	return pinnedIdPs, remainingIdPs
 }
 
 // handleLogout handles the logout endpoint by clearing the session cookie

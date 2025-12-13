@@ -68,9 +68,9 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({entity_id: entityId, return_url: returnUrl})
-                }).then(resp => {
-                    if (resp.redirected) {
-                        window.location.href = resp.url;
+                }).then(resp => resp.json()).then(data => {
+                    if (data.redirect_url) {
+                        window.location.href = data.redirect_url;
                     }
                 });
             });

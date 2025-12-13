@@ -108,6 +108,34 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			s.IdPFilter = d.Val()
 
+		case "discovery_template":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.DiscoveryTemplate = d.Val()
+
+		case "service_name":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.ServiceName = d.Val()
+
+		case "pinned_idps":
+			s.PinnedIdPs = d.RemainingArgs()
+			if len(s.PinnedIdPs) == 0 {
+				return d.ArgErr()
+			}
+
+		case "alt_login":
+			args := d.RemainingArgs()
+			if len(args) < 2 {
+				return d.ArgErr()
+			}
+			s.AltLogins = append(s.AltLogins, AltLoginConfig{
+				URL:   args[0],
+				Label: args[1],
+			})
+
 		default:
 			return d.Errf("unrecognized subdirective: %s", d.Val())
 		}

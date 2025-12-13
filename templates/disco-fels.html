@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .ServiceName}}Sign in to {{.ServiceName}}{{else}}Select Identity Provider{{end}}</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-hover: #1557b0;
+            --bg: #f8f9fa;
+            --card-bg: #fff;
+            --text: #202124;
+            --text-muted: #5f6368;
+            --border: #dadce0;
+            --shadow: 0 1px 3px rgba(60,64,67,0.15);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0; padding: 20px; background: var(--bg); color: var(--text);
+        }
+        .container { max-width: 480px; margin: 40px auto; }
+        .card { background: var(--card-bg); border-radius: 8px; box-shadow: var(--shadow); padding: 32px; margin-bottom: 16px; }
+        h1 { margin: 0 0 8px; font-size: 24px; font-weight: 400; }
+        .subtitle { color: var(--text-muted); margin-bottom: 24px; }
+
+        /* Remembered IdP Section */
+        .remembered-section { margin-bottom: 24px; }
+        .remembered-idp {
+            display: flex; align-items: center; padding: 16px;
+            border: 2px solid var(--primary); border-radius: 8px; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .remembered-idp:hover { background: #e8f0fe; }
+        .remembered-logo { width: 48px; height: 48px; margin-right: 16px; object-fit: contain; }
+        .remembered-info { flex: 1; }
+        .remembered-name { font-weight: 500; font-size: 16px; }
+        .remembered-hint { color: var(--text-muted); font-size: 14px; }
+        .remember-checkbox { display: flex; align-items: center; margin-top: 12px; gap: 8px; }
+        .remember-checkbox input { width: 18px; height: 18px; }
+        .different-link { color: var(--primary); text-decoration: none; margin-top: 12px; display: inline-block; font-size: 14px; }
+        .different-link:hover { text-decoration: underline; }
+
+        /* Pinned IdPs */
+        .pinned-section { margin-bottom: 24px; }
+        .pinned-label { font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; letter-spacing: 0.5px; }
+        .pinned-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+        .pinned-idp {
+            padding: 10px 16px; border: 1px solid var(--border); border-radius: 20px;
+            cursor: pointer; font-size: 14px; transition: all 0.2s;
+        }
+        .pinned-idp:hover { border-color: var(--primary); background: #e8f0fe; }
+
+        /* Search Autocomplete */
+        .search-section { position: relative; }
+        .search-label { font-size: 14px; font-weight: 500; margin-bottom: 8px; display: block; }
+        .search-input {
+            width: 100%; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px;
+            font-size: 16px; outline: none;
+        }
+        .search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(26,115,232,0.2); }
+
+        /* Autocomplete dropdown */
+        .autocomplete-list {
+            position: absolute; top: 100%; left: 0; right: 0;
+            background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+            max-height: 300px; overflow-y: auto; display: none; margin-top: 4px;
+            box-shadow: 0 4px 6px rgba(60,64,67,0.15); z-index: 100;
+        }
+        .autocomplete-list.visible { display: block; }
+        .autocomplete-item {
+            padding: 12px 16px; cursor: pointer; display: flex; align-items: center;
+        }
+        .autocomplete-item:hover, .autocomplete-item.highlighted { background: #f1f3f4; }
+        .autocomplete-item .logo { width: 32px; height: 32px; margin-right: 12px; object-fit: contain; }
+        .autocomplete-item .name { font-weight: 500; }
+        .autocomplete-item .desc { font-size: 13px; color: var(--text-muted); }
+        .autocomplete-empty { padding: 16px; color: var(--text-muted); text-align: center; }
+
+        /* Status for screen readers */
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+
+        /* Alternative logins */
+        .alt-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+        .alt-label { font-size: 12px; color: var(--text-muted); text-align: center; margin-bottom: 16px; }
+        .alt-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
+        .alt-link { color: var(--primary); text-decoration: none; font-size: 14px; }
+        .alt-link:hover { text-decoration: underline; }
+
+        .empty-state { text-align: center; color: var(--text-muted); padding: 40px 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>{{if .ServiceName}}Sign in to {{.ServiceName}}{{else}}Select your Identity Provider{{end}}</h1>
+            <p class="subtitle">Choose your institution to continue</p>
+
+            {{if .RememberedIdP}}
+            <!-- Remembered IdP Section -->
+            <div class="remembered-section" id="rememberedSection">
+                <div class="remembered-idp" data-entity-id="{{.RememberedIdP.EntityID}}" role="button" tabindex="0" aria-label="Continue with {{.RememberedIdP.DisplayName}}">
+                    {{if .RememberedIdP.LogoURL}}<img class="remembered-logo" src="{{.RememberedIdP.LogoURL}}" alt="">{{end}}
+                    <div class="remembered-info">
+                        <div class="remembered-name">{{.RememberedIdP.DisplayName}}</div>
+                        <div class="remembered-hint">Continue with your previous selection</div>
+                    </div>
+                </div>
+                <div class="remember-checkbox">
+                    <input type="checkbox" id="rememberChoice" aria-describedby="rememberHint">
+                    <label for="rememberChoice">Remember my selection</label>
+                </div>
+                <span id="rememberHint" class="sr-only">When checked, your institution will be remembered for future visits</span>
+                <a href="#" class="different-link" id="useDifferent">Use a different institution</a>
+            </div>
+            {{end}}
+
+            {{if .PinnedIdPs}}
+            <!-- Pinned IdPs -->
+            <div class="pinned-section" id="pinnedSection">
+                <div class="pinned-label">Popular institutions</div>
+                <div class="pinned-grid">
+                    {{range .PinnedIdPs}}
+                    <button class="pinned-idp" data-entity-id="{{.EntityID}}">{{.DisplayName}}</button>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+
+            {{if .IdPs}}
+            <!-- Search with Autocomplete -->
+            <div class="search-section" id="searchSection">
+                <label class="search-label" for="search">Search for your institution</label>
+                <input type="text"
+                       class="search-input"
+                       id="search"
+                       placeholder="Type to search..."
+                       autocomplete="off"
+                       role="combobox"
+                       aria-expanded="false"
+                       aria-controls="autocompleteList"
+                       aria-autocomplete="list">
+                <div class="autocomplete-list" id="autocompleteList" role="listbox" aria-label="Institution suggestions">
+                </div>
+                <div class="sr-only" role="status" aria-live="polite" id="searchStatus"></div>
+            </div>
+            {{else}}
+            {{if not .RememberedIdP}}{{if not .PinnedIdPs}}
+            <div class="empty-state">No identity providers available</div>
+            {{end}}{{end}}
+            {{end}}
+
+            {{if .AltLogins}}
+            <!-- Alternative Logins -->
+            <div class="alt-section">
+                <div class="alt-label">or</div>
+                <div class="alt-links">
+                    {{range .AltLogins}}
+                    <a href="{{.URL}}" class="alt-link">{{.Label}}</a>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        const returnUrl = '{{.ReturnURL}}';
+        const idps = [
+            {{range .IdPs}}
+            {entityId: '{{.EntityID}}', name: '{{.DisplayName}}', desc: '{{.Description}}', logo: '{{.LogoURL}}'},
+            {{end}}
+        ];
+
+        const search = document.getElementById('search');
+        const autocompleteList = document.getElementById('autocompleteList');
+        const searchStatus = document.getElementById('searchStatus');
+        const rememberCheckbox = document.getElementById('rememberChoice');
+
+        let highlightedIndex = -1;
+        let filteredIdps = [];
+        let debounceTimer = null;
+
+        function selectIdp(entityId) {
+            const remember = rememberCheckbox ? rememberCheckbox.checked : false;
+            fetch('/saml/api/select', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({entity_id: entityId, return_url: returnUrl, remember: remember})
+            }).then(resp => resp.json()).then(data => {
+                if (data.redirect_url) {
+                    window.location.href = data.redirect_url;
+                }
+            });
+        }
+
+        function renderAutocomplete() {
+            if (filteredIdps.length === 0) {
+                autocompleteList.innerHTML = '<div class="autocomplete-empty">No matching institutions</div>';
+            } else {
+                autocompleteList.innerHTML = filteredIdps.map((idp, i) => `
+                    <div class="autocomplete-item${i === highlightedIndex ? ' highlighted' : ''}"
+                         data-entity-id="${idp.entityId}"
+                         data-index="${i}"
+                         role="option"
+                         aria-selected="${i === highlightedIndex}">
+                        ${idp.logo ? '<img class="logo" src="' + idp.logo + '" alt="">' : ''}
+                        <div>
+                            <div class="name">${idp.name}</div>
+                            ${idp.desc ? '<div class="desc">' + idp.desc + '</div>' : ''}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // Update status for screen readers
+            searchStatus.textContent = filteredIdps.length + ' result' + (filteredIdps.length !== 1 ? 's' : '') + ' found';
+        }
+
+        function showAutocomplete() {
+            autocompleteList.classList.add('visible');
+            search.setAttribute('aria-expanded', 'true');
+        }
+
+        function hideAutocomplete() {
+            autocompleteList.classList.remove('visible');
+            search.setAttribute('aria-expanded', 'false');
+            highlightedIndex = -1;
+        }
+
+        if (search) {
+            search.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    const query = this.value.toLowerCase().trim();
+                    if (query.length < 1) {
+                        hideAutocomplete();
+                        return;
+                    }
+
+                    filteredIdps = idps.filter(idp =>
+                        idp.name.toLowerCase().includes(query) ||
+                        (idp.desc && idp.desc.toLowerCase().includes(query))
+                    );
+                    highlightedIndex = -1;
+                    renderAutocomplete();
+                    showAutocomplete();
+                }, 200);
+            });
+
+            search.addEventListener('keydown', function(e) {
+                if (!autocompleteList.classList.contains('visible')) return;
+
+                switch(e.key) {
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        highlightedIndex = Math.min(highlightedIndex + 1, filteredIdps.length - 1);
+                        renderAutocomplete();
+                        break;
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        highlightedIndex = Math.max(highlightedIndex - 1, 0);
+                        renderAutocomplete();
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        if (highlightedIndex >= 0 && filteredIdps[highlightedIndex]) {
+                            selectIdp(filteredIdps[highlightedIndex].entityId);
+                        }
+                        break;
+                    case 'Escape':
+                        hideAutocomplete();
+                        break;
+                }
+            });
+
+            search.addEventListener('blur', function() {
+                setTimeout(hideAutocomplete, 200);
+            });
+
+            autocompleteList.addEventListener('click', function(e) {
+                const item = e.target.closest('.autocomplete-item');
+                if (item && item.dataset.entityId) {
+                    selectIdp(item.dataset.entityId);
+                }
+            });
+        }
+
+        // Remembered IdP handling
+        const rememberedIdp = document.querySelector('.remembered-idp');
+        if (rememberedIdp) {
+            rememberedIdp.addEventListener('click', function() {
+                selectIdp(this.dataset.entityId);
+            });
+            rememberedIdp.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectIdp(this.dataset.entityId);
+                }
+            });
+        }
+
+        // "Use different" link
+        const useDifferent = document.getElementById('useDifferent');
+        const rememberedSection = document.getElementById('rememberedSection');
+        if (useDifferent && rememberedSection) {
+            useDifferent.addEventListener('click', function(e) {
+                e.preventDefault();
+                rememberedSection.style.display = 'none';
+                if (search) search.focus();
+            });
+        }
+
+        // Pinned IdP handling
+        document.querySelectorAll('.pinned-idp').forEach(btn => {
+            btn.addEventListener('click', function() {
+                selectIdp(this.dataset.entityId);
+            });
+        });
+    })();
+    </script>
+</body>
+</html>

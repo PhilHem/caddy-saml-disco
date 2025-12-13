@@ -4,6 +4,7 @@ package caddysamldisco
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1036,8 +1037,8 @@ func TestDiscoveryAPI_ListIdPs_EmptyStore(t *testing.T) {
 	}
 
 	body := strings.TrimSpace(rec.Body.String())
-	if body != "[]" {
-		t.Errorf("response = %q, want %q", body, "[]")
+	if body != `{"idps":[]}` {
+		t.Errorf("response = %q, want %q", body, `{"idps":[]}`)
 	}
 }
 
@@ -1881,6 +1882,340 @@ func TestDiscoveryAPI_SelectIdP_NotFound_ReturnsHTMLError(t *testing.T) {
 	bodyStr := rec.Body.String()
 	if !strings.Contains(bodyStr, "IdP Not Found") {
 		t.Errorf("error response should contain 'IdP Not Found', got: %s", bodyStr)
+	}
+}
+
+// =============================================================================
+// Remember Flag Tests (Cycle 5 - BREAKING CHANGE)
+// =============================================================================
+
+// TestDiscoveryAPI_SelectIdP_RememberTrue_SetsCookie verifies that when
+// remember=true is sent, the remember cookie is set.
+func TestDiscoveryAPI_SelectIdP_RememberTrue_SetsCookie(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp.example.com/saml",
+				DisplayName: "Example IdP",
+				SSOURL:      "https://idp.example.com/saml/sso",
+				SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:              "https://sp.example.com",
+			RememberIdPCookieName: "saml_last_idp",
+		},
+		samlService:   samlService,
+		metadataStore: metadataStore,
+	}
+	s.SetRememberIdPDuration(30 * 24 * time.Hour) // 30 days
+
+	// POST with remember=true
+	body := strings.NewReader(`{"entity_id": "https://idp.example.com/saml", "remember": true}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// Check for remember cookie
+	cookies := rec.Result().Cookies()
+	found := false
+	for _, c := range cookies {
+		if c.Name == "saml_last_idp" {
+			found = true
+			if c.Value != "https://idp.example.com/saml" {
+				t.Errorf("remember cookie value = %q, want %q", c.Value, "https://idp.example.com/saml")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("remember cookie should be set when remember=true")
+	}
+}
+
+// TestDiscoveryAPI_SelectIdP_RememberFalse_DoesNotSetCookie verifies that when
+// remember=false is sent, the remember cookie is NOT set.
+func TestDiscoveryAPI_SelectIdP_RememberFalse_DoesNotSetCookie(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp.example.com/saml",
+				DisplayName: "Example IdP",
+				SSOURL:      "https://idp.example.com/saml/sso",
+				SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:              "https://sp.example.com",
+			RememberIdPCookieName: "saml_last_idp",
+		},
+		samlService:   samlService,
+		metadataStore: metadataStore,
+	}
+
+	// POST with remember=false
+	body := strings.NewReader(`{"entity_id": "https://idp.example.com/saml", "remember": false}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// Check that remember cookie is NOT set
+	cookies := rec.Result().Cookies()
+	for _, c := range cookies {
+		if c.Name == "saml_last_idp" {
+			t.Error("remember cookie should NOT be set when remember=false")
+			break
+		}
+	}
+}
+
+// TestDiscoveryAPI_SelectIdP_RememberOmitted_DoesNotSetCookie verifies that when
+// remember is omitted (default false), the remember cookie is NOT set.
+// This is a BREAKING CHANGE from previous behavior where cookie was always set.
+func TestDiscoveryAPI_SelectIdP_RememberOmitted_DoesNotSetCookie(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp.example.com/saml",
+				DisplayName: "Example IdP",
+				SSOURL:      "https://idp.example.com/saml/sso",
+				SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:              "https://sp.example.com",
+			RememberIdPCookieName: "saml_last_idp",
+		},
+		samlService:   samlService,
+		metadataStore: metadataStore,
+	}
+
+	// POST WITHOUT remember field (omitted)
+	body := strings.NewReader(`{"entity_id": "https://idp.example.com/saml"}`)
+	req := httptest.NewRequest(http.MethodPost, "/saml/api/select", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// Check that remember cookie is NOT set (BREAKING CHANGE: previously was always set)
+	cookies := rec.Result().Cookies()
+	for _, c := range cookies {
+		if c.Name == "saml_last_idp" {
+			t.Error("remember cookie should NOT be set when remember is omitted (BREAKING CHANGE from previous behavior)")
+			break
+		}
+	}
+}
+
+// =============================================================================
+// Pinned IdPs API Tests (Cycle 6)
+// =============================================================================
+
+// TestDiscoveryAPI_ListIdPs_ReturnsPinnedIdPs verifies that GET /saml/api/idps
+// returns a pinned_idps field when PinnedIdPs is configured.
+func TestDiscoveryAPI_ListIdPs_ReturnsPinnedIdPs(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp1.example.com", DisplayName: "IdP One", SSOURL: "https://idp1.example.com/sso"},
+			{EntityID: "https://idp2.example.com", DisplayName: "IdP Two", SSOURL: "https://idp2.example.com/sso"},
+			{EntityID: "https://idp3.example.com", DisplayName: "IdP Three", SSOURL: "https://idp3.example.com/sso"},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			PinnedIdPs: []string{"https://idp1.example.com", "https://idp3.example.com"},
+		},
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		IdPs       []IdPInfo `json:"idps"`
+		PinnedIdPs []IdPInfo `json:"pinned_idps"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	// Verify pinned_idps contains the configured IdPs
+	if len(resp.PinnedIdPs) != 2 {
+		t.Errorf("pinned_idps length = %d, want 2", len(resp.PinnedIdPs))
+	}
+
+	// Verify pinned IdPs are in the response
+	pinnedEntityIDs := make(map[string]bool)
+	for _, idp := range resp.PinnedIdPs {
+		pinnedEntityIDs[idp.EntityID] = true
+	}
+	if !pinnedEntityIDs["https://idp1.example.com"] {
+		t.Error("pinned_idps should contain https://idp1.example.com")
+	}
+	if !pinnedEntityIDs["https://idp3.example.com"] {
+		t.Error("pinned_idps should contain https://idp3.example.com")
+	}
+}
+
+// TestDiscoveryAPI_ListIdPs_PinnedIdPsFilteredFromMain verifies that pinned IdPs
+// are removed from the main idps list to prevent duplication.
+func TestDiscoveryAPI_ListIdPs_PinnedIdPsFilteredFromMain(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp1.example.com", DisplayName: "IdP One", SSOURL: "https://idp1.example.com/sso"},
+			{EntityID: "https://idp2.example.com", DisplayName: "IdP Two", SSOURL: "https://idp2.example.com/sso"},
+			{EntityID: "https://idp3.example.com", DisplayName: "IdP Three", SSOURL: "https://idp3.example.com/sso"},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			PinnedIdPs: []string{"https://idp1.example.com"},
+		},
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	var resp struct {
+		IdPs       []IdPInfo `json:"idps"`
+		PinnedIdPs []IdPInfo `json:"pinned_idps"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	// Verify main idps list does NOT contain pinned IdP
+	for _, idp := range resp.IdPs {
+		if idp.EntityID == "https://idp1.example.com" {
+			t.Error("idps should NOT contain pinned IdP https://idp1.example.com")
+		}
+	}
+
+	// Verify main idps contains only non-pinned IdPs
+	if len(resp.IdPs) != 2 {
+		t.Errorf("idps length = %d, want 2 (non-pinned IdPs only)", len(resp.IdPs))
+	}
+
+	// Verify pinned_idps has the pinned IdP
+	if len(resp.PinnedIdPs) != 1 {
+		t.Fatalf("pinned_idps length = %d, want 1", len(resp.PinnedIdPs))
+	}
+	if resp.PinnedIdPs[0].EntityID != "https://idp1.example.com" {
+		t.Errorf("pinned_idps[0].EntityID = %q, want %q", resp.PinnedIdPs[0].EntityID, "https://idp1.example.com")
+	}
+}
+
+// TestDiscoveryAPI_ListIdPs_NoPinnedIdPs verifies that when PinnedIdPs is not
+// configured, the response either omits pinned_idps or returns an empty array.
+func TestDiscoveryAPI_ListIdPs_NoPinnedIdPs(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp1.example.com", DisplayName: "IdP One", SSOURL: "https://idp1.example.com/sso"},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config:        Config{},
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/idps", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	var resp struct {
+		IdPs       []IdPInfo `json:"idps"`
+		PinnedIdPs []IdPInfo `json:"pinned_idps"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	// Main idps should contain all IdPs
+	if len(resp.IdPs) != 1 {
+		t.Errorf("idps length = %d, want 1", len(resp.IdPs))
+	}
+
+	// pinned_idps should be nil or empty (omitempty may exclude it)
+	if len(resp.PinnedIdPs) != 0 {
+		t.Errorf("pinned_idps length = %d, want 0", len(resp.PinnedIdPs))
 	}
 }
 

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" Name="Test Federation">
+
+    <EntityDescriptor entityID="https://uni-berlin.edu/idp">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://uni-berlin.edu/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">Technical University of Berlin</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">TU Berlin</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">https://uni-berlin.edu</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://uni-munich.edu/idp">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://uni-munich.edu/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">Ludwig Maximilian University of Munich</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">LMU Munich</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">https://uni-munich.edu</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://uni-heidelberg.edu/idp">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://uni-heidelberg.edu/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">Heidelberg University</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">Uni Heidelberg</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">https://uni-heidelberg.edu</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://uni-frankfurt.edu/idp">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://uni-frankfurt.edu/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">Goethe University Frankfurt</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">Goethe Uni Frankfurt</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">https://uni-frankfurt.edu</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://uni-hamburg.edu/idp">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://uni-hamburg.edu/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">University of Hamburg</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">Uni Hamburg</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">https://uni-hamburg.edu</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+</EntitiesDescriptor>

@@ -15,8 +15,18 @@ var embeddedTemplates embed.FS
 // DiscoData holds data for rendering the discovery page template.
 type DiscoData struct {
 	IdPs            []IdPInfo
+	PinnedIdPs      []IdPInfo        // Pinned IdPs shown prominently (filtered from IdPs)
 	ReturnURL       string
-	RememberedIdPID string // Entity ID of the last-used IdP (from cookie)
+	RememberedIdPID string           // Entity ID of the last-used IdP (from cookie)
+	RememberedIdP   *IdPInfo         // Full IdP info for remembered IdP
+	AltLogins       []AltLoginOption // Alternative login methods
+	ServiceName     string           // Service name for branding
+}
+
+// AltLoginOption represents an alternative login method for the discovery UI.
+type AltLoginOption struct {
+	URL   string
+	Label string
 }
 
 // ErrorData holds data for rendering error page templates.
@@ -33,9 +43,30 @@ type TemplateRenderer struct {
 
 // NewTemplateRenderer creates a renderer using embedded templates.
 func NewTemplateRenderer() (*TemplateRenderer, error) {
-	disco, err := template.ParseFS(embeddedTemplates, "templates/disco.html")
+	return NewTemplateRendererWithTemplate("")
+}
+
+// NewTemplateRendererWithTemplate creates a renderer using the specified discovery template.
+// Supported templates:
+//   - "" (empty) or "default": uses disco.html
+//   - "fels": uses disco-fels.html (FeLS-style with autocomplete)
+//
+// Error templates always use the default error.html.
+func NewTemplateRendererWithTemplate(templateName string) (*TemplateRenderer, error) {
+	// Select the disco template based on name
+	var discoFile string
+	switch templateName {
+	case "", "default":
+		discoFile = "templates/disco.html"
+	case "fels":
+		discoFile = "templates/disco-fels.html"
+	default:
+		return nil, fmt.Errorf("unknown discovery template: %q (supported: \"default\", \"fels\")", templateName)
+	}
+
+	disco, err := template.ParseFS(embeddedTemplates, discoFile)
 	if err != nil {
-		return nil, fmt.Errorf("parse embedded disco.html: %w", err)
+		return nil, fmt.Errorf("parse embedded %s: %w", discoFile, err)
 	}
 
 	errTmpl, err := template.ParseFS(embeddedTemplates, "templates/error.html")

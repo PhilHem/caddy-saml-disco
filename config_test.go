@@ -13,3 +13,60 @@ func TestConfig_RememberIdP_Defaults(t *testing.T) {
 		t.Errorf("RememberIdPDuration = %q, want %q", cfg.RememberIdPDuration, "30d")
 	}
 }
+
+func TestConfig_DiscoveryTemplate_FieldExists(t *testing.T) {
+	cfg := &Config{
+		DiscoveryTemplate: "fels",
+	}
+	if cfg.DiscoveryTemplate != "fels" {
+		t.Errorf("DiscoveryTemplate = %q, want %q", cfg.DiscoveryTemplate, "fels")
+	}
+}
+
+func TestConfig_DiscoveryTemplate_DefaultsToEmpty(t *testing.T) {
+	cfg := &Config{}
+	cfg.SetDefaults()
+	// DiscoveryTemplate should default to empty string (use default template)
+	if cfg.DiscoveryTemplate != "" {
+		t.Errorf("DiscoveryTemplate = %q, want empty string", cfg.DiscoveryTemplate)
+	}
+}
+
+func TestConfig_ServiceName_FieldExists(t *testing.T) {
+	cfg := &Config{
+		ServiceName: "My Research Portal",
+	}
+	if cfg.ServiceName != "My Research Portal" {
+		t.Errorf("ServiceName = %q, want %q", cfg.ServiceName, "My Research Portal")
+	}
+}
+
+func TestConfig_PinnedIdPs_FieldExists(t *testing.T) {
+	cfg := &Config{
+		PinnedIdPs: []string{"https://idp1.edu", "https://idp2.edu"},
+	}
+	if len(cfg.PinnedIdPs) != 2 {
+		t.Errorf("PinnedIdPs length = %d, want 2", len(cfg.PinnedIdPs))
+	}
+	if cfg.PinnedIdPs[0] != "https://idp1.edu" {
+		t.Errorf("PinnedIdPs[0] = %q, want %q", cfg.PinnedIdPs[0], "https://idp1.edu")
+	}
+}
+
+func TestConfig_AltLogins_FieldExists(t *testing.T) {
+	cfg := &Config{
+		AltLogins: []AltLoginConfig{
+			{URL: "/local", Label: "Local Account"},
+			{URL: "/guest", Label: "Guest Access"},
+		},
+	}
+	if len(cfg.AltLogins) != 2 {
+		t.Errorf("AltLogins length = %d, want 2", len(cfg.AltLogins))
+	}
+	if cfg.AltLogins[0].URL != "/local" {
+		t.Errorf("AltLogins[0].URL = %q, want %q", cfg.AltLogins[0].URL, "/local")
+	}
+	if cfg.AltLogins[0].Label != "Local Account" {
+		t.Errorf("AltLogins[0].Label = %q, want %q", cfg.AltLogins[0].Label, "Local Account")
+	}
+}

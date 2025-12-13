@@ -1,0 +1,23 @@
+# Test Caddyfile for FeLS template validation with multiple local test IdPs
+{
+    order saml_disco before respond
+}
+
+:9080 {
+    saml_disco {
+        entity_id http://localhost:9080/saml
+        metadata_file testdata/local-idps-metadata.xml
+        cert_file testdata/sp-cert.pem
+        key_file testdata/sp-key.pem
+
+        # FeLS template configuration
+        discovery_template fels
+        service_name "Test Portal"
+
+        # Alternative login methods
+        alt_login /guest "Guest Access"
+        alt_login /help "Need Help?"
+    }
+
+    respond "Protected content" 200
+}

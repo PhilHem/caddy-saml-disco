@@ -56,6 +56,26 @@ type Config struct {
 	// RememberIdPDuration is how long to remember the last-used IdP (e.g., "30d").
 	// Defaults to "30d" if not specified.
 	RememberIdPDuration string `json:"remember_idp_duration,omitempty"`
+
+	// DiscoveryTemplate selects which discovery UI template to use.
+	// Options: "" (default), "fels" (FeLS-style with autocomplete).
+	DiscoveryTemplate string `json:"discovery_template,omitempty"`
+
+	// ServiceName is displayed in the FeLS discovery UI header.
+	// Example: "My Research Portal"
+	ServiceName string `json:"service_name,omitempty"`
+
+	// PinnedIdPs is a list of IdP entity IDs to display prominently in the discovery UI.
+	PinnedIdPs []string `json:"pinned_idps,omitempty"`
+
+	// AltLogins is a list of alternative login methods to display in the discovery UI.
+	AltLogins []AltLoginConfig `json:"alt_logins,omitempty"`
+}
+
+// AltLoginConfig represents an alternative login method (non-SAML).
+type AltLoginConfig struct {
+	URL   string `json:"url"`
+	Label string `json:"label"`
 }
 
 // Validate checks if the configuration is valid.
