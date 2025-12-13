@@ -36,11 +36,17 @@ type SAMLDisco struct {
 	// Runtime state (not serialized)
 	metadataStore       MetadataStore
 	sessionStore        SessionStore
+	logoStore           LogoStore
 	samlService         *SAMLService
 	sessionDuration     time.Duration
 	rememberIdPDuration time.Duration
 	templateRenderer    *TemplateRenderer
 	logger              *zap.Logger
+}
+
+// SetLogoStore sets the logo store. For testing purposes.
+func (s *SAMLDisco) SetLogoStore(store LogoStore) {
+	s.logoStore = store
 }
 
 // CaddyModule returns the Caddy module information.
@@ -83,6 +89,11 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("load metadata from URL: %w", err)
 		}
 		s.metadataStore = store
+	}
+
+	// Initialize logo store if metadata store is configured
+	if s.metadataStore != nil {
+		s.logoStore = NewCachingLogoStore(s.metadataStore, nil)
 	}
 
 	// Initialize session store and SAML service if key file is configured
@@ -167,6 +178,11 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			w.WriteHeader(http.StatusNoContent)
 			return nil
 		}
+	}
+
+	// Handle logo endpoint (path prefix pattern)
+	if strings.HasPrefix(r.URL.Path, "/saml/api/logo/") && r.Method == http.MethodGet {
+		return s.handleLogoEndpoint(w, r)
 	}
 
 	// Route SAML endpoints
@@ -562,6 +578,32 @@ func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) er
 
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(response)
+}
+
+func (s *SAMLDisco) handleLogoEndpoint(w http.ResponseWriter, r *http.Request) error {
+	// Extract entityID from path: /saml/api/logo/{entityID}
+	entityID := strings.TrimPrefix(r.URL.Path, "/saml/api/logo/")
+	entityID, err := url.PathUnescape(entityID)
+	if err != nil {
+		http.Error(w, "invalid entity ID", http.StatusBadRequest)
+		return nil
+	}
+
+	if s.logoStore == nil {
+		http.Error(w, "logo store not configured", http.StatusInternalServerError)
+		return nil
+	}
+
+	logo, err := s.logoStore.Get(entityID)
+	if err != nil {
+		http.Error(w, "logo not found", http.StatusNotFound)
+		return nil
+	}
+
+	w.Header().Set("Content-Type", logo.ContentType)
+	w.Header().Set("Cache-Control", "public, max-age=86400") // 1 day
+	w.Write(logo.Data)
+	return nil
 }
 
 // idpListResponse is the JSON response for GET /saml/api/idps.

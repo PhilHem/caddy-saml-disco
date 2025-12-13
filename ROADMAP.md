@@ -72,7 +72,7 @@ Development phases for caddy-saml-disco.
 - [x] Multi-language display name support (prefer user's Accept-Language locale)
 - [x] Configurable default language fallback (`default_language` config option)
 - [x] Search across all language variants (match "München" even when Accept-Language is "en")
-- [ ] Logo proxy/caching endpoint (avoid hotlinking federation logos)
+- [x] Logo proxy/caching endpoint (avoid hotlinking federation logos)
 
 **Outcome:** Users can build custom discovery UIs consuming the JSON API.
 

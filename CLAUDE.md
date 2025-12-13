@@ -105,12 +105,17 @@ type SessionStore interface {
     Get(token string) (*Session, error)
     Delete(token string) error
 }
+
+type LogoStore interface {
+    Get(entityID string) (*CachedLogo, error)
+}
 ```
 
 ### Adapters
 
 - **Metadata**: `url_metadata.go` (HTTP fetch), `file_metadata.go` (local file)
 - **Session**: `cookie_session.go` (JWT in cookies)
+- **Logo**: `logo.go` (InMemoryLogoStore, CachingLogoStore)
 - **Caddy**: `plugin.go` (module registration), `caddyfile.go` (config parsing)
 
 ## Folder Structure
@@ -123,6 +128,7 @@ caddy-saml-disco/
 ├── config.go           # Configuration struct & validation
 ├── caddyfile.go        # Caddyfile directive parsing
 ├── metadata.go         # Metadata aggregate loading & caching
+├── logo.go             # Logo proxy/caching (LogoStore port + adapters)
 ├── saml.go             # SAML SP logic (AuthnRequest, ACS)
 ├── discovery.go        # Discovery Service JSON API & default UI
 ├── session.go          # Cookie-based JWT session management
@@ -324,6 +330,7 @@ GET  /saml/api/idps          # List IdPs (JSON)
 GET  /saml/api/idps?q=term   # Search IdPs (JSON)
 POST /saml/api/select        # Select IdP, start SAML flow
 GET  /saml/api/session       # Current session info (JSON)
+GET  /saml/api/logo/{id}     # Proxied/cached IdP logo
 ```
 
 ## Goals & Non-Goals
