@@ -53,72 +53,75 @@ func TestNewSAMLService(t *testing.T) {
 	if service.entityID != "https://sp.example.com" {
 		t.Errorf("entityID = %q, want %q", service.entityID, "https://sp.example.com")
 	}
-	if service.requestCache == nil {
-		t.Error("requestCache should be initialized")
+	if service.requestStore == nil {
+		t.Error("requestStore should be initialized")
 	}
 	_ = creds // silence unused
 }
 
-// TestMemoryRequestIDCache_Store verifies Store adds an entry.
-func TestMemoryRequestIDCache_Store(t *testing.T) {
-	cache := NewMemoryRequestIDCache()
+// Legacy tests for RequestStore (now InMemoryRequestStore).
+// These are kept for backward compatibility; see request_test.go for comprehensive tests.
 
-	err := cache.Store("request-123", time.Now().Add(10*time.Minute))
+// TestRequestStore_Store verifies Store adds an entry.
+func TestRequestStore_Store(t *testing.T) {
+	store := NewInMemoryRequestStore()
+
+	err := store.Store("request-123", time.Now().Add(10*time.Minute))
 	if err != nil {
 		t.Fatalf("Store() failed: %v", err)
 	}
 
 	// Verify entry exists via Valid
-	if !cache.Valid("request-123") {
+	if !store.Valid("request-123") {
 		t.Error("Valid() should return true for stored request ID")
 	}
 }
 
-// TestMemoryRequestIDCache_Valid_ReturnsTrueOnce verifies single-use behavior.
-func TestMemoryRequestIDCache_Valid_ReturnsTrueOnce(t *testing.T) {
-	cache := NewMemoryRequestIDCache()
-	cache.Store("request-123", time.Now().Add(10*time.Minute))
+// TestRequestStore_Valid_ReturnsTrueOnce verifies single-use behavior.
+func TestRequestStore_Valid_ReturnsTrueOnce(t *testing.T) {
+	store := NewInMemoryRequestStore()
+	store.Store("request-123", time.Now().Add(10*time.Minute))
 
 	// First call should return true and consume the ID
-	if !cache.Valid("request-123") {
+	if !store.Valid("request-123") {
 		t.Error("first Valid() should return true")
 	}
 
 	// Second call should return false (already consumed)
-	if cache.Valid("request-123") {
+	if store.Valid("request-123") {
 		t.Error("second Valid() should return false (single-use)")
 	}
 }
 
-// TestMemoryRequestIDCache_Valid_ReturnsFalseUnknown verifies unknown IDs return false.
-func TestMemoryRequestIDCache_Valid_ReturnsFalseUnknown(t *testing.T) {
-	cache := NewMemoryRequestIDCache()
+// TestRequestStore_Valid_ReturnsFalseUnknown verifies unknown IDs return false.
+func TestRequestStore_Valid_ReturnsFalseUnknown(t *testing.T) {
+	store := NewInMemoryRequestStore()
 
-	if cache.Valid("unknown-id") {
+	if store.Valid("unknown-id") {
 		t.Error("Valid() should return false for unknown ID")
 	}
 }
 
-// TestMemoryRequestIDCache_Valid_ReturnsFalseExpired verifies expired IDs return false.
-func TestMemoryRequestIDCache_Valid_ReturnsFalseExpired(t *testing.T) {
-	cache := NewMemoryRequestIDCache()
+// TestRequestStore_Valid_ReturnsFalseExpired verifies expired IDs return false.
+func TestRequestStore_Valid_ReturnsFalseExpired(t *testing.T) {
+	store := NewInMemoryRequestStore()
 
 	// Store with immediate expiry
-	cache.Store("request-123", time.Now().Add(-1*time.Second))
+	store.Store("request-123", time.Now().Add(-1*time.Second))
 
-	if cache.Valid("request-123") {
+	if store.Valid("request-123") {
 		t.Error("Valid() should return false for expired ID")
 	}
 }
 
-// TestMemoryRequestIDCache_GetAll returns all valid IDs.
-func TestMemoryRequestIDCache_GetAll(t *testing.T) {
-	cache := NewMemoryRequestIDCache()
-	cache.Store("request-1", time.Now().Add(10*time.Minute))
-	cache.Store("request-2", time.Now().Add(10*time.Minute))
-	cache.Store("request-expired", time.Now().Add(-1*time.Second))
+// TestRequestStore_GetAll returns all valid IDs.
+func TestRequestStore_GetAll(t *testing.T) {
+	store := NewInMemoryRequestStore()
+	store.Store("request-1", time.Now().Add(10*time.Minute))
+	store.Store("request-2", time.Now().Add(10*time.Minute))
+	store.Store("request-expired", time.Now().Add(-1*time.Second))
 
-	ids := cache.GetAll()
+	ids := store.GetAll()
 
 	if len(ids) != 2 {
 		t.Errorf("GetAll() returned %d IDs, want 2 (excluding expired)", len(ids))
@@ -305,10 +308,10 @@ func TestStartAuth_StoresRequestID(t *testing.T) {
 		t.Fatalf("StartAuth() failed: %v", err)
 	}
 
-	// Cache should have one entry
-	ids := service.requestCache.GetAll()
+	// Store should have one entry
+	ids := service.requestStore.GetAll()
 	if len(ids) != 1 {
-		t.Errorf("cache has %d entries, want 1", len(ids))
+		t.Errorf("store has %d entries, want 1", len(ids))
 	}
 }
 

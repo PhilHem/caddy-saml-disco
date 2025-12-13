@@ -76,6 +76,19 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		metadataOpts = append(metadataOpts, WithIdPFilter(s.IdPFilter))
 	}
 
+	// Configure signature verification if enabled
+	if s.VerifyMetadataSignature {
+		certs, err := LoadSigningCertificates(s.MetadataSigningCert)
+		if err != nil {
+			return fmt.Errorf("load metadata signing certificate: %w", err)
+		}
+		verifier := NewXMLDsigVerifierWithCerts(certs)
+		metadataOpts = append(metadataOpts, WithSignatureVerifier(verifier))
+		s.logger.Info("metadata signature verification enabled",
+			zap.String("cert_file", s.MetadataSigningCert),
+			zap.Int("cert_count", len(certs)))
+	}
+
 	// Initialize metadata store based on config
 	if s.MetadataFile != "" {
 		store := NewFileMetadataStore(s.MetadataFile, metadataOpts...)

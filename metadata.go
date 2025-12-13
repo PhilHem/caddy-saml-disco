@@ -108,7 +108,8 @@ func matchesEntityIDPattern(entityID, pattern string) bool {
 type MetadataOption func(*metadataOptions)
 
 type metadataOptions struct {
-	idpFilter string
+	idpFilter         string
+	signatureVerifier SignatureVerifier
 }
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
@@ -117,6 +118,14 @@ type metadataOptions struct {
 func WithIdPFilter(pattern string) MetadataOption {
 	return func(o *metadataOptions) {
 		o.idpFilter = pattern
+	}
+}
+
+// WithSignatureVerifier returns an option that enables signature verification.
+// When set, metadata will be verified against the trusted certificates before parsing.
+func WithSignatureVerifier(verifier SignatureVerifier) MetadataOption {
+	return func(o *metadataOptions) {
+		o.signatureVerifier = verifier
 	}
 }
 
@@ -168,8 +177,9 @@ func (s *InMemoryMetadataStore) Refresh(ctx context.Context) error {
 // FileMetadataStore loads IdP metadata from a local file.
 // Supports both single EntityDescriptor and aggregate EntitiesDescriptor formats.
 type FileMetadataStore struct {
-	path      string
-	idpFilter string
+	path              string
+	idpFilter         string
+	signatureVerifier SignatureVerifier
 
 	mu   sync.RWMutex
 	idps []IdPInfo // Supports multiple IdPs from aggregate metadata
@@ -182,8 +192,9 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		opt(options)
 	}
 	return &FileMetadataStore{
-		path:      path,
-		idpFilter: options.idpFilter,
+		path:              path,
+		idpFilter:         options.idpFilter,
+		signatureVerifier: options.signatureVerifier,
 	}
 }
 
@@ -234,6 +245,14 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		return fmt.Errorf("read metadata file: %w", err)
+	}
+
+	// Verify signature if verifier is configured
+	if s.signatureVerifier != nil {
+		data, err = s.signatureVerifier.Verify(data)
+		if err != nil {
+			return fmt.Errorf("verify metadata signature: %w", err)
+		}
 	}
 
 	idps, err := parseMetadata(data)
@@ -652,10 +671,11 @@ func selectBestLogo(logos []Logo) string {
 
 // URLMetadataStore loads IdP metadata from a URL with caching.
 type URLMetadataStore struct {
-	url        string
-	httpClient *http.Client
-	cacheTTL   time.Duration
-	idpFilter  string
+	url               string
+	httpClient        *http.Client
+	cacheTTL          time.Duration
+	idpFilter         string
+	signatureVerifier SignatureVerifier
 
 	mu           sync.RWMutex
 	idps         []IdPInfo
@@ -671,9 +691,10 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		opt(options)
 	}
 	return &URLMetadataStore{
-		url:       url,
-		cacheTTL:  cacheTTL,
-		idpFilter: options.idpFilter,
+		url:               url,
+		cacheTTL:          cacheTTL,
+		idpFilter:         options.idpFilter,
+		signatureVerifier: options.signatureVerifier,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -770,6 +791,14 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
+	}
+
+	// Verify signature if verifier is configured
+	if s.signatureVerifier != nil {
+		data, err = s.signatureVerifier.Verify(data)
+		if err != nil {
+			return fmt.Errorf("verify metadata signature: %w", err)
+		}
 	}
 
 	idps, err := parseMetadata(data)

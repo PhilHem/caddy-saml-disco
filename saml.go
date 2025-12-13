@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/crewjam/saml"
@@ -18,7 +17,7 @@ type SAMLService struct {
 	entityID     string
 	privateKey   *rsa.PrivateKey
 	certificate  *x509.Certificate
-	requestCache *MemoryRequestIDCache
+	requestStore RequestStore
 }
 
 // AuthResult contains the result of processing a SAML assertion.
@@ -29,77 +28,25 @@ type AuthResult struct {
 }
 
 // NewSAMLService creates a new SAML service with the given configuration.
+// Uses an in-memory request store without background cleanup.
 func NewSAMLService(entityID string, privateKey *rsa.PrivateKey, certificate *x509.Certificate) *SAMLService {
 	return &SAMLService{
 		entityID:     entityID,
 		privateKey:   privateKey,
 		certificate:  certificate,
-		requestCache: NewMemoryRequestIDCache(),
+		requestStore: NewInMemoryRequestStore(),
 	}
 }
 
-// MemoryRequestIDCache stores pending SAML request IDs for replay protection.
-// Request IDs are single-use and expire after a configured duration.
-type MemoryRequestIDCache struct {
-	mu      sync.Mutex
-	entries map[string]time.Time
-}
-
-// NewMemoryRequestIDCache creates a new in-memory request ID cache.
-func NewMemoryRequestIDCache() *MemoryRequestIDCache {
-	return &MemoryRequestIDCache{
-		entries: make(map[string]time.Time),
+// NewSAMLServiceWithStore creates a new SAML service with a custom request store.
+// Use this for dependency injection or when background cleanup is needed.
+func NewSAMLServiceWithStore(entityID string, privateKey *rsa.PrivateKey, certificate *x509.Certificate, store RequestStore) *SAMLService {
+	return &SAMLService{
+		entityID:     entityID,
+		privateKey:   privateKey,
+		certificate:  certificate,
+		requestStore: store,
 	}
-}
-
-// Store adds a request ID with the given expiry time.
-func (c *MemoryRequestIDCache) Store(requestID string, expiry time.Time) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.entries[requestID] = expiry
-	return nil
-}
-
-// Valid checks if a request ID exists and is not expired.
-// If valid, the ID is removed (single-use) and returns true.
-// Returns false for unknown or expired IDs.
-func (c *MemoryRequestIDCache) Valid(requestID string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	expiry, exists := c.entries[requestID]
-	if !exists {
-		return false
-	}
-
-	// Check expiry
-	if time.Now().After(expiry) {
-		delete(c.entries, requestID)
-		return false
-	}
-
-	// Single-use: remove after validation
-	delete(c.entries, requestID)
-	return true
-}
-
-// GetAll returns all non-expired request IDs.
-// This is used for SAML response validation where we need all possible IDs.
-func (c *MemoryRequestIDCache) GetAll() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	now := time.Now()
-	var ids []string
-
-	for id, expiry := range c.entries {
-		if now.Before(expiry) {
-			ids = append(ids, id)
-		}
-	}
-
-	return ids
 }
 
 // GenerateSPMetadata creates SP metadata XML for the given ACS URL.
@@ -145,7 +92,7 @@ func (s *SAMLService) StartAuth(idp *IdPInfo, acsURL *url.URL, relayState string
 	}
 
 	// Store request ID for later validation (10 minute expiry)
-	s.requestCache.Store(authReq.ID, time.Now().Add(10*time.Minute))
+	s.requestStore.Store(authReq.ID, time.Now().Add(10*time.Minute))
 
 	// Build redirect URL
 	redirectURL, err := authReq.Redirect(relayState, sp)
@@ -199,7 +146,7 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *IdPInfo) 
 	sp.IDPMetadata = idpMetadata
 
 	// Get all valid request IDs for validation
-	possibleRequestIDs := s.requestCache.GetAll()
+	possibleRequestIDs := s.requestStore.GetAll()
 
 	// Parse and validate the SAML response
 	assertion, err := sp.ParseResponse(r, possibleRequestIDs)
@@ -233,7 +180,7 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *IdPInfo) 
 	if assertion.Subject != nil {
 		for _, sc := range assertion.Subject.SubjectConfirmations {
 			if sc.SubjectConfirmationData != nil && sc.SubjectConfirmationData.InResponseTo != "" {
-				s.requestCache.Valid(sc.SubjectConfirmationData.InResponseTo)
+				s.requestStore.Valid(sc.SubjectConfirmationData.InResponseTo)
 			}
 		}
 	}

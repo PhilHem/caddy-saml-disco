@@ -109,6 +109,16 @@ type SessionStore interface {
 type LogoStore interface {
     Get(entityID string) (*CachedLogo, error)
 }
+
+type RequestStore interface {
+    Store(requestID string, expiry time.Time) error
+    Valid(requestID string) bool
+    GetAll() []string
+}
+
+type SignatureVerifier interface {
+    Verify(data []byte) ([]byte, error)
+}
 ```
 
 ### Adapters
@@ -116,6 +126,7 @@ type LogoStore interface {
 - **Metadata**: `url_metadata.go` (HTTP fetch), `file_metadata.go` (local file)
 - **Session**: `cookie_session.go` (JWT in cookies)
 - **Logo**: `logo.go` (InMemoryLogoStore, CachingLogoStore)
+- **Signature**: `signature.go` (XMLDsigVerifier using goxmldsig, NoopVerifier for testing)
 - **Caddy**: `plugin.go` (module registration), `caddyfile.go` (config parsing)
 
 ## Folder Structure
@@ -129,10 +140,12 @@ caddy-saml-disco/
 ├── caddyfile.go        # Caddyfile directive parsing
 ├── metadata.go         # Metadata aggregate loading & caching
 ├── logo.go             # Logo proxy/caching (LogoStore port + adapters)
+├── request.go          # SAML request ID tracking (RequestStore port + adapters)
 ├── saml.go             # SAML SP logic (AuthnRequest, ACS)
 ├── discovery.go        # Discovery Service JSON API & default UI
 ├── session.go          # Cookie-based JWT session management
 ├── errors.go           # Structured error types (ErrorCode, AppError)
+├── signature.go        # XML signature verification (SignatureVerifier port + adapters)
 ├── templates/
 │   ├── disco.html      # Default IdP selection page (embedded)
 │   └── error.html      # Default error page (embedded)
@@ -155,6 +168,26 @@ caddy-saml-disco/
 2. Adapters implement port interfaces
 3. Plugin exposes SAML endpoints (`/saml/acs`, `/saml/metadata`, `/saml/api/*`)
 4. Sessions are JWT-signed cookies using SP private key
+
+## Security Notes
+
+### Cookie Security (Reviewed)
+
+All session cookies use: `HttpOnly`, `Secure` (when TLS), `SameSite=Lax`. This provides CSRF protection without explicit tokens.
+
+### X-Forwarded-Proto Trust Model
+
+The ACS URL resolution (`plugin.go:resolveAcsURL`) trusts `X-Forwarded-Proto` when `r.TLS == nil`. This is intentional for reverse proxy deployments but has implications:
+
+- **Behind trusted proxy (Caddy, nginx)**: Works correctly - proxy sets header
+- **Behind untrusted proxy**: Header could be spoofed, affecting ACS URL computation
+- **Recommendation**: Configure explicit `acs_url` in Caddyfile when deployment topology is complex
+
+The cookie `Secure` flag correctly uses `r.TLS != nil` (does not trust the header).
+
+### Remaining Security Work
+
+Metadata signature verification and `validUntil` validation are not yet implemented - see ROADMAP.md Phase 4. These are critical for production federation deployments.
 
 ## Balancing Abstraction vs Coupling
 

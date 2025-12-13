@@ -23,6 +23,8 @@ import (
 //	    templates_dir <path>
 //	    login_redirect <url>
 //	    idp_filter <pattern>
+//	    verify_metadata_signature
+//	    metadata_signing_cert <path>
 //	}
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var s SAMLDisco
@@ -150,6 +152,15 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			s.DefaultLanguage = d.Val()
+
+		case "verify_metadata_signature":
+			s.VerifyMetadataSignature = true
+
+		case "metadata_signing_cert":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.MetadataSigningCert = d.Val()
 
 		default:
 			return d.Errf("unrecognized subdirective: %s", d.Val())

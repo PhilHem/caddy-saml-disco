@@ -1,0 +1,403 @@
+//go:build unit
+
+package caddysamldisco
+
+import (
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+	"time"
+)
+
+// =============================================================================
+// Phase 1: Core Interface + NoopVerifier
+// =============================================================================
+
+// Cycle 1.1: Verify SignatureVerifier interface exists with required method
+func TestSignatureVerifier_Interface(t *testing.T) {
+	// This test verifies the interface contract exists
+	var _ SignatureVerifier = (*mockSignatureVerifier)(nil)
+}
+
+// mockSignatureVerifier is a minimal implementation for interface verification
+type mockSignatureVerifier struct{}
+
+func (m *mockSignatureVerifier) Verify(data []byte) ([]byte, error) {
+	return nil, nil
+}
+
+// Cycle 1.2: Verify NoopVerifier implements interface
+func TestNoopVerifier_Interface(t *testing.T) {
+	var _ SignatureVerifier = (*NoopVerifier)(nil)
+}
+
+// Cycle 1.3: NoopVerifier returns input unchanged
+func TestNoopVerifier_Verify_ReturnsInput(t *testing.T) {
+	verifier := NewNoopVerifier()
+	input := []byte("<metadata>test</metadata>")
+
+	result, err := verifier.Verify(input)
+	if err != nil {
+		t.Fatalf("Verify() returned error: %v", err)
+	}
+
+	if string(result) != string(input) {
+		t.Errorf("Verify() = %q, want %q", result, input)
+	}
+}
+
+// Cycle 1.4: NoopVerifier handles empty/nil input
+func TestNoopVerifier_Verify_EmptyInput(t *testing.T) {
+	verifier := NewNoopVerifier()
+
+	result, err := verifier.Verify([]byte{})
+	if err != nil {
+		t.Fatalf("Verify() returned error: %v", err)
+	}
+
+	if len(result) != 0 {
+		t.Errorf("Verify() returned %d bytes, want 0", len(result))
+	}
+}
+
+func TestNoopVerifier_Verify_NilInput(t *testing.T) {
+	verifier := NewNoopVerifier()
+
+	result, err := verifier.Verify(nil)
+	if err != nil {
+		t.Fatalf("Verify() returned error: %v", err)
+	}
+
+	if result != nil {
+		t.Errorf("Verify(nil) = %v, want nil", result)
+	}
+}
+
+// Cycle 1.5: ErrCodeSignatureInvalid exists and has correct HTTP status
+func TestErrorCode_SignatureInvalid(t *testing.T) {
+	if ErrCodeSignatureInvalid.String() != "signature_invalid" {
+		t.Errorf("ErrCodeSignatureInvalid.String() = %q, want %q",
+			ErrCodeSignatureInvalid.String(), "signature_invalid")
+	}
+
+	// Signature errors should return 400 Bad Request
+	if ErrCodeSignatureInvalid.HTTPStatus() != http.StatusBadRequest {
+		t.Errorf("HTTPStatus() = %d, want %d",
+			ErrCodeSignatureInvalid.HTTPStatus(), http.StatusBadRequest)
+	}
+}
+
+func TestErrorCode_SignatureInvalid_Title(t *testing.T) {
+	title := ErrCodeSignatureInvalid.Title()
+	if title == "" || title == "Error" {
+		t.Errorf("Title() = %q, want a specific title", title)
+	}
+}
+
+// =============================================================================
+// Phase 2: XMLDsigVerifier
+// =============================================================================
+
+// loadTestCertFromFile loads a certificate from a PEM file for testing
+func loadTestCertFromFile(t *testing.T, path string) *x509.Certificate {
+	t.Helper()
+	pemData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read cert file %s: %v", path, err)
+	}
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		t.Fatalf("no PEM block found in %s", path)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+	return cert
+}
+
+// Cycle 2.1: Verify XMLDsigVerifier implements interface
+func TestXMLDsigVerifier_Interface(t *testing.T) {
+	var _ SignatureVerifier = (*XMLDsigVerifier)(nil)
+}
+
+// Cycle 2.2: Constructor accepts certificate
+func TestNewXMLDsigVerifier(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+
+	verifier := NewXMLDsigVerifier(cert)
+	if verifier == nil {
+		t.Fatal("NewXMLDsigVerifier() returned nil")
+	}
+}
+
+// Cycle 2.3: Constructor accepts multiple certificates
+func TestNewXMLDsigVerifier_MultipleCerts(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+
+	verifier := NewXMLDsigVerifierWithCerts([]*x509.Certificate{cert, cert})
+	if verifier == nil {
+		t.Fatal("NewXMLDsigVerifierWithCerts() returned nil")
+	}
+}
+
+// Cycle 2.4: Verify returns error for unsigned metadata (missing signature)
+func TestXMLDsigVerifier_Verify_MissingSignature(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	unsignedXML := []byte(`<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+    <EntityDescriptor entityID="https://idp.example.com"/>
+</EntitiesDescriptor>`)
+
+	_, err := verifier.Verify(unsignedXML)
+	if err == nil {
+		t.Error("Verify() should return error for unsigned metadata")
+	}
+}
+
+// Cycle 2.5: Verify returns error for malformed XML
+func TestXMLDsigVerifier_Verify_MalformedXML(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	malformedXML := []byte(`<not valid xml`)
+
+	_, err := verifier.Verify(malformedXML)
+	if err == nil {
+		t.Error("Verify() should return error for malformed XML")
+	}
+}
+
+// Cycle 2.8: Verify returns AppError for verification failures
+func TestXMLDsigVerifier_Verify_ReturnsAppError(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	unsignedXML := []byte(`<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"/>`)
+
+	_, err := verifier.Verify(unsignedXML)
+
+	var appErr *AppError
+	if !errors.As(err, &appErr) {
+		t.Errorf("error should be *AppError, got %T", err)
+	}
+	if appErr != nil && appErr.Code != ErrCodeSignatureInvalid {
+		t.Errorf("error code = %v, want %v", appErr.Code, ErrCodeSignatureInvalid)
+	}
+}
+
+// Cycle 2.3 additional: LoadSigningCertificates helper function
+func TestLoadSigningCertificates(t *testing.T) {
+	certs, err := LoadSigningCertificates("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("LoadSigningCertificates() failed: %v", err)
+	}
+
+	if len(certs) == 0 {
+		t.Error("expected at least one certificate")
+	}
+}
+
+func TestLoadSigningCertificates_NotFound(t *testing.T) {
+	_, err := LoadSigningCertificates("testdata/nonexistent.pem")
+	if err == nil {
+		t.Error("LoadSigningCertificates() should fail for nonexistent file")
+	}
+}
+
+func TestLoadSigningCertificates_NoCerts(t *testing.T) {
+	// Create a temp file with no certificates
+	tmpFile, err := os.CreateTemp("", "empty*.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.WriteString("not a certificate")
+	tmpFile.Close()
+
+	_, err = LoadSigningCertificates(tmpFile.Name())
+	if err == nil {
+		t.Error("LoadSigningCertificates() should fail when no certs found")
+	}
+}
+
+// =============================================================================
+// Phase 3: Integration with Metadata Stores
+// =============================================================================
+
+// trackingVerifier tracks whether Verify was called
+type trackingVerifier struct {
+	called bool
+}
+
+func (v *trackingVerifier) Verify(data []byte) ([]byte, error) {
+	v.called = true
+	return data, nil
+}
+
+// failingVerifier always returns an error
+type failingVerifier struct{}
+
+func (v *failingVerifier) Verify(data []byte) ([]byte, error) {
+	return nil, &AppError{
+		Code:    ErrCodeSignatureInvalid,
+		Message: "test failure",
+	}
+}
+
+// Cycle 3.1: WithSignatureVerifier option exists
+func TestWithSignatureVerifier(t *testing.T) {
+	verifier := NewNoopVerifier()
+	opt := WithSignatureVerifier(verifier)
+
+	options := &metadataOptions{}
+	opt(options)
+
+	if options.signatureVerifier == nil {
+		t.Error("signatureVerifier should be set")
+	}
+}
+
+// Cycle 3.2: FileMetadataStore uses verifier when provided
+func TestFileMetadataStore_WithSignatureVerifier(t *testing.T) {
+	verifier := &trackingVerifier{}
+
+	store := NewFileMetadataStore("testdata/idp-metadata.xml",
+		WithSignatureVerifier(verifier))
+
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if !verifier.called {
+		t.Error("verifier.Verify() should have been called")
+	}
+}
+
+// Cycle 3.3: FileMetadataStore fails on invalid signature
+func TestFileMetadataStore_WithSignatureVerifier_Invalid(t *testing.T) {
+	verifier := &failingVerifier{}
+
+	store := NewFileMetadataStore("testdata/idp-metadata.xml",
+		WithSignatureVerifier(verifier))
+
+	err := store.Load()
+	if err == nil {
+		t.Error("Load() should fail when signature verification fails")
+	}
+}
+
+// Cycle 3.6: No verification when SignatureVerifier not provided
+func TestFileMetadataStore_WithoutSignatureVerifier(t *testing.T) {
+	store := NewFileMetadataStore("testdata/idp-metadata.xml")
+
+	err := store.Load()
+	if err != nil {
+		t.Fatalf("Load() should succeed without verifier: %v", err)
+	}
+
+	// Should load unsigned metadata successfully
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Errorf("expected 1 IdP, got %d", len(idps))
+	}
+}
+
+// Cycle 3.4: URLMetadataStore uses verifier when provided
+func TestURLMetadataStore_WithSignatureVerifier(t *testing.T) {
+	metadata, _ := os.ReadFile("testdata/idp-metadata.xml")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	verifier := &trackingVerifier{}
+	store := NewURLMetadataStore(server.URL, time.Hour,
+		WithSignatureVerifier(verifier))
+
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if !verifier.called {
+		t.Error("verifier.Verify() should have been called")
+	}
+}
+
+// Cycle 3.4: URLMetadataStore fails on invalid signature
+func TestURLMetadataStore_WithSignatureVerifier_Invalid(t *testing.T) {
+	metadata, _ := os.ReadFile("testdata/idp-metadata.xml")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	verifier := &failingVerifier{}
+	store := NewURLMetadataStore(server.URL, time.Hour,
+		WithSignatureVerifier(verifier))
+
+	err := store.Load()
+	if err == nil {
+		t.Error("Load() should fail when signature verification fails")
+	}
+}
+
+// =============================================================================
+// Phase 4: Configuration
+// =============================================================================
+
+// Cycle 4.1: Config has signature verification fields
+func TestConfig_SignatureVerificationFields(t *testing.T) {
+	cfg := Config{
+		VerifyMetadataSignature: true,
+		MetadataSigningCert:     "/path/to/cert.pem",
+	}
+
+	if !cfg.VerifyMetadataSignature {
+		t.Error("VerifyMetadataSignature should be true")
+	}
+	if cfg.MetadataSigningCert != "/path/to/cert.pem" {
+		t.Errorf("MetadataSigningCert = %q, want /path/to/cert.pem", cfg.MetadataSigningCert)
+	}
+}
+
+// Cycle 4.2: Validate requires MetadataSigningCert when verification enabled
+func TestConfig_Validate_RequiresCertForVerification(t *testing.T) {
+	cfg := Config{
+		EntityID:                "https://sp.example.com",
+		MetadataFile:            "testdata/idp-metadata.xml",
+		VerifyMetadataSignature: true,
+		// MetadataSigningCert NOT set
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when VerifyMetadataSignature=true but MetadataSigningCert empty")
+	}
+}
+
+// Cycle 4.2: Validate passes when verification enabled with cert
+func TestConfig_Validate_VerificationWithCert(t *testing.T) {
+	cfg := Config{
+		EntityID:                "https://sp.example.com",
+		MetadataFile:            "testdata/idp-metadata.xml",
+		VerifyMetadataSignature: true,
+		MetadataSigningCert:     "testdata/sp-cert.pem",
+	}
+
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("Validate() should pass with valid config: %v", err)
+	}
+}
+
+// Note: Caddyfile parsing tests are in caddyfile_test.go
+// The following test documents what should be tested there:
+// - verify_metadata_signature directive (flag)
+// - metadata_signing_cert directive (path)

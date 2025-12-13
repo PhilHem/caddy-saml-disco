@@ -256,3 +256,41 @@ func TestCaddyfile_DefaultLanguage_NotSet(t *testing.T) {
 		t.Errorf("DefaultLanguage = %q, want empty (defaults to 'en' at runtime)", s.DefaultLanguage)
 	}
 }
+
+func TestCaddyfile_VerifyMetadataSignature(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		verify_metadata_signature
+		metadata_signing_cert /path/to/cert.pem
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if !s.VerifyMetadataSignature {
+		t.Error("VerifyMetadataSignature = false, want true")
+	}
+	if s.MetadataSigningCert != "/path/to/cert.pem" {
+		t.Errorf("MetadataSigningCert = %q, want %q", s.MetadataSigningCert, "/path/to/cert.pem")
+	}
+}
+
+func TestCaddyfile_MetadataSigningCert_RequiresArg(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		metadata_signing_cert
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Error("UnmarshalCaddyfile should error on metadata_signing_cert without argument")
+	}
+}

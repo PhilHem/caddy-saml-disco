@@ -84,6 +84,14 @@ type Config struct {
 	// the user's Accept-Language header doesn't match any available language.
 	// Defaults to "en" if not specified.
 	DefaultLanguage string `json:"default_language,omitempty"`
+
+	// VerifyMetadataSignature enables XML signature verification on metadata.
+	// Requires MetadataSigningCert to be set.
+	VerifyMetadataSignature bool `json:"verify_metadata_signature,omitempty"`
+
+	// MetadataSigningCert is the path to the PEM file containing the
+	// federation signing certificate(s) used to verify metadata signatures.
+	MetadataSigningCert string `json:"metadata_signing_cert,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).
@@ -118,6 +126,11 @@ func (c *Config) Validate() error {
 	// Validate CORS config: credentials cannot be used with wildcard
 	if c.CORSAllowCredentials && len(c.CORSAllowedOrigins) == 1 && c.CORSAllowedOrigins[0] == "*" {
 		return fmt.Errorf("cors_allow_credentials cannot be used with wildcard origin")
+	}
+
+	// Validate signature verification config
+	if c.VerifyMetadataSignature && c.MetadataSigningCert == "" {
+		return fmt.Errorf("metadata_signing_cert is required when verify_metadata_signature is enabled")
 	}
 
 	return nil

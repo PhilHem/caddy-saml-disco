@@ -84,15 +84,17 @@ Development phases for caddy-saml-disco.
 
 - [x] Structured logging via Caddy's logger
 - [x] Comprehensive error pages
-- [ ] Request ID tracking
+- [x] Request ID tracking
 - [ ] Metrics exposure (optional)
-- [ ] Security review (cookie flags, CSRF, etc.)
+- [x] Security review (cookie flags, CSRF, etc.)
 - [ ] Documentation site or README expansion
 - [ ] Performance testing with large metadata files
-- [ ] **Metadata signature verification** (critical for federation trust)
+- [x] **Metadata signature verification** (critical for federation trust)
 - [ ] Parse `mdrpi:RegistrationInfo` for trust chain validation
 - [ ] Validate metadata `validUntil` attribute (reject expired metadata)
 - [ ] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
+- [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
+- [ ] Signature verification logging (algorithm, cert subject/expiry on success)
 
 **Outcome:** Ready for production use in federation environments.
 
