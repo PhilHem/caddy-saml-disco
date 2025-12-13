@@ -218,3 +218,41 @@ func TestCaddyfile_CORSOrigins_Empty_Error(t *testing.T) {
 		t.Error("UnmarshalCaddyfile should error on empty cors_origins")
 	}
 }
+
+func TestCaddyfile_DefaultLanguage(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		default_language de
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if s.DefaultLanguage != "de" {
+		t.Errorf("DefaultLanguage = %q, want %q", s.DefaultLanguage, "de")
+	}
+}
+
+func TestCaddyfile_DefaultLanguage_NotSet(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	// Empty string means "en" will be used at runtime
+	if s.DefaultLanguage != "" {
+		t.Errorf("DefaultLanguage = %q, want empty (defaults to 'en' at runtime)", s.DefaultLanguage)
+	}
+}

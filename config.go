@@ -79,6 +79,11 @@ type Config struct {
 	// CORSAllowCredentials allows cookies/auth headers in CORS requests.
 	// Only works with specific origins, not with wildcard "*".
 	CORSAllowCredentials bool `json:"cors_allow_credentials,omitempty"`
+
+	// DefaultLanguage is the fallback language for display names when
+	// the user's Accept-Language header doesn't match any available language.
+	// Defaults to "en" if not specified.
+	DefaultLanguage string `json:"default_language,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).

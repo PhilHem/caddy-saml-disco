@@ -1456,9 +1456,9 @@ func TestSelectFromMap(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := selectFromMap(m, tc.prefs)
+			result := selectFromMap(m, tc.prefs, "en")
 			if result != tc.expected {
-				t.Errorf("selectFromMap(m, %v) = %q, want %q",
+				t.Errorf("selectFromMap(m, %v, \"en\") = %q, want %q",
 					tc.prefs, result, tc.expected)
 			}
 		})
@@ -1473,7 +1473,7 @@ func TestSelectFromMap_NoEnglish(t *testing.T) {
 	}
 
 	// No English, no match - should return any available value
-	result := selectFromMap(m, []string{"es", "it"})
+	result := selectFromMap(m, []string{"es", "it"}, "en")
 	// Result should be one of the available values
 	if result != "Deutsch" && result != "Français" {
 		t.Errorf("selectFromMap should return any available value, got %q", result)
@@ -1483,9 +1483,57 @@ func TestSelectFromMap_NoEnglish(t *testing.T) {
 // TestSelectFromMap_Empty verifies handling of empty map.
 func TestSelectFromMap_Empty(t *testing.T) {
 	m := map[string]string{}
-	result := selectFromMap(m, []string{"en"})
+	result := selectFromMap(m, []string{"en"}, "en")
 	if result != "" {
 		t.Errorf("selectFromMap on empty map = %q, want empty string", result)
+	}
+}
+
+// TestSelectFromMap_ConfigurableDefault verifies that the default language
+// can be configured instead of being hard-coded to English.
+func TestSelectFromMap_ConfigurableDefault(t *testing.T) {
+	// Map without English - only German and French
+	m := map[string]string{
+		"de": "Deutsch",
+		"fr": "Français",
+	}
+
+	tests := []struct {
+		name        string
+		prefs       []string
+		defaultLang string
+		expected    string
+	}{
+		// Default language is used when no preference matches
+		{"default de, no match", []string{"es"}, "de", "Deutsch"},
+		{"default fr, no match", []string{"es"}, "fr", "Français"},
+
+		// Empty prefs uses default language
+		{"empty prefs, default de", []string{}, "de", "Deutsch"},
+		{"empty prefs, default fr", []string{}, "fr", "Français"},
+
+		// Preference still takes priority over default
+		{"pref matches, ignores default", []string{"fr"}, "de", "Français"},
+
+		// Default not in map falls back to any available
+		{"default not available", []string{"es"}, "it", "Deutsch"}, // or Français, just any
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := selectFromMap(m, tc.prefs, tc.defaultLang)
+			if tc.name == "default not available" {
+				// Special case: result should be any available value
+				if result != "Deutsch" && result != "Français" {
+					t.Errorf("selectFromMap should return any available value, got %q", result)
+				}
+				return
+			}
+			if result != tc.expected {
+				t.Errorf("selectFromMap(m, %v, %q) = %q, want %q",
+					tc.prefs, tc.defaultLang, result, tc.expected)
+			}
+		})
 	}
 }
 
@@ -1531,7 +1579,7 @@ func TestLocalizeIdPInfo(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			localized := LocalizeIdPInfo(idp, tc.prefs)
+			localized := LocalizeIdPInfo(idp, tc.prefs, "en")
 
 			if localized.DisplayName != tc.expectedName {
 				t.Errorf("DisplayName = %q, want %q", localized.DisplayName, tc.expectedName)
@@ -1567,7 +1615,7 @@ func TestLocalizeIdPInfo_EmptyMaps(t *testing.T) {
 		InformationURL: "https://example.com/",
 	}
 
-	localized := LocalizeIdPInfo(idp, []string{"de"})
+	localized := LocalizeIdPInfo(idp, []string{"de"}, "en")
 
 	// Should preserve original values when maps are empty
 	if localized.DisplayName != "Original Name" {
@@ -1578,5 +1626,54 @@ func TestLocalizeIdPInfo_EmptyMaps(t *testing.T) {
 	}
 	if localized.InformationURL != "https://example.com/" {
 		t.Errorf("InformationURL = %q, want %q", localized.InformationURL, "https://example.com/")
+	}
+}
+
+// TestLocalizeIdPInfo_ConfigurableDefault verifies that the configured
+// default language is used when no Accept-Language preference matches.
+func TestLocalizeIdPInfo_ConfigurableDefault(t *testing.T) {
+	// IdP with only German and French - no English
+	idp := IdPInfo{
+		EntityID:    "https://example.com/idp",
+		DisplayName: "Fallback Name", // Would be set during metadata parsing
+		DisplayNames: map[string]string{
+			"de": "Deutscher Name",
+			"fr": "Nom Français",
+		},
+		Description: "Fallback Description",
+		Descriptions: map[string]string{
+			"de": "Deutsche Beschreibung",
+			"fr": "Description Française",
+		},
+	}
+
+	tests := []struct {
+		name         string
+		prefs        []string
+		defaultLang  string
+		expectedName string
+		expectedDesc string
+	}{
+		// Default to German when no preference matches
+		{"no match, default de", []string{"es"}, "de", "Deutscher Name", "Deutsche Beschreibung"},
+		// Default to French when no preference matches
+		{"no match, default fr", []string{"es"}, "fr", "Nom Français", "Description Française"},
+		// Empty preferences use default
+		{"empty prefs, default de", []string{}, "de", "Deutscher Name", "Deutsche Beschreibung"},
+		// Preference takes priority over default
+		{"pref fr, default de", []string{"fr"}, "de", "Nom Français", "Description Française"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			localized := LocalizeIdPInfo(idp, tc.prefs, tc.defaultLang)
+
+			if localized.DisplayName != tc.expectedName {
+				t.Errorf("DisplayName = %q, want %q", localized.DisplayName, tc.expectedName)
+			}
+			if localized.Description != tc.expectedDesc {
+				t.Errorf("Description = %q, want %q", localized.Description, tc.expectedDesc)
+			}
+		})
 	}
 }

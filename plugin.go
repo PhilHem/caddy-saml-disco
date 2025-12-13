@@ -312,7 +312,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	acsURL := s.resolveAcsURL(r)
 	result, err := s.samlService.HandleACS(r, acsURL, idp)
 	if err != nil {
-		s.logger.Warn("saml authentication failed",
+		s.getLogger().Warn("saml authentication failed",
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
 		)
@@ -320,7 +320,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	s.logger.Info("saml authentication successful",
+	s.getLogger().Info("saml authentication successful",
 		zap.String("subject", result.Subject),
 		zap.String("idp_entity_id", result.IdPEntityID),
 	)
@@ -379,7 +379,7 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 
 	idp, err := s.metadataStore.GetIdP(req.EntityID)
 	if err != nil {
-		s.logger.Debug("idp not found",
+		s.getLogger().Debug("idp not found",
 			zap.String("entity_id", req.EntityID),
 			zap.Error(err),
 		)
@@ -387,7 +387,7 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 		return nil
 	}
 
-	s.logger.Info("idp selected for authentication",
+	s.getLogger().Info("idp selected for authentication",
 		zap.String("entity_id", req.EntityID),
 	)
 
@@ -468,11 +468,29 @@ func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) er
 	return s.renderDiscoveryHTML(w, r, idps, returnURL)
 }
 
+// getDefaultLanguage returns the configured default language, falling back to "en".
+func (s *SAMLDisco) getDefaultLanguage() string {
+	if s.DefaultLanguage != "" {
+		return s.DefaultLanguage
+	}
+	return "en"
+}
+
+// getLogger returns the logger, or a no-op logger if not set.
+// This allows tests to run without calling Provision().
+func (s *SAMLDisco) getLogger() *zap.Logger {
+	if s.logger != nil {
+		return s.logger
+	}
+	return zap.NewNop()
+}
+
 // renderDiscoveryHTML renders the IdP selection page using the template renderer.
 func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, r *http.Request, idps []IdPInfo, returnURL string) error {
 	// Localize IdPs based on Accept-Language header
 	langPrefs := parseAcceptLanguage(r.Header.Get("Accept-Language"))
-	localizedIdPs := localizeIdPList(idps, langPrefs)
+	defaultLang := s.getDefaultLanguage()
+	localizedIdPs := localizeIdPList(idps, langPrefs, defaultLang)
 
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(localizedIdPs)
@@ -484,7 +502,7 @@ func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, r *http.Request, 
 	var rememberedIdP *IdPInfo
 	if rememberedIdPID != "" && s.metadataStore != nil {
 		if idp, err := s.metadataStore.GetIdP(rememberedIdPID); err == nil {
-			localized := LocalizeIdPInfo(*idp, langPrefs)
+			localized := LocalizeIdPInfo(*idp, langPrefs, defaultLang)
 			rememberedIdP = &localized
 		}
 	}
@@ -567,7 +585,7 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 
 	idps, err := s.metadataStore.ListIdPs(filter)
 	if err != nil {
-		s.logger.Error("failed to list idps",
+		s.getLogger().Error("failed to list idps",
 			zap.Error(err),
 		)
 		s.renderHTTPError(w, http.StatusInternalServerError, "Service Error", "Failed to retrieve identity providers")
@@ -579,14 +597,14 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 		idps = []IdPInfo{}
 	}
 
-	s.logger.Debug("idp list requested",
+	s.getLogger().Debug("idp list requested",
 		zap.String("filter", filter),
 		zap.Int("result_count", len(idps)),
 	)
 
 	// Localize IdPs based on Accept-Language header
 	langPrefs := parseAcceptLanguage(r.Header.Get("Accept-Language"))
-	idps = localizeIdPList(idps, langPrefs)
+	idps = localizeIdPList(idps, langPrefs, s.getDefaultLanguage())
 
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(idps)
@@ -889,13 +907,13 @@ func (s *SAMLDisco) SetRememberIdPDuration(d time.Duration) {
 
 // localizeIdPList applies localization to a slice of IdPInfo based on
 // language preferences.
-func localizeIdPList(idps []IdPInfo, prefs []string) []IdPInfo {
+func localizeIdPList(idps []IdPInfo, prefs []string, defaultLang string) []IdPInfo {
 	if len(idps) == 0 {
 		return idps
 	}
 	localized := make([]IdPInfo, len(idps))
 	for i, idp := range idps {
-		localized[i] = LocalizeIdPInfo(idp, prefs)
+		localized[i] = LocalizeIdPInfo(idp, prefs, defaultLang)
 	}
 	return localized
 }

@@ -553,8 +553,8 @@ func localizedValuesToMap(values []LocalizedValue) map[string]string {
 }
 
 // selectFromMap selects the value for the first matching language preference.
-// Falls back to English if no preference matches, then to any available value.
-func selectFromMap(m map[string]string, prefs []string) string {
+// Falls back to defaultLang if no preference matches, then to any available value.
+func selectFromMap(m map[string]string, prefs []string, defaultLang string) string {
 	if len(m) == 0 {
 		return ""
 	}
@@ -572,14 +572,14 @@ func selectFromMap(m map[string]string, prefs []string) string {
 		}
 	}
 
-	// Fallback to English
-	if val, ok := m["en"]; ok {
+	// Fallback to configured default language
+	if val, ok := m[defaultLang]; ok {
 		return val
 	}
 
-	// Fallback to any English variant
+	// Fallback to any variant of the default language (e.g., en-GB if default is en)
 	for lang, val := range m {
-		if strings.HasPrefix(lang, "en") {
+		if strings.HasPrefix(lang, defaultLang) {
 			return val
 		}
 	}
@@ -594,23 +594,24 @@ func selectFromMap(m map[string]string, prefs []string) string {
 
 // LocalizeIdPInfo returns a copy of the IdPInfo with localized fields
 // selected based on the language preferences.
-func LocalizeIdPInfo(idp IdPInfo, prefs []string) IdPInfo {
+// The defaultLang is used as fallback when no preference matches.
+func LocalizeIdPInfo(idp IdPInfo, prefs []string, defaultLang string) IdPInfo {
 	// Create a copy (IdPInfo is a value type, so this is already a copy)
 	localized := idp
 
 	// Localize DisplayName if we have language variants
 	if len(idp.DisplayNames) > 0 {
-		localized.DisplayName = selectFromMap(idp.DisplayNames, prefs)
+		localized.DisplayName = selectFromMap(idp.DisplayNames, prefs, defaultLang)
 	}
 
 	// Localize Description if we have language variants
 	if len(idp.Descriptions) > 0 {
-		localized.Description = selectFromMap(idp.Descriptions, prefs)
+		localized.Description = selectFromMap(idp.Descriptions, prefs, defaultLang)
 	}
 
 	// Localize InformationURL if we have language variants
 	if len(idp.InformationURLs) > 0 {
-		localized.InformationURL = selectFromMap(idp.InformationURLs, prefs)
+		localized.InformationURL = selectFromMap(idp.InformationURLs, prefs, defaultLang)
 	}
 
 	return localized
