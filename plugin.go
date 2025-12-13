@@ -17,6 +17,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 const Version = "0.7.0"
@@ -39,6 +40,7 @@ type SAMLDisco struct {
 	sessionDuration     time.Duration
 	rememberIdPDuration time.Duration
 	templateRenderer    *TemplateRenderer
+	logger              *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -51,6 +53,9 @@ func (SAMLDisco) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the module.
 func (s *SAMLDisco) Provision(ctx caddy.Context) error {
+	s.logger = ctx.Logger()
+	s.logger.Debug("provisioning saml discovery service")
+
 	s.Config.SetDefaults()
 
 	// Parse refresh interval for metadata cache TTL
@@ -129,6 +134,19 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		}
 		s.templateRenderer = renderer
 	}
+
+	// Log successful provisioning
+	idpCount := 0
+	if s.metadataStore != nil {
+		if idps, err := s.metadataStore.ListIdPs(""); err == nil {
+			idpCount = len(idps)
+		}
+	}
+	s.logger.Info("saml discovery service provisioned",
+		zap.String("entity_id", s.EntityID),
+		zap.Int("idp_count", idpCount),
+		zap.String("version", Version),
+	)
 
 	return nil
 }
@@ -294,9 +312,18 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	acsURL := s.resolveAcsURL(r)
 	result, err := s.samlService.HandleACS(r, acsURL, idp)
 	if err != nil {
+		s.logger.Warn("saml authentication failed",
+			zap.Error(err),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
 		s.renderHTTPError(w, http.StatusUnauthorized, "Authentication Failed", "SAML authentication failed")
 		return nil
 	}
+
+	s.logger.Info("saml authentication successful",
+		zap.String("subject", result.Subject),
+		zap.String("idp_entity_id", result.IdPEntityID),
+	)
 
 	// Create session
 	session := &Session{
@@ -352,9 +379,17 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 
 	idp, err := s.metadataStore.GetIdP(req.EntityID)
 	if err != nil {
+		s.logger.Debug("idp not found",
+			zap.String("entity_id", req.EntityID),
+			zap.Error(err),
+		)
 		s.renderHTTPError(w, http.StatusNotFound, "IdP Not Found", "The requested identity provider was not found")
 		return nil
 	}
+
+	s.logger.Info("idp selected for authentication",
+		zap.String("entity_id", req.EntityID),
+	)
 
 	// Only remember the selected IdP if explicitly requested (BREAKING CHANGE)
 	if req.Remember {
@@ -532,6 +567,9 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 
 	idps, err := s.metadataStore.ListIdPs(filter)
 	if err != nil {
+		s.logger.Error("failed to list idps",
+			zap.Error(err),
+		)
 		s.renderHTTPError(w, http.StatusInternalServerError, "Service Error", "Failed to retrieve identity providers")
 		return nil
 	}
@@ -540,6 +578,11 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 	if idps == nil {
 		idps = []IdPInfo{}
 	}
+
+	s.logger.Debug("idp list requested",
+		zap.String("filter", filter),
+		zap.Int("result_count", len(idps)),
+	)
 
 	// Localize IdPs based on Accept-Language header
 	langPrefs := parseAcceptLanguage(r.Header.Get("Accept-Language"))
