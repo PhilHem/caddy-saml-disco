@@ -1884,6 +1884,150 @@ func TestDiscoveryAPI_SelectIdP_NotFound_ReturnsHTMLError(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// LoginRedirect Tests (Custom UI Support)
+// =============================================================================
+
+// TestServeHTTP_NoSession_LoginRedirect_RedirectsToCustomURL verifies that when
+// LoginRedirect is configured, unauthenticated requests are redirected to the
+// custom login URL instead of directly to the IdP.
+func TestServeHTTP_NoSession_LoginRedirect_RedirectsToCustomURL(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+			LoginRedirect:     "/custom/login",
+		},
+		sessionStore: store,
+	}
+
+	// Request without session to a protected route
+	req := httptest.NewRequest(http.MethodGet, "/protected/page", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	// Should redirect to custom login URL with return_url parameter
+	want := "/custom/login?return_url=%2Fprotected%2Fpage"
+	if location != want {
+		t.Errorf("Location = %q, want %q", location, want)
+	}
+
+	if next.called {
+		t.Error("next handler should NOT be called when no session")
+	}
+}
+
+// TestServeHTTP_NoSession_LoginRedirect_PreservesQueryParams verifies that when
+// LoginRedirect already has query parameters, return_url is appended correctly.
+func TestServeHTTP_NoSession_LoginRedirect_PreservesQueryParams(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	s := &SAMLDisco{
+		Config: Config{
+			SessionCookieName: "saml_session",
+			LoginRedirect:     "/login?theme=dark",
+		},
+		sessionStore: store,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	// Should preserve existing query params and append return_url
+	want := "/login?theme=dark&return_url=%2Fprotected"
+	if location != want {
+		t.Errorf("Location = %q, want %q", location, want)
+	}
+}
+
+// TestServeHTTP_NoLoginRedirect_SingleIdP_DirectRedirect verifies that when
+// LoginRedirect is NOT configured and there's only one IdP, users are
+// redirected directly to that IdP (existing Phase 1 behavior).
+func TestServeHTTP_NoLoginRedirect_SingleIdP_DirectRedirect(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	store := NewCookieSessionStore(key, 8*time.Hour)
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:   "https://idp.example.com/saml",
+				SSOURL:     "https://idp.example.com/saml/sso",
+				SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:          "https://sp.example.com",
+			SessionCookieName: "saml_session",
+			// LoginRedirect is NOT set
+		},
+		sessionStore:  store,
+		samlService:   samlService,
+		metadataStore: metadataStore,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	// Should redirect directly to IdP SSO URL (existing behavior)
+	if !strings.HasPrefix(location, "https://idp.example.com/saml/sso") {
+		t.Errorf("Location = %q, should start with IdP SSO URL", location)
+	}
+
+	// Should contain SAMLRequest (SAML auth flow)
+	redirectURL, _ := url.Parse(location)
+	if redirectURL.Query().Get("SAMLRequest") == "" {
+		t.Error("redirect URL should contain SAMLRequest parameter")
+	}
+}
+
 // TestDiscoveryUI_PreservesReturnURL verifies that return_url is preserved
 // when showing the discovery page.
 func TestDiscoveryUI_PreservesReturnURL(t *testing.T) {

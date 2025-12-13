@@ -446,3 +446,71 @@ func TestDiscoveryFlow_FullFlow_SelectAndAuthenticate(t *testing.T) {
 	}
 	t.Log("Step 4: Session is unauthenticated as expected")
 }
+
+// TestDiscoveryFlow_LoginRedirect_RedirectsToCustomURL tests that when
+// LoginRedirect is configured, unauthenticated requests to protected routes
+// are redirected to the custom login URL instead of the IdP.
+func TestDiscoveryFlow_LoginRedirect_RedirectsToCustomURL(t *testing.T) {
+	// Load SP credentials for session store
+	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("load SP key: %v", err)
+	}
+
+	// Create session store (needed for session checking)
+	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*3600*1000000000) // 8 hours
+
+	// Create plugin with LoginRedirect configured
+	discoWithConfig := &caddysamldisco.SAMLDisco{
+		Config: caddysamldisco.Config{
+			SessionCookieName: "saml_session",
+			LoginRedirect:     "/my-custom-login",
+		},
+	}
+	discoWithConfig.SetSessionStore(sessionStore)
+
+	// Create test server
+	// Note: The redirect happens before next handler is called, so we pass nil
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		discoWithConfig.ServeHTTP(w, r, nil)
+	}))
+	defer server.Close()
+
+	// Client that doesn't follow redirects
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Request protected route without session
+	resp, err := client.Get(server.URL + "/protected/resource?foo=bar")
+	if err != nil {
+		t.Fatalf("GET /protected/resource: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Should redirect to custom login URL
+	if resp.StatusCode != http.StatusFound {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want %d, body: %s", resp.StatusCode, http.StatusFound, body)
+	}
+
+	location := resp.Header.Get("Location")
+
+	// Should redirect to custom login URL with return_url
+	if !strings.HasPrefix(location, "/my-custom-login?") {
+		t.Errorf("Location = %q, want prefix '/my-custom-login?'", location)
+	}
+
+	// Parse to verify return_url parameter
+	locationURL, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse location: %v", err)
+	}
+
+	returnURL := locationURL.Query().Get("return_url")
+	if returnURL != "/protected/resource?foo=bar" {
+		t.Errorf("return_url = %q, want '/protected/resource?foo=bar'", returnURL)
+	}
+}

@@ -183,10 +183,24 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	return next.ServeHTTP(w, r)
 }
 
-// redirectToIdP redirects the user directly to the IdP for authentication.
-// For Phase 1 (single IdP scenario), this bypasses the discovery UI.
-// The original URL is passed as RelayState so ACS can redirect back after login.
+// redirectToIdP redirects the user to authenticate.
+// If LoginRedirect is configured, redirects to custom login UI.
+// Otherwise, redirects directly to the IdP (single IdP scenario).
+// The original URL is passed as return_url/RelayState so ACS can redirect back after login.
 func (s *SAMLDisco) redirectToIdP(w http.ResponseWriter, r *http.Request) {
+	// If LoginRedirect is configured, redirect to custom UI
+	if s.LoginRedirect != "" {
+		redirectURL := s.LoginRedirect
+		if strings.Contains(redirectURL, "?") {
+			redirectURL += "&"
+		} else {
+			redirectURL += "?"
+		}
+		redirectURL += "return_url=" + url.QueryEscape(r.URL.RequestURI())
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+		return
+	}
+
 	// Check if required services are configured
 	if s.metadataStore == nil {
 		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "Metadata store is not configured")
