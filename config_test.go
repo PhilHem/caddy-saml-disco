@@ -70,3 +70,80 @@ func TestConfig_AltLogins_FieldExists(t *testing.T) {
 		t.Errorf("AltLogins[0].Label = %q, want %q", cfg.AltLogins[0].Label, "Local Account")
 	}
 }
+
+func TestConfig_CORSValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		origins     []string
+		credentials bool
+		wantErr     bool
+	}{
+		{
+			name:    "empty origins is valid",
+			origins: nil,
+			wantErr: false,
+		},
+		{
+			name:    "wildcard alone is valid",
+			origins: []string{"*"},
+			wantErr: false,
+		},
+		{
+			name:    "specific origin is valid",
+			origins: []string{"https://app.example.com"},
+			wantErr: false,
+		},
+		{
+			name:    "multiple origins valid",
+			origins: []string{"https://a.com", "https://b.com"},
+			wantErr: false,
+		},
+		{
+			name:    "wildcard with others is invalid",
+			origins: []string{"*", "https://a.com"},
+			wantErr: true,
+		},
+		{
+			name:    "wildcard not first with others is invalid",
+			origins: []string{"https://a.com", "*"},
+			wantErr: true,
+		},
+		{
+			name:    "http origin is valid",
+			origins: []string{"http://localhost:3000"},
+			wantErr: false,
+		},
+		{
+			name:        "credentials with specific origin is valid",
+			origins:     []string{"https://app.example.com"},
+			credentials: true,
+			wantErr:     false,
+		},
+		{
+			name:        "credentials with wildcard is invalid",
+			origins:     []string{"*"},
+			credentials: true,
+			wantErr:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{
+				EntityID:             "https://sp.example.com",
+				MetadataFile:         "/path/to/metadata.xml",
+				CORSAllowedOrigins:   tc.origins,
+				CORSAllowCredentials: tc.credentials,
+			}
+
+			err := cfg.Validate()
+
+			if tc.wantErr && err == nil {
+				t.Error("Validate() returned nil, want error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("Validate() returned error: %v, want nil", err)
+			}
+		})
+	}
+}

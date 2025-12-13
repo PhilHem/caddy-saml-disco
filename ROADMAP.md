@@ -68,7 +68,7 @@ Development phases for caddy-saml-disco.
 - [x] Custom frontend example in `examples/` (demonstrates `login_redirect` + JSON API)
 - [x] Remember last-used IdP cookie
 - [x] FeLS-style discovery UI (autocomplete search, "Remember me" checkbox, alternative login methods section)
-- [ ] CORS headers for SPA frontends (optional)
+- [x] CORS headers for SPA frontends (optional)
 - [ ] Multi-language display name support (prefer user's Accept-Language locale)
 - [ ] Logo proxy/caching endpoint (avoid hotlinking federation logos)
 

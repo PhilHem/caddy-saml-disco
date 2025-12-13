@@ -2399,3 +2399,218 @@ func TestDiscoveryUI_PreservesReturnURL(t *testing.T) {
 		t.Errorf("response should contain return_url, got: %s", body)
 	}
 }
+
+// TestCORS_ApiEndpoints verifies that CORS headers are applied correctly
+// to /saml/api/* endpoints based on configuration.
+func TestCORS_ApiEndpoints(t *testing.T) {
+	tests := []struct {
+		name          string
+		origins       []string
+		credentials   bool
+		requestOrigin string
+		endpoint      string
+		wantOrigin    string
+		wantCreds     string
+	}{
+		{
+			name:          "matching origin gets CORS headers",
+			origins:       []string{"https://app.example.com"},
+			requestOrigin: "https://app.example.com",
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "https://app.example.com",
+		},
+		{
+			name:          "non-matching origin gets no CORS",
+			origins:       []string{"https://app.example.com"},
+			requestOrigin: "https://evil.com",
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "",
+		},
+		{
+			name:          "wildcard allows any origin",
+			origins:       []string{"*"},
+			requestOrigin: "https://any.com",
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "*",
+		},
+		{
+			name:          "credentials header when enabled",
+			origins:       []string{"https://app.example.com"},
+			credentials:   true,
+			requestOrigin: "https://app.example.com",
+			endpoint:      "/saml/api/session",
+			wantOrigin:    "https://app.example.com",
+			wantCreds:     "true",
+		},
+		{
+			name:          "no credentials header with wildcard",
+			origins:       []string{"*"},
+			credentials:   false, // can't use credentials with wildcard anyway
+			requestOrigin: "https://any.com",
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "*",
+			wantCreds:     "",
+		},
+		{
+			name:          "non-API endpoints get no CORS",
+			origins:       []string{"https://app.example.com"},
+			requestOrigin: "https://app.example.com",
+			endpoint:      "/saml/disco",
+			wantOrigin:    "",
+		},
+		{
+			name:          "no origin header means no CORS response",
+			origins:       []string{"https://app.example.com"},
+			requestOrigin: "", // no Origin header
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "",
+		},
+		{
+			name:          "CORS disabled when no origins configured",
+			origins:       nil,
+			requestOrigin: "https://app.example.com",
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "",
+		},
+		{
+			name:          "multiple origins - first matches",
+			origins:       []string{"https://a.com", "https://b.com"},
+			requestOrigin: "https://a.com",
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "https://a.com",
+		},
+		{
+			name:          "multiple origins - second matches",
+			origins:       []string{"https://a.com", "https://b.com"},
+			requestOrigin: "https://b.com",
+			endpoint:      "/saml/api/idps",
+			wantOrigin:    "https://b.com",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			metadataStore := &mockMetadataStore{
+				idps: []IdPInfo{{EntityID: "https://idp.example.com", DisplayName: "Test IdP"}},
+			}
+
+			s := &SAMLDisco{
+				Config: Config{
+					CORSAllowedOrigins:   tc.origins,
+					CORSAllowCredentials: tc.credentials,
+				},
+				metadataStore:    metadataStore,
+				templateRenderer: testTemplateRenderer(t),
+			}
+
+			req := httptest.NewRequest(http.MethodGet, tc.endpoint, nil)
+			if tc.requestOrigin != "" {
+				req.Header.Set("Origin", tc.requestOrigin)
+			}
+			rec := httptest.NewRecorder()
+			next := &mockNextHandler{}
+
+			_ = s.ServeHTTP(rec, req, next)
+
+			gotOrigin := rec.Header().Get("Access-Control-Allow-Origin")
+			if gotOrigin != tc.wantOrigin {
+				t.Errorf("Access-Control-Allow-Origin = %q, want %q", gotOrigin, tc.wantOrigin)
+			}
+
+			gotCreds := rec.Header().Get("Access-Control-Allow-Credentials")
+			if gotCreds != tc.wantCreds {
+				t.Errorf("Access-Control-Allow-Credentials = %q, want %q", gotCreds, tc.wantCreds)
+			}
+
+			// Verify other CORS headers are set when origin matches
+			if tc.wantOrigin != "" {
+				gotMethods := rec.Header().Get("Access-Control-Allow-Methods")
+				if gotMethods == "" {
+					t.Error("Access-Control-Allow-Methods should be set when CORS is allowed")
+				}
+				gotHeaders := rec.Header().Get("Access-Control-Allow-Headers")
+				if gotHeaders == "" {
+					t.Error("Access-Control-Allow-Headers should be set when CORS is allowed")
+				}
+			}
+		})
+	}
+}
+
+// TestCORS_PreflightRequest verifies that OPTIONS requests to API endpoints
+// return proper CORS preflight responses.
+func TestCORS_PreflightRequest(t *testing.T) {
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{{EntityID: "https://idp.example.com", DisplayName: "Test IdP"}},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			CORSAllowedOrigins:   []string{"https://app.example.com"},
+			CORSAllowCredentials: true,
+		},
+		metadataStore:    metadataStore,
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	req := httptest.NewRequest(http.MethodOptions, "/saml/api/idps", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// Preflight should return 204 No Content
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+
+	// CORS headers should be present
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "https://app.example.com")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got == "" {
+		t.Error("Access-Control-Allow-Methods should be set")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Errorf("Access-Control-Allow-Credentials = %q, want %q", got, "true")
+	}
+
+	// Next handler should NOT be called for preflight
+	if next.called {
+		t.Error("next handler should NOT be called for preflight request")
+	}
+}
+
+// TestCORS_PreflightNonApiEndpoint verifies that OPTIONS requests to non-API
+// endpoints are passed through (not handled as CORS preflight).
+func TestCORS_PreflightNonApiEndpoint(t *testing.T) {
+	s := &SAMLDisco{
+		Config: Config{
+			CORSAllowedOrigins: []string{"https://app.example.com"},
+		},
+		templateRenderer: testTemplateRenderer(t),
+	}
+
+	req := httptest.NewRequest(http.MethodOptions, "/saml/disco", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	_ = s.ServeHTTP(rec, req, next)
+
+	// Non-API endpoints should NOT get CORS headers
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want empty for non-API endpoint", got)
+	}
+
+	// Next handler should be called (OPTIONS not handled as preflight)
+	if !next.called {
+		t.Error("next handler should be called for non-API OPTIONS request")
+	}
+}

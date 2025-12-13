@@ -70,6 +70,15 @@ type Config struct {
 
 	// AltLogins is a list of alternative login methods to display in the discovery UI.
 	AltLogins []AltLoginConfig `json:"alt_logins,omitempty"`
+
+	// CORSAllowedOrigins specifies which origins can access the JSON API.
+	// Use ["*"] to allow any origin (not recommended for production).
+	// Empty means CORS is disabled.
+	CORSAllowedOrigins []string `json:"cors_allowed_origins,omitempty"`
+
+	// CORSAllowCredentials allows cookies/auth headers in CORS requests.
+	// Only works with specific origins, not with wildcard "*".
+	CORSAllowCredentials bool `json:"cors_allow_credentials,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).
@@ -90,6 +99,20 @@ func (c *Config) Validate() error {
 
 	if c.MetadataURL != "" && c.MetadataFile != "" {
 		return fmt.Errorf("only one of metadata_url or metadata_file can be specified")
+	}
+
+	// Validate CORS config: wildcard cannot be combined with other origins
+	if len(c.CORSAllowedOrigins) > 1 {
+		for _, o := range c.CORSAllowedOrigins {
+			if o == "*" {
+				return fmt.Errorf("cors_allowed_origins: wildcard '*' cannot be combined with other origins")
+			}
+		}
+	}
+
+	// Validate CORS config: credentials cannot be used with wildcard
+	if c.CORSAllowCredentials && len(c.CORSAllowedOrigins) == 1 && c.CORSAllowedOrigins[0] == "*" {
+		return fmt.Errorf("cors_allow_credentials cannot be used with wildcard origin")
 	}
 
 	return nil

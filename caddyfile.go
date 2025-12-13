@@ -136,6 +136,15 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				Label: args[1],
 			})
 
+		case "cors_origins":
+			s.CORSAllowedOrigins = d.RemainingArgs()
+			if len(s.CORSAllowedOrigins) == 0 {
+				return d.ArgErr()
+			}
+
+		case "cors_allow_credentials":
+			s.CORSAllowCredentials = true
+
 		default:
 			return d.Errf("unrecognized subdirective: %s", d.Val())
 		}

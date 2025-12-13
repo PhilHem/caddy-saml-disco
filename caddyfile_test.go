@@ -114,3 +114,107 @@ func TestCaddyfile_AltLogin(t *testing.T) {
 		t.Errorf("AltLogins[1].URL = %q, want %q", s.AltLogins[1].URL, "/guest")
 	}
 }
+
+func TestCaddyfile_CORSOrigins_Single(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		cors_origins https://app.example.com
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if len(s.CORSAllowedOrigins) != 1 {
+		t.Fatalf("CORSAllowedOrigins length = %d, want 1", len(s.CORSAllowedOrigins))
+	}
+	if s.CORSAllowedOrigins[0] != "https://app.example.com" {
+		t.Errorf("CORSAllowedOrigins[0] = %q, want %q", s.CORSAllowedOrigins[0], "https://app.example.com")
+	}
+}
+
+func TestCaddyfile_CORSOrigins_Multiple(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		cors_origins https://a.com https://b.com https://c.com
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if len(s.CORSAllowedOrigins) != 3 {
+		t.Fatalf("CORSAllowedOrigins length = %d, want 3", len(s.CORSAllowedOrigins))
+	}
+	want := []string{"https://a.com", "https://b.com", "https://c.com"}
+	for i, v := range want {
+		if s.CORSAllowedOrigins[i] != v {
+			t.Errorf("CORSAllowedOrigins[%d] = %q, want %q", i, s.CORSAllowedOrigins[i], v)
+		}
+	}
+}
+
+func TestCaddyfile_CORSOrigins_Wildcard(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		cors_origins *
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if len(s.CORSAllowedOrigins) != 1 {
+		t.Fatalf("CORSAllowedOrigins length = %d, want 1", len(s.CORSAllowedOrigins))
+	}
+	if s.CORSAllowedOrigins[0] != "*" {
+		t.Errorf("CORSAllowedOrigins[0] = %q, want %q", s.CORSAllowedOrigins[0], "*")
+	}
+}
+
+func TestCaddyfile_CORSAllowCredentials(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		cors_origins https://app.example.com
+		cors_allow_credentials
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if !s.CORSAllowCredentials {
+		t.Error("CORSAllowCredentials = false, want true")
+	}
+}
+
+func TestCaddyfile_CORSOrigins_Empty_Error(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		cors_origins
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Error("UnmarshalCaddyfile should error on empty cors_origins")
+	}
+}

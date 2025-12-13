@@ -138,6 +138,17 @@ func (s *SAMLDisco) Validate() error {
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
 func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	// Handle CORS for API endpoints
+	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
+		s.applyCORSHeaders(w, r)
+
+		// Handle preflight requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return nil
+		}
+	}
+
 	// Route SAML endpoints
 	switch r.URL.Path {
 	case "/saml/metadata":
@@ -726,6 +737,50 @@ func (s *SAMLDisco) clearRememberIdPCookie(w http.ResponseWriter, r *http.Reques
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1, // Delete cookie
 	})
+}
+
+// applyCORSHeaders sets CORS headers if the request origin is allowed.
+// Returns true if CORS headers were applied.
+func (s *SAMLDisco) applyCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
+	if len(s.CORSAllowedOrigins) == 0 {
+		return false
+	}
+
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+
+	// Check if origin is allowed
+	allowed := false
+	responseOrigin := ""
+
+	if len(s.CORSAllowedOrigins) == 1 && s.CORSAllowedOrigins[0] == "*" {
+		allowed = true
+		responseOrigin = "*"
+	} else {
+		for _, o := range s.CORSAllowedOrigins {
+			if o == origin {
+				allowed = true
+				responseOrigin = origin
+				break
+			}
+		}
+	}
+
+	if !allowed {
+		return false
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", responseOrigin)
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if s.CORSAllowCredentials && responseOrigin != "*" {
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}
+
+	return true
 }
 
 // resolveAcsURL computes the ACS URL from the request and configuration.
