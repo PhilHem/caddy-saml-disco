@@ -14,8 +14,9 @@ var embeddedTemplates embed.FS
 
 // DiscoData holds data for rendering the discovery page template.
 type DiscoData struct {
-	IdPs      []IdPInfo
-	ReturnURL string
+	IdPs            []IdPInfo
+	ReturnURL       string
+	RememberedIdPID string // Entity ID of the last-used IdP (from cookie)
 }
 
 // ErrorData holds data for rendering error page templates.

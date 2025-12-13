@@ -31,11 +31,12 @@ type SAMLDisco struct {
 	Config
 
 	// Runtime state (not serialized)
-	metadataStore    MetadataStore
-	sessionStore     SessionStore
-	samlService      *SAMLService
-	sessionDuration  time.Duration
-	templateRenderer *TemplateRenderer
+	metadataStore       MetadataStore
+	sessionStore        SessionStore
+	samlService         *SAMLService
+	sessionDuration     time.Duration
+	rememberIdPDuration time.Duration
+	templateRenderer    *TemplateRenderer
 }
 
 // CaddyModule returns the Caddy module information.
@@ -100,6 +101,15 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			}
 			s.samlService = NewSAMLService(s.EntityID, privateKey, certificate)
 		}
+	}
+
+	// Parse remember IdP duration
+	if s.RememberIdPDuration != "" {
+		rememberDur, err := parseDuration(s.RememberIdPDuration)
+		if err != nil {
+			return fmt.Errorf("parse remember IdP duration: %w", err)
+		}
+		s.rememberIdPDuration = rememberDur
 	}
 
 	// Initialize template renderer
@@ -331,6 +341,9 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 		return nil
 	}
 
+	// Remember the selected IdP for next time
+	s.setRememberIdPCookie(w, r, req.EntityID)
+
 	// Check SAML service is configured
 	if s.samlService == nil {
 		s.renderHTTPError(w, http.StatusInternalServerError, "Configuration Error", "SAML service is not configured")
@@ -396,14 +409,15 @@ func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) er
 
 	// Serve discovery UI HTML
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return s.renderDiscoveryHTML(w, idps, returnURL)
+	return s.renderDiscoveryHTML(w, r, idps, returnURL)
 }
 
 // renderDiscoveryHTML renders the IdP selection page using the template renderer.
-func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, idps []IdPInfo, returnURL string) error {
+func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, r *http.Request, idps []IdPInfo, returnURL string) error {
 	return s.templateRenderer.RenderDisco(w, DiscoData{
-		IdPs:      idps,
-		ReturnURL: returnURL,
+		IdPs:            idps,
+		ReturnURL:       returnURL,
+		RememberedIdPID: s.getRememberIdPCookie(r),
 	})
 }
 
@@ -447,6 +461,12 @@ func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) er
 	return json.NewEncoder(w).Encode(response)
 }
 
+// idpListResponse is the JSON response for GET /saml/api/idps.
+type idpListResponse struct {
+	IdPs          []IdPInfo `json:"idps"`
+	RememberedIdP string    `json:"remembered_idp_id,omitempty"`
+}
+
 // handleListIdPs handles GET /saml/api/idps and returns available IdPs as JSON.
 // Supports optional ?q=search query parameter to filter IdPs.
 func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error {
@@ -469,8 +489,13 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 		idps = []IdPInfo{}
 	}
 
+	response := idpListResponse{
+		IdPs:          idps,
+		RememberedIdP: s.getRememberIdPCookie(r),
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(idps)
+	return json.NewEncoder(w).Encode(response)
 }
 
 // handleLogout handles the logout endpoint by clearing the session cookie
@@ -487,10 +512,28 @@ func (s *SAMLDisco) handleLogout(w http.ResponseWriter, r *http.Request) error {
 		MaxAge:   -1, // Delete cookie
 	})
 
+	// Clear the remember IdP cookie
+	s.clearRememberIdPCookie(w, r)
+
 	// Redirect to return_to or root (validate to prevent open redirect)
 	returnTo := validateRelayState(r.URL.Query().Get("return_to"))
 	http.Redirect(w, r, returnTo, http.StatusFound)
 	return nil
+}
+
+// parseDuration parses a duration string, supporting "d" suffix for days.
+// Examples: "30d" (30 days), "8h" (8 hours), "1h30m" (1.5 hours)
+func parseDuration(s string) (time.Duration, error) {
+	// Handle day suffix (not supported by time.ParseDuration)
+	if strings.HasSuffix(s, "d") {
+		days := strings.TrimSuffix(s, "d")
+		var d int
+		if _, err := fmt.Sscanf(days, "%d", &d); err != nil {
+			return 0, fmt.Errorf("invalid day format: %s", s)
+		}
+		return time.Duration(d) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
 }
 
 // validateRelayState ensures the RelayState is a safe relative path.
@@ -556,6 +599,50 @@ func (s *SAMLDisco) setSessionCookie(w http.ResponseWriter, r *http.Request, tok
 	})
 }
 
+// setRememberIdPCookie sets a cookie to remember the user's last-used IdP.
+func (s *SAMLDisco) setRememberIdPCookie(w http.ResponseWriter, r *http.Request, entityID string) {
+	if s.RememberIdPCookieName == "" || s.rememberIdPDuration == 0 {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.RememberIdPCookieName,
+		Value:    entityID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(s.rememberIdPDuration.Seconds()),
+	})
+}
+
+// getRememberIdPCookie reads the remembered IdP entity ID from the cookie.
+func (s *SAMLDisco) getRememberIdPCookie(r *http.Request) string {
+	if s.RememberIdPCookieName == "" {
+		return ""
+	}
+	cookie, err := r.Cookie(s.RememberIdPCookieName)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+	return cookie.Value
+}
+
+// clearRememberIdPCookie deletes the remembered IdP cookie.
+func (s *SAMLDisco) clearRememberIdPCookie(w http.ResponseWriter, r *http.Request) {
+	if s.RememberIdPCookieName == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.RememberIdPCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Delete cookie
+	})
+}
+
 // resolveAcsURL computes the ACS URL from the request and configuration.
 func (s *SAMLDisco) resolveAcsURL(r *http.Request) *url.URL {
 	if s.AcsURL != "" {
@@ -599,6 +686,11 @@ func (s *SAMLDisco) SetSessionStore(store SessionStore) {
 // SetTemplateRenderer sets the template renderer for testing.
 func (s *SAMLDisco) SetTemplateRenderer(renderer *TemplateRenderer) {
 	s.templateRenderer = renderer
+}
+
+// SetRememberIdPDuration sets the remember IdP duration for testing.
+func (s *SAMLDisco) SetRememberIdPDuration(d time.Duration) {
+	s.rememberIdPDuration = d
 }
 
 // Interface guards

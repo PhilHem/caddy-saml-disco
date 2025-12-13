@@ -48,6 +48,14 @@ type Config struct {
 	// IdPFilter is a pattern to filter IdPs from metadata aggregates.
 	// Supports glob patterns (e.g., "*.example.edu").
 	IdPFilter string `json:"idp_filter,omitempty"`
+
+	// RememberIdPCookieName is the name of the cookie that stores the last-used IdP.
+	// Defaults to "saml_last_idp".
+	RememberIdPCookieName string `json:"remember_idp_cookie_name,omitempty"`
+
+	// RememberIdPDuration is how long to remember the last-used IdP (e.g., "30d").
+	// Defaults to "30d" if not specified.
+	RememberIdPDuration string `json:"remember_idp_duration,omitempty"`
 }
 
 // Validate checks if the configuration is valid.
@@ -77,5 +85,11 @@ func (c *Config) SetDefaults() {
 	}
 	if c.SessionDuration == "" {
 		c.SessionDuration = "8h"
+	}
+	if c.RememberIdPCookieName == "" {
+		c.RememberIdPCookieName = "saml_last_idp"
+	}
+	if c.RememberIdPDuration == "" {
+		c.RememberIdPDuration = "30d"
 	}
 }
