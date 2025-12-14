@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" Name="Local Test Federation">
+
+    <EntityDescriptor entityID="http://localhost:8081/metadata">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIIC/jCCAeagAwIBAgIBATANBgkqhkiG9w0BAQsFADAnMQ0wCwYDVQQKEwRUZXN0MRYwFAYDVQQDEw1UVSBCZXJsaW4gSWRQMB4XDTI1MTIxMzE1MjIxNloXDTI2MTIxMzE1MjIxNlowJzENMAsGA1UEChMEVGVzdDEWMBQGA1UEAxMNVFUgQmVybGluIElkUDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALnRG8nXUbc4BVYM5lqdsYzE3f90XSkb7ArxZMSFDB5eW4S/S2UTzbEX5TV5R3I5tmzH2TVmF/uwkTNkpXVdGmD/TSRnv65RFVAX7N6cYed9JCFaRW8xGocIKMDeAoPFbZnTJmYtnsh9zgLdiujQMslb88Op7SW2GT1iQ/K5W9/XMsDch1E9ghyPQ6ahuPReEHy1P+juc7MMaDRaNS2Mqjpq2EnxMfuLOH5V1JUb/DugEdYybaDH0J2tFBSssJ3fMwi6A3oRBiZgXDuLrB9QQsokHGGN6VHCoDhmoeRrD30HBNE47zy5n6D8DrLY3PaG01h1+MxgzWVNVH8VxM06LOECAwEAAaM1MDMwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMAwGA1UdEwEB/wQCMAAwDQYJKoZIhvcNAQELBQADggEBAF19mPwh7BakodmtuQR38IsxzHtLXCQxtboSE71t3KvCzCc4JLXo8rH/C8JwAvb5l7Ir22t5cmc3KvkNzOLybThuBTsJ7PnDy8hCj95zdkVQesSk4z/7lgrVpdbXVHp51O4SmzMO2RwH95z6SdEKttse6jb/p/V69e5zLCvmXND73gi5Nj3XXPFu8WE0oBwO9rJDfERSeXzFoOLiAKVccYXc7apggGlwN9v/Xsx7V7Ttv6Xyu0SvergU5ePnefAVNdPKm0JO158NLGzSxq3D+9jEiaXrn7iuh6Kjkmymt6vEzMXRQJADfdUHvtDxFgjaHyOXyV0aDAaNXFugPHOzjoE=</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="http://localhost:8081/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">TU Berlin</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">TU Berlin</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">http://localhost:8081</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="http://localhost:8082/metadata">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIIDADCCAeigAwIBAgIBATANBgkqhkiG9w0BAQsFADAoMQ0wCwYDVQQKEwRUZXN0MRcwFQYDVQQDEw5MTVUgTXVuaWNoIElkUDAeFw0yNTEyMTMxNTIyMTZaFw0yNjEyMTMxNTIyMTZaMCgxDTALBgNVBAoTBFRlc3QxFzAVBgNVBAMTDkxNVSBNdW5pY2ggSWRQMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtENt6Viertnm2l2Z3BNlDvo8KWvF49RoINQcuFG2A2B1SNfsZ6IyUnvuEQ/4CBCQQuYSZWLaOEGZzuywr7Stf7NInGFmvsu8jYL5hpoLyPDWMPk6cZYU4Ofv4oYSMMiajIQvHllofaLAruS3JRhUTWPZSwluGCKJRMsdaRSSHp7OCPSlFvGSzFJPfKeGmsyjKWiRF/vpwIyvQ/ge+mXccVLPVK8B4SBW+CUi2FWN72E221izfwDewmmKUvoIolJTOAaCVYQnZbleEQPaCA1c0YoBvKJyH7e/1fXl4N511rA7ce0ekM6BPzJus+JKtUAH9XjTcDuCBaLs2e3+5TmzhwIDAQABozUwMzAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADANBgkqhkiG9w0BAQsFAAOCAQEAsW+q13WbVPYeULTjjO3aJxGkoHvdlQ//151zNFj2EvK3KGMccIOCbrOG6lehoCIXTzDBFYhZ9JJthvy0dVuczqHnTL1l033BxwYjKVy5PZwZYjNtiTDwmMDoD2BbziqaUsWW2HNpDe7x6RJo/TYi0HJL2svECMD7ZZtObM95zRlvhJKnVIx6gxGYLitP9QOHfFc+4yumIQRVdE8dRNqp56fHA4oppSg3ZJtlSGHUnpppcrQlrz4aPmAOFu1goou0ECtXAXkiX5uAosnU2gSC2/cO8PXDKRrS+EJjf2bTjd/Bh9pCtPhsdqyj5Anf/CRT7nyl5YPrGjLf2nM1rQuAmw==</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="http://localhost:8082/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">LMU Munich</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">LMU Munich</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">http://localhost:8082</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="http://localhost:8083/metadata">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIIDCDCCAfCgAwIBAgIBATANBgkqhkiG9w0BAQsFADAsMQ0wCwYDVQQKEwRUZXN0MRswGQYDVQQDExJVbmkgSGVpZGVsYmVyZyBJZFAwHhcNMjUxMjEzMTUyMjE2WhcNMjYxMjEzMTUyMjE2WjAsMQ0wCwYDVQQKEwRUZXN0MRswGQYDVQQDExJVbmkgSGVpZGVsYmVyZyBJZFAwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7i+YnFn1q/wsjR0h/ugEvdAfB94a/J9HlzeIUAHM9k0DqAHz1pxWhmsnGQaHDJFqbDEtZhBRjc5Hdnv5oRkjmndXzHWOz8lnirZFHNd7agpsQywBI2tR/vWRMJEwgdpa7bv4bUXlpHMjhRsSp7QEJ/zokTvlGTzIAB8XJ0WGfIKdFCcceIZe08I++kIKSwTzrrUfcSnNBZrDYfpSc0f93IN46Z/cuE+sadb7ovI/nc4MlvpwNyDoSYiHgx5cU8nntErb5VW0I5VkzePhjFhG6K8tTlKwrIxLefXiDYp47PkoLgDr9Hm98PhQDz4kORXGZOLMtCfX+56hkygy1AUMpAgMBAAGjNTAzMA4GA1UdDwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQARsBgEHxmAeZRoYEI03M099H3U8rYQGEzhcl1Mz+crRNo+hrKYR3A4u+PyVfyLuxE2tgRtRsOjJ2sZTAk2/zs71sCOg8T3RF5EAJwHioDzuRjcC4WoG2qE34lUKbO8t1/RN9A7FtPUTugeAOkD9n2fJvrrf2Od0K6wVR19rUbfb3TlGgswjL7CqWA6onAzz3IbV768pJAiK5hYttF1H9/ChC4IGFWMa5ZUr6dHkiE6dnpV+Dvam0Ihkio9NeGsbBz17bzWBvbwsRp0Ebs19jb96ta/IEhUzuy+UjrGd0IpQ7RokX/hRyDD6JCF+bCo2z7fIiukMXGD0yLknB6zU0tB</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="http://localhost:8083/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationName xml:lang="en">Uni Heidelberg</OrganizationName>
+            <OrganizationDisplayName xml:lang="en">Uni Heidelberg</OrganizationDisplayName>
+            <OrganizationURL xml:lang="en">http://localhost:8083</OrganizationURL>
+        </Organization>
+    </EntityDescriptor>
+
+</EntitiesDescriptor>
