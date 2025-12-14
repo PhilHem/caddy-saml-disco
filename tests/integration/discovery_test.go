@@ -934,3 +934,70 @@ func TestDiscoveryFlow_MultiLanguage_IncludesAllVariants(t *testing.T) {
 		t.Errorf("DisplayNames[de] = %q, want German name", tumIdP.DisplayNames["de"])
 	}
 }
+
+// =============================================================================
+// Registration Info Tests (Phase 4)
+// =============================================================================
+
+// TestDiscoveryFlow_ListIdPs_ReturnsRegistrationInfo verifies that registration
+// info from mdrpi:RegistrationInfo is included in the API response.
+func TestDiscoveryFlow_ListIdPs_ReturnsRegistrationInfo(t *testing.T) {
+	disco := &caddysamldisco.SAMLDisco{}
+	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		disco.ServeHTTP(w, r, nil)
+	}))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/saml/api/idps")
+	if err != nil {
+		t.Fatalf("GET /saml/api/idps: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+
+	// Find FU Berlin IdP (has full RegistrationInfo with policies)
+	var fuBerlin *caddysamldisco.IdPInfo
+	for i := range result.IdPs {
+		if result.IdPs[i].EntityID == "https://identity.fu-berlin.de/idp-fub" {
+			fuBerlin = &result.IdPs[i]
+			break
+		}
+	}
+	if fuBerlin == nil {
+		t.Fatal("FU Berlin IdP not found in response")
+	}
+
+	// Verify registration authority
+	if fuBerlin.RegistrationAuthority != "https://www.aai.dfn.de" {
+		t.Errorf("RegistrationAuthority = %q, want %q",
+			fuBerlin.RegistrationAuthority, "https://www.aai.dfn.de")
+	}
+
+	// Verify registration instant
+	expectedTime, _ := time.Parse(time.RFC3339, "2010-03-15T10:00:00Z")
+	if !fuBerlin.RegistrationInstant.Equal(expectedTime) {
+		t.Errorf("RegistrationInstant = %v, want %v",
+			fuBerlin.RegistrationInstant, expectedTime)
+	}
+
+	// Verify registration policies (both languages)
+	if fuBerlin.RegistrationPolicies == nil {
+		t.Fatal("RegistrationPolicies is nil")
+	}
+	if fuBerlin.RegistrationPolicies["en"] != "https://www.aai.dfn.de/en/join/" {
+		t.Errorf("RegistrationPolicies[en] = %q, want %q",
+			fuBerlin.RegistrationPolicies["en"], "https://www.aai.dfn.de/en/join/")
+	}
+	if fuBerlin.RegistrationPolicies["de"] != "https://www.aai.dfn.de/teilnahme/" {
+		t.Errorf("RegistrationPolicies[de] = %q, want %q",
+			fuBerlin.RegistrationPolicies["de"], "https://www.aai.dfn.de/teilnahme/")
+	}
+}

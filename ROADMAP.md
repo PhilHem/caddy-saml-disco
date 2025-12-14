@@ -92,7 +92,7 @@ Development phases for caddy-saml-disco.
 - [x] **Metadata signature verification** (critical for federation trust)
 - [x] Parse `mdrpi:RegistrationInfo` for trust chain validation
 - [ ] Filter IdPs by registration authority (`registration_authority` config option)
-- [ ] Expose registration info in `/saml/api/idps` JSON response
+- [x] Expose registration info in `/saml/api/idps` JSON response
 - [x] Validate metadata `validUntil` attribute (reject expired metadata)
 - [x] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
 - [x] Health check endpoint (`/saml/api/health`) exposing `MetadataHealth` status
