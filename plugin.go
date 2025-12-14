@@ -97,7 +97,14 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		}
 		s.metadataStore = store
 	} else if s.MetadataURL != "" {
-		store := NewURLMetadataStore(s.MetadataURL, refreshInterval, metadataOpts...)
+		var store *URLMetadataStore
+		if s.BackgroundRefresh {
+			store = NewURLMetadataStoreWithRefresh(s.MetadataURL, refreshInterval, metadataOpts...)
+			s.logger.Info("background metadata refresh enabled",
+				zap.Duration("interval", refreshInterval))
+		} else {
+			store = NewURLMetadataStore(s.MetadataURL, refreshInterval, metadataOpts...)
+		}
 		if err := store.Load(); err != nil {
 			return fmt.Errorf("load metadata from URL: %w", err)
 		}

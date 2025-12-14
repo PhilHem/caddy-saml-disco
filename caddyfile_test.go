@@ -294,3 +294,22 @@ func TestCaddyfile_MetadataSigningCert_RequiresArg(t *testing.T) {
 		t.Error("UnmarshalCaddyfile should error on metadata_signing_cert without argument")
 	}
 }
+
+func TestCaddyfile_BackgroundRefresh(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_url https://federation.example.com/metadata.xml
+		background_refresh
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if !s.BackgroundRefresh {
+		t.Error("BackgroundRefresh = false, want true")
+	}
+}

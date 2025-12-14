@@ -29,6 +29,11 @@ type Config struct {
 	// Defaults to "1h" if not specified.
 	MetadataRefreshInterval string `json:"metadata_refresh_interval,omitempty"`
 
+	// BackgroundRefresh enables periodic metadata refresh in the background.
+	// When enabled, metadata is fetched at MetadataRefreshInterval regardless of cache TTL.
+	// Only applies to URL metadata sources. Defaults to false (passive refresh).
+	BackgroundRefresh bool `json:"background_refresh,omitempty"`
+
 	// SessionCookieName is the name of the session cookie.
 	// Defaults to "saml_session".
 	SessionCookieName string `json:"session_cookie_name,omitempty"`

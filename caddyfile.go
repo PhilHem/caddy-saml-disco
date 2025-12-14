@@ -18,6 +18,7 @@ import (
 //	    key_file <path>
 //	    acs_url <url>
 //	    metadata_refresh_interval <duration>
+//	    background_refresh
 //	    session_cookie_name <name>
 //	    session_duration <duration>
 //	    templates_dir <path>
@@ -79,6 +80,9 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			s.MetadataRefreshInterval = d.Val()
+
+		case "background_refresh":
+			s.BackgroundRefresh = true
 
 		case "session_cookie_name":
 			if !d.NextArg() {
