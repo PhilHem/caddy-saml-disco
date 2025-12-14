@@ -15,7 +15,7 @@ var embeddedTemplates embed.FS
 // DiscoData holds data for rendering the discovery page template.
 type DiscoData struct {
 	IdPs            []IdPInfo
-	PinnedIdPs      []IdPInfo        // Pinned IdPs shown prominently (filtered from IdPs)
+	PinnedIdPs      []IdPInfo // Pinned IdPs shown prominently (filtered from IdPs)
 	ReturnURL       string
 	RememberedIdPID string           // Entity ID of the last-used IdP (from cookie)
 	RememberedIdP   *IdPInfo         // Full IdP info for remembered IdP

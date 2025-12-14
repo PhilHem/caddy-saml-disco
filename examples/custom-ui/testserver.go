@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 // testserver.go - A mock API server for testing the custom UI
@@ -84,7 +85,7 @@ func handleIdPs(w http.ResponseWriter, r *http.Request) {
 
 	// Return in expected format: { idps: [...], remembered_idp_id: "..." }
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"idps":             filtered,
+		"idps":              filtered,
 		"remembered_idp_id": rememberedIdPID,
 	})
 }

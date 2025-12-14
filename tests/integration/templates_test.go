@@ -107,11 +107,11 @@ func TestTemplates_DefaultTemplate_HasExpectedStructure(t *testing.T) {
 	// Verify expected elements
 	requiredElements := []string{
 		`<html`,
-		`id="search"`,           // Search input
-		`idp-list`,              // IdP list container
-		`idp-item`,              // IdP items
-		`data-entity-id`,        // Entity ID data attribute
-		`/saml/api/select`,      // Select API endpoint in JS
+		`id="search"`,                   // Search input
+		`idp-list`,                      // IdP list container
+		`idp-item`,                      // IdP items
+		`data-entity-id`,                // Entity ID data attribute
+		`/saml/api/select`,              // Select API endpoint in JS
 		`Select your Identity Provider`, // Title
 	}
 

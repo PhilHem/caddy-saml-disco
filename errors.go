@@ -10,13 +10,13 @@ import (
 type ErrorCode string
 
 const (
-	ErrCodeConfigMissing     ErrorCode = "config_missing"
-	ErrCodeIdPNotFound       ErrorCode = "idp_not_found"
-	ErrCodeAuthFailed        ErrorCode = "auth_failed"
-	ErrCodeSessionInvalid    ErrorCode = "session_invalid"
-	ErrCodeServiceError      ErrorCode = "service_error"
-	ErrCodeBadRequest        ErrorCode = "bad_request"
-	ErrCodeSignatureInvalid  ErrorCode = "signature_invalid"
+	ErrCodeConfigMissing    ErrorCode = "config_missing"
+	ErrCodeIdPNotFound      ErrorCode = "idp_not_found"
+	ErrCodeAuthFailed       ErrorCode = "auth_failed"
+	ErrCodeSessionInvalid   ErrorCode = "session_invalid"
+	ErrCodeServiceError     ErrorCode = "service_error"
+	ErrCodeBadRequest       ErrorCode = "bad_request"
+	ErrCodeSignatureInvalid ErrorCode = "signature_invalid"
 )
 
 // String returns the error code as a string.

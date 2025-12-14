@@ -697,8 +697,8 @@ func TestListIdPs_IncludesRememberedIdP(t *testing.T) {
 
 	// Parse response - should now be an object with idps and remembered_idp_id
 	var result struct {
-		IdPs           []caddysamldisco.IdPInfo `json:"idps"`
-		RememberedIdP  string                   `json:"remembered_idp_id"`
+		IdPs          []caddysamldisco.IdPInfo `json:"idps"`
+		RememberedIdP string                   `json:"remembered_idp_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
