@@ -90,6 +90,20 @@ type MetadataStore interface {
 // ErrIdPNotFound is returned when an IdP is not found in the store.
 var ErrIdPNotFound = fmt.Errorf("idp not found")
 
+// ErrMetadataExpired is returned when metadata has a validUntil attribute
+// that is in the past.
+var ErrMetadataExpired = fmt.Errorf("metadata expired")
+
+// IsMetadataExpired checks if metadata with the given validUntil time has expired.
+// Returns false if validUntil is zero (no expiry specified).
+// This is a pure function for domain logic - no I/O.
+func IsMetadataExpired(validUntil time.Time, now time.Time) bool {
+	if validUntil.IsZero() {
+		return false // No expiry specified
+	}
+	return !now.Before(validUntil) // Expired if now >= validUntil
+}
+
 // matchesEntityIDPattern returns true if the entityID matches the glob pattern.
 // Empty pattern matches everything. Uses strings.Contains for substring matching
 // when pattern is wrapped in wildcards (e.g., "*example*").
@@ -328,7 +342,13 @@ func filterIdPs(idps []IdPInfo, pattern string) []IdPInfo {
 
 // parseMetadata parses SAML metadata XML, supporting both single EntityDescriptor
 // and aggregate EntitiesDescriptor formats.
+// Returns ErrMetadataExpired if the metadata has a validUntil attribute in the past.
 func parseMetadata(data []byte) ([]IdPInfo, error) {
+	// Check validUntil before parsing the rest
+	if err := validateMetadataExpiry(data); err != nil {
+		return nil, err
+	}
+
 	// Parse UIInfo and RegistrationInfo separately since crewjam/saml doesn't expose them
 	uiInfoMap := parseAllUIInfo(data)
 	regInfoMap := parseAllRegistrationInfo(data)
@@ -345,6 +365,32 @@ func parseMetadata(data []byte) ([]IdPInfo, error) {
 		return nil, err
 	}
 	return []IdPInfo{*idp}, nil
+}
+
+// validateMetadataExpiry checks if the metadata has expired based on validUntil attribute.
+// Returns nil if metadata is valid or has no validUntil attribute.
+// Returns an error if metadata has expired.
+func validateMetadataExpiry(data []byte) error {
+	var validity rawMetadataValidity
+	if err := xml.Unmarshal(data, &validity); err != nil {
+		// If we can't parse, let the main parser handle the error
+		return nil
+	}
+
+	if validity.ValidUntil == "" {
+		return nil // No validUntil attribute
+	}
+
+	validUntil, err := time.Parse(time.RFC3339, validity.ValidUntil)
+	if err != nil {
+		return fmt.Errorf("invalid validUntil format %q: %w", validity.ValidUntil, err)
+	}
+
+	if IsMetadataExpired(validUntil, time.Now()) {
+		return fmt.Errorf("%w: validUntil %s is in the past", ErrMetadataExpired, validity.ValidUntil)
+	}
+
+	return nil
 }
 
 // entityUIInfo holds parsed UIInfo for a specific entity.
@@ -382,6 +428,12 @@ type rawEntityDescriptorForRegInfo struct {
 type rawEntitiesDescriptorForRegInfo struct {
 	EntityDescriptors   []rawEntityDescriptorForRegInfo   `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
 	EntitiesDescriptors []rawEntitiesDescriptorForRegInfo `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
+}
+
+// rawMetadataValidity is used to extract validUntil from metadata.
+// Works for both EntitiesDescriptor and EntityDescriptor.
+type rawMetadataValidity struct {
+	ValidUntil string `xml:"validUntil,attr"`
 }
 
 // parseAllUIInfo extracts UIInfo for all entities from raw XML.

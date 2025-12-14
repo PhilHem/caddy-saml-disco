@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -2135,5 +2136,212 @@ func TestFileMetadataStore_Health_AfterLoad(t *testing.T) {
 	}
 	if health.IdPCount == 0 {
 		t.Error("expected IdPs after load")
+	}
+}
+
+// =============================================================================
+// Metadata validUntil Validation Tests (Phase 4)
+// =============================================================================
+
+// TestIsMetadataExpired verifies the pure validation function.
+func TestIsMetadataExpired(t *testing.T) {
+	now := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name       string
+		validUntil time.Time
+		expected   bool
+	}{
+		// Zero time means no expiry - not expired
+		{"zero time (no expiry)", time.Time{}, false},
+
+		// Future validUntil - not expired
+		{"future date", time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), false},
+		{"far future", time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC), false},
+
+		// Past validUntil - expired
+		{"past date", time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), true},
+		{"yesterday", time.Date(2025, 1, 14, 0, 0, 0, 0, time.UTC), true},
+
+		// Edge case: exactly now - expired (not before)
+		{"exactly now", now, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := IsMetadataExpired(tc.validUntil, now)
+			if result != tc.expected {
+				t.Errorf("IsMetadataExpired(%v, %v) = %v, want %v",
+					tc.validUntil, now, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestFileMetadataStore_Load_ExpiredMetadata verifies that expired metadata
+// is rejected during loading.
+func TestFileMetadataStore_Load_ExpiredMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "expired.xml")
+
+	// Metadata with validUntil in the past
+	expiredXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    validUntil="2020-01-01T00:00:00Z">
+    <EntityDescriptor entityID="https://idp.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+	if err := os.WriteFile(path, []byte(expiredXML), 0644); err != nil {
+		t.Fatalf("write expired metadata: %v", err)
+	}
+
+	store := NewFileMetadataStore(path)
+	err := store.Load()
+
+	// Should fail because metadata is expired
+	if err == nil {
+		t.Error("expected error for expired metadata")
+	}
+	if err != nil && !strings.Contains(err.Error(), "expired") {
+		t.Errorf("error should mention 'expired', got: %v", err)
+	}
+}
+
+// TestFileMetadataStore_Load_ValidMetadata verifies that metadata with
+// future validUntil is accepted.
+func TestFileMetadataStore_Load_ValidMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "valid.xml")
+
+	// Metadata with validUntil in the future
+	validXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    validUntil="2030-01-01T00:00:00Z">
+    <EntityDescriptor entityID="https://idp.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+	if err := os.WriteFile(path, []byte(validXML), 0644); err != nil {
+		t.Fatalf("write valid metadata: %v", err)
+	}
+
+	store := NewFileMetadataStore(path)
+	err := store.Load()
+
+	if err != nil {
+		t.Errorf("unexpected error for valid metadata: %v", err)
+	}
+
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Errorf("expected 1 IdP, got %d", len(idps))
+	}
+}
+
+// TestFileMetadataStore_Load_NoValidUntil verifies that metadata without
+// validUntil attribute is accepted (no expiry).
+func TestFileMetadataStore_Load_NoValidUntil(t *testing.T) {
+	// testdata/aggregate-metadata.xml has no validUntil - should work
+	store := NewFileMetadataStore("testdata/aggregate-metadata.xml")
+	err := store.Load()
+
+	if err != nil {
+		t.Errorf("unexpected error for metadata without validUntil: %v", err)
+	}
+
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 3 {
+		t.Errorf("expected 3 IdPs, got %d", len(idps))
+	}
+}
+
+// TestFileMetadataStore_Load_SingleEntityExpired verifies that single
+// EntityDescriptor (not aggregate) with expired validUntil is rejected.
+func TestFileMetadataStore_Load_SingleEntityExpired(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "expired-single.xml")
+
+	expiredXML := `<?xml version="1.0"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                  entityID="https://idp.example.com"
+                  validUntil="2020-01-01T00:00:00Z">
+    <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+        <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+    </IDPSSODescriptor>
+</EntityDescriptor>`
+	if err := os.WriteFile(path, []byte(expiredXML), 0644); err != nil {
+		t.Fatalf("write expired metadata: %v", err)
+	}
+
+	store := NewFileMetadataStore(path)
+	err := store.Load()
+
+	if err == nil {
+		t.Error("expected error for expired single EntityDescriptor")
+	}
+}
+
+// TestURLMetadataStore_Load_ExpiredMetadata verifies that URL-based loading
+// also rejects expired metadata.
+func TestURLMetadataStore_Load_ExpiredMetadata(t *testing.T) {
+	expiredXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    validUntil="2020-01-01T00:00:00Z">
+    <EntityDescriptor entityID="https://idp.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(expiredXML))
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	err := store.Load()
+
+	if err == nil {
+		t.Error("expected error for expired metadata from URL")
+	}
+	if err != nil && !strings.Contains(err.Error(), "expired") {
+		t.Errorf("error should mention 'expired', got: %v", err)
+	}
+}
+
+// TestURLMetadataStore_Load_ValidMetadata verifies that URL-based loading
+// accepts metadata with future validUntil.
+func TestURLMetadataStore_Load_ValidMetadataWithValidUntil(t *testing.T) {
+	validXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    validUntil="2030-01-01T00:00:00Z">
+    <EntityDescriptor entityID="https://idp.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(validXML))
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	err := store.Load()
+
+	if err != nil {
+		t.Errorf("unexpected error for valid metadata: %v", err)
+	}
+
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Errorf("expected 1 IdP, got %d", len(idps))
 	}
 }
