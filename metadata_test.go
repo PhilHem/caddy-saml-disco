@@ -12,6 +12,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestFileMetadataStore_Load(t *testing.T) {
@@ -2453,4 +2456,112 @@ func TestURLMetadataStore_Close_NoBackgroundRefresh(t *testing.T) {
 
 	// Should not panic - Close() should be a no-op for passive stores
 	store.Close()
+}
+
+// =============================================================================
+// Logger Integration Tests
+// =============================================================================
+
+// TestURLMetadataStore_WithLogger verifies that a logger can be injected
+// via the WithLogger option.
+func TestURLMetadataStore_WithLogger(t *testing.T) {
+	core, _ := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour, WithLogger(logger))
+
+	if store.logger == nil {
+		t.Error("expected logger to be set via WithLogger option")
+	}
+}
+
+// TestURLMetadataStore_BackgroundRefresh_LogsSuccess verifies that successful
+// background refresh events are logged.
+func TestURLMetadataStore_BackgroundRefresh_LogsSuccess(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond, WithLogger(logger))
+	defer store.Close()
+
+	// Initial load
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Wait for at least one background refresh cycle
+	time.Sleep(120 * time.Millisecond)
+
+	// Assert: at least one success log
+	successLogs := logs.FilterMessage("background metadata refresh succeeded")
+	if successLogs.Len() == 0 {
+		t.Error("expected success log message from background refresh")
+	}
+
+	// Verify idp_count field is present
+	if successLogs.Len() > 0 {
+		entry := successLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["idp_count"]; !ok {
+			t.Error("expected idp_count field in log entry")
+		}
+	}
+}
+
+// TestURLMetadataStore_BackgroundRefresh_LogsFailure verifies that failed
+// background refresh events are logged with error details.
+func TestURLMetadataStore_BackgroundRefresh_LogsFailure(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond, WithLogger(logger))
+	defer store.Close()
+
+	// Wait for at least one background refresh cycle (no initial Load needed - will fail)
+	time.Sleep(120 * time.Millisecond)
+
+	// Assert: at least one failure log
+	failLogs := logs.FilterMessage("background metadata refresh failed")
+	if failLogs.Len() == 0 {
+		t.Error("expected failure log message from background refresh")
+	}
+
+	// Verify error field is present and contains HTTP status
+	if failLogs.Len() > 0 {
+		entry := failLogs.All()[0]
+		fields := entry.ContextMap()
+		errVal, ok := fields["error"]
+		if !ok {
+			t.Error("expected error field in log entry")
+		} else if errStr, isStr := errVal.(string); isStr {
+			if !strings.Contains(errStr, "500") {
+				t.Errorf("expected HTTP 500 in error, got: %s", errStr)
+			}
+		}
+	}
 }

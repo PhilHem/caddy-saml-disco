@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/crewjam/saml"
+	"go.uber.org/zap"
 )
 
 // IdPInfo contains information about an Identity Provider.
@@ -140,6 +141,7 @@ type MetadataOption func(*metadataOptions)
 type metadataOptions struct {
 	idpFilter         string
 	signatureVerifier SignatureVerifier
+	logger            *zap.Logger
 }
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
@@ -156,6 +158,14 @@ func WithIdPFilter(pattern string) MetadataOption {
 func WithSignatureVerifier(verifier SignatureVerifier) MetadataOption {
 	return func(o *metadataOptions) {
 		o.signatureVerifier = verifier
+	}
+}
+
+// WithLogger returns an option that sets the logger for the metadata store.
+// When set, background refresh events (success/failure) will be logged.
+func WithLogger(logger *zap.Logger) MetadataOption {
+	return func(o *metadataOptions) {
+		o.logger = logger
 	}
 }
 
@@ -859,6 +869,7 @@ type URLMetadataStore struct {
 	cacheTTL          time.Duration
 	idpFilter         string
 	signatureVerifier SignatureVerifier
+	logger            *zap.Logger
 
 	mu              sync.RWMutex
 	idps            []IdPInfo
@@ -887,6 +898,7 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		cacheTTL:          cacheTTL,
 		idpFilter:         options.idpFilter,
 		signatureVerifier: options.signatureVerifier,
+		logger:            options.logger,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -911,7 +923,19 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			s.doRefresh(context.Background(), true) // force=true bypasses cache TTL
+			err := s.doRefresh(context.Background(), true) // force=true bypasses cache TTL
+			if s.logger != nil {
+				if err != nil {
+					s.logger.Warn("background metadata refresh failed",
+						zap.Error(err))
+				} else {
+					s.mu.RLock()
+					idpCount := len(s.idps)
+					s.mu.RUnlock()
+					s.logger.Info("background metadata refresh succeeded",
+						zap.Int("idp_count", idpCount))
+				}
+			}
 		case <-s.stopCh:
 			return
 		}

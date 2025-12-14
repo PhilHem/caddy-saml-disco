@@ -89,6 +89,9 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			zap.Int("cert_count", len(certs)))
 	}
 
+	// Pass logger to metadata store for background refresh logging
+	metadataOpts = append(metadataOpts, WithLogger(s.logger))
+
 	// Initialize metadata store based on config
 	if s.MetadataFile != "" {
 		store := NewFileMetadataStore(s.MetadataFile, metadataOpts...)
