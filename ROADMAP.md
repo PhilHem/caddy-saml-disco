@@ -105,6 +105,8 @@ Development phases for caddy-saml-disco.
 - [ ] Log metadata expiry rejections (structured logging for `validUntil` failures)
 - [ ] Expose `validUntil` in health endpoint (`MetadataValidUntil` field for monitoring)
 - [ ] Fix integration tests expecting 302 from `/saml/api/select` (now returns JSON with `redirect_url`)
+- [ ] GitHub Actions workflow for release binaries (linux/amd64, darwin/arm64, windows/amd64)
+- [ ] Docker image with automated builds (`ghcr.io/yourusername/caddy-saml-disco`)
 
 **Outcome:** Ready for production use in federation environments.
 
@@ -114,10 +116,12 @@ Development phases for caddy-saml-disco.
 
 **Goal:** Feature-complete v1 release.
 
+- [ ] Attribute mapping configuration (OID → friendly names like `eduPersonPrincipalName` → `username`)
+- [ ] Header injection customization (`REMOTE_USER`, `X-Forwarded-User`, custom headers)
 - [ ] Single Logout (SLO) support
+- [ ] Forced re-authentication (`forceAuthn` parameter for sensitive routes)
+- [ ] Authentication context class requests (request MFA/specific auth strength)
 - [ ] Encrypted assertions
-- [ ] Attribute mapping configuration
-- [ ] Header injection customization
 - [ ] Multiple SP configurations per instance
 - [ ] Comprehensive test suite (unit, integration, e2e)
 - [ ] Parse `mdattr:EntityAttributes` for entity categories (R&S, SIRTFI)
@@ -135,3 +139,4 @@ Development phases for caddy-saml-disco.
 - IdP-initiated SSO support
 - SCIM provisioning integration
 - Admin API for runtime IdP management
+- Submit to Caddy plugin directory (caddyserver.com/download)
