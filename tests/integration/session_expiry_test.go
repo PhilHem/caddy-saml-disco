@@ -52,6 +52,10 @@ func (m *mockMetadataStore) Refresh(ctx context.Context) error {
 	return nil
 }
 
+func (m *mockMetadataStore) Health() caddysamldisco.MetadataHealth {
+	return caddysamldisco.MetadataHealth{IsFresh: true, IdPCount: len(m.idps)}
+}
+
 // TestSessionExpiry_ValidThenExpired_RedirectsToIdP verifies that a valid session
 // passes through to the next handler, but after expiration redirects to the IdP.
 //

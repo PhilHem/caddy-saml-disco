@@ -37,6 +37,10 @@ func (m *mockMetadataStore) Refresh(ctx context.Context) error {
 	return nil
 }
 
+func (m *mockMetadataStore) Health() MetadataHealth {
+	return MetadataHealth{IsFresh: true, IdPCount: len(m.idps)}
+}
+
 // mockNextHandler is a test double for the next handler in the middleware chain.
 type mockNextHandler struct {
 	called bool
@@ -1151,6 +1155,10 @@ func (m *mockMetadataStoreWithFilter) ListIdPs(filter string) ([]IdPInfo, error)
 
 func (m *mockMetadataStoreWithFilter) Refresh(ctx context.Context) error {
 	return nil
+}
+
+func (m *mockMetadataStoreWithFilter) Health() MetadataHealth {
+	return MetadataHealth{IsFresh: true, IdPCount: len(m.idps)}
 }
 
 // =============================================================================
@@ -2957,5 +2965,67 @@ func TestRenderAppError_AllErrorCodes(t *testing.T) {
 				t.Errorf("error.code = %q, want %q", resp.Error.Code, tc.wantCode)
 			}
 		})
+	}
+}
+
+// =============================================================================
+// Health API: /saml/api/health Tests
+// =============================================================================
+
+func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
+	store := NewInMemoryMetadataStore([]IdPInfo{{EntityID: "https://idp1.example.com"}})
+	s := &SAMLDisco{metadataStore: store}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	var health MetadataHealth
+	if err := json.NewDecoder(rec.Body).Decode(&health); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if health.IdPCount != 1 {
+		t.Errorf("IdPCount = %d, want 1", health.IdPCount)
+	}
+	if !health.IsFresh {
+		t.Error("IsFresh should be true for in-memory store")
+	}
+}
+
+func TestHealthEndpoint_NoMetadataStore(t *testing.T) {
+	s := &SAMLDisco{metadataStore: nil}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	// Should return JSON error
+	var resp JSONErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON error: %v", err)
+	}
+	if resp.Error.Code != "config_missing" {
+		t.Errorf("error.code = %q, want %q", resp.Error.Code, "config_missing")
 	}
 }

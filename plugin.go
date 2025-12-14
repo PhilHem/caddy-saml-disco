@@ -224,6 +224,10 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		if r.Method == http.MethodGet {
 			return s.handleSessionInfo(w, r)
 		}
+	case "/saml/api/health":
+		if r.Method == http.MethodGet {
+			return s.handleHealth(w, r)
+		}
 	case "/saml/disco":
 		if r.Method == http.MethodGet {
 			return s.handleDiscoveryUI(w, r)
@@ -608,6 +612,16 @@ func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) er
 
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(response)
+}
+
+func (s *SAMLDisco) handleHealth(w http.ResponseWriter, r *http.Request) error {
+	if s.metadataStore == nil {
+		s.renderAppError(w, r, ConfigError("metadata store not configured"))
+		return nil
+	}
+	health := s.metadataStore.Health()
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(health)
 }
 
 func (s *SAMLDisco) handleLogoEndpoint(w http.ResponseWriter, r *http.Request) error {

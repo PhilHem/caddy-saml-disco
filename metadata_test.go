@@ -2090,3 +2090,50 @@ func TestURLMetadataStore_Health_ReturnsStatus(t *testing.T) {
 		t.Error("Health.LastSuccessTime should still be set from previous success")
 	}
 }
+
+func TestInMemoryMetadataStore_Health(t *testing.T) {
+	store := NewInMemoryMetadataStore([]IdPInfo{
+		{EntityID: "https://idp1.example.com"},
+		{EntityID: "https://idp2.example.com"},
+	})
+
+	health := store.Health()
+
+	if !health.IsFresh {
+		t.Error("in-memory store should always be fresh")
+	}
+	if health.IdPCount != 2 {
+		t.Errorf("expected 2 IdPs, got %d", health.IdPCount)
+	}
+	if health.LastError != nil {
+		t.Errorf("expected nil LastError, got %v", health.LastError)
+	}
+}
+
+func TestFileMetadataStore_Health_BeforeLoad(t *testing.T) {
+	store := NewFileMetadataStore("/nonexistent.xml")
+	health := store.Health()
+
+	if health.IsFresh {
+		t.Error("unloaded store should not be fresh")
+	}
+	if health.IdPCount != 0 {
+		t.Errorf("expected 0 IdPs, got %d", health.IdPCount)
+	}
+}
+
+func TestFileMetadataStore_Health_AfterLoad(t *testing.T) {
+	store := NewFileMetadataStore("testdata/idp-metadata.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	health := store.Health()
+
+	if !health.IsFresh {
+		t.Error("loaded store should be fresh")
+	}
+	if health.IdPCount == 0 {
+		t.Error("expected IdPs after load")
+	}
+}

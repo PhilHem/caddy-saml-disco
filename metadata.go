@@ -82,6 +82,9 @@ type MetadataStore interface {
 
 	// Refresh reloads metadata from the source.
 	Refresh(ctx context.Context) error
+
+	// Health returns the health status of the metadata store.
+	Health() MetadataHealth
 }
 
 // ErrIdPNotFound is returned when an IdP is not found in the store.
@@ -187,6 +190,17 @@ func (s *InMemoryMetadataStore) Refresh(ctx context.Context) error {
 	return nil
 }
 
+// Health returns the health status of the in-memory store.
+// In-memory stores are always considered fresh.
+func (s *InMemoryMetadataStore) Health() MetadataHealth {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return MetadataHealth{
+		IsFresh:  true,
+		IdPCount: len(s.idps),
+	}
+}
+
 // FileMetadataStore loads IdP metadata from a local file.
 // Supports both single EntityDescriptor and aggregate EntitiesDescriptor formats.
 type FileMetadataStore struct {
@@ -286,6 +300,16 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 	s.mu.Unlock()
 
 	return nil
+}
+
+// Health returns the health status of the file metadata store.
+func (s *FileMetadataStore) Health() MetadataHealth {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return MetadataHealth{
+		IsFresh:  len(s.idps) > 0,
+		IdPCount: len(s.idps),
+	}
 }
 
 // filterIdPs returns only IdPs whose entity ID matches the pattern.
