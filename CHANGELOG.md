@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2025-12-14
+
+### Added
+- **Background metadata refresh** (`background_refresh` config):
+  - Periodic refresh using `time.NewTicker` for reliable scheduling
+  - Configurable via `background_refresh` boolean option
+  - Logging for refresh success/failure events
+- **Metadata `validUntil` validation**:
+  - Reject expired metadata based on `validUntil` attribute
+  - Prevents use of stale federation metadata
+- **Health check endpoint** (`GET /saml/api/health`):
+  - Exposes `MetadataHealth` status for monitoring
+  - Reports metadata freshness and error states
+- **Graceful metadata fetch failure handling**:
+  - Serve stale metadata when fresh fetch fails
+  - Maintains availability during temporary network issues
+- **`mdrpi:RegistrationInfo` parsing**:
+  - Extract registration authority from SAML metadata
+  - Expose registration info in `/saml/api/idps` JSON response
+  - Foundation for trust chain validation
+
+### Changed
+- Significant progress on Phase 4 (Production Hardening)
+
 ## [0.8.0] - 2025-12-14
 
 ### Added

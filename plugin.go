@@ -20,7 +20,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 func init() {
 	caddy.RegisterModule(SAMLDisco{})
