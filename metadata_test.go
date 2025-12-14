@@ -1757,3 +1757,96 @@ func TestMatchesSearch_EmptyDisplayNames(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// mdrpi:RegistrationInfo Parsing Tests (Phase 4)
+// =============================================================================
+
+// TestParseIdP_RegistrationInfo_Authority verifies that mdrpi:RegistrationInfo
+// registrationAuthority attribute is parsed.
+func TestParseIdP_RegistrationInfo_Authority(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	expected := "https://www.aai.dfn.de"
+	if idp.RegistrationAuthority != expected {
+		t.Errorf("RegistrationAuthority = %q, want %q", idp.RegistrationAuthority, expected)
+	}
+}
+
+// TestParseIdP_RegistrationInfo_Instant verifies that mdrpi:RegistrationInfo
+// registrationInstant attribute is parsed.
+func TestParseIdP_RegistrationInfo_Instant(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	expected := time.Date(2010, 3, 15, 10, 0, 0, 0, time.UTC)
+	if !idp.RegistrationInstant.Equal(expected) {
+		t.Errorf("RegistrationInstant = %v, want %v", idp.RegistrationInstant, expected)
+	}
+}
+
+// TestParseIdP_RegistrationInfo_Policies verifies that mdrpi:RegistrationPolicy
+// elements are parsed into a language map.
+func TestParseIdP_RegistrationInfo_Policies(t *testing.T) {
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	if idp.RegistrationPolicies == nil {
+		t.Fatal("RegistrationPolicies should not be nil")
+	}
+
+	if idp.RegistrationPolicies["en"] != "https://www.aai.dfn.de/en/join/" {
+		t.Errorf("RegistrationPolicies[en] = %q, want policy URL", idp.RegistrationPolicies["en"])
+	}
+	if idp.RegistrationPolicies["de"] != "https://www.aai.dfn.de/teilnahme/" {
+		t.Errorf("RegistrationPolicies[de] = %q, want policy URL", idp.RegistrationPolicies["de"])
+	}
+}
+
+// TestParseIdP_NoRegistrationInfo verifies graceful handling of IdPs without
+// mdrpi:RegistrationInfo (should have zero/empty values, not panic).
+func TestParseIdP_NoRegistrationInfo(t *testing.T) {
+	// idp-metadata.xml has no mdrpi:RegistrationInfo
+	store := NewFileMetadataStore("testdata/idp-metadata.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idp, err := store.GetIdP("https://idp.example.com/saml")
+	if err != nil {
+		t.Fatalf("GetIdP() failed: %v", err)
+	}
+
+	// Should be empty/zero values, not panic
+	if idp.RegistrationAuthority != "" {
+		t.Errorf("RegistrationAuthority should be empty, got %q", idp.RegistrationAuthority)
+	}
+	if !idp.RegistrationInstant.IsZero() {
+		t.Errorf("RegistrationInstant should be zero, got %v", idp.RegistrationInstant)
+	}
+	if idp.RegistrationPolicies != nil {
+		t.Errorf("RegistrationPolicies should be nil, got %v", idp.RegistrationPolicies)
+	}
+}

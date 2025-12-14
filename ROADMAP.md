@@ -90,7 +90,9 @@ Development phases for caddy-saml-disco.
 - [ ] Documentation site or README expansion
 - [ ] Performance testing with large metadata files
 - [x] **Metadata signature verification** (critical for federation trust)
-- [ ] Parse `mdrpi:RegistrationInfo` for trust chain validation
+- [x] Parse `mdrpi:RegistrationInfo` for trust chain validation
+- [ ] Filter IdPs by registration authority (`registration_authority` config option)
+- [ ] Expose registration info in `/saml/api/idps` JSON response
 - [ ] Validate metadata `validUntil` attribute (reject expired metadata)
 - [ ] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
 - [ ] Test fixture: signed metadata generator (runtime signing for integration tests)

@@ -57,6 +57,19 @@ type IdPInfo struct {
 
 	// Certificates are the IdP's signing certificates (PEM encoded).
 	Certificates []string `json:"-"` // Excluded from JSON API for security
+
+	// RegistrationAuthority is the URI of the federation that registered this IdP.
+	// Extracted from mdrpi:RegistrationInfo registrationAuthority attribute.
+	RegistrationAuthority string `json:"registration_authority,omitempty"`
+
+	// RegistrationInstant is when the IdP was registered with the federation.
+	// Extracted from mdrpi:RegistrationInfo registrationInstant attribute.
+	RegistrationInstant time.Time `json:"registration_instant,omitempty"`
+
+	// RegistrationPolicies contains localized URLs to the registration policy.
+	// Key is the language code (e.g., "en", "de").
+	// Extracted from mdrpi:RegistrationPolicy elements.
+	RegistrationPolicies map[string]string `json:"registration_policies,omitempty"`
 }
 
 // MetadataStore is the port interface for accessing IdP metadata.
@@ -292,17 +305,18 @@ func filterIdPs(idps []IdPInfo, pattern string) []IdPInfo {
 // parseMetadata parses SAML metadata XML, supporting both single EntityDescriptor
 // and aggregate EntitiesDescriptor formats.
 func parseMetadata(data []byte) ([]IdPInfo, error) {
-	// Parse UIInfo separately since crewjam/saml doesn't expose it
+	// Parse UIInfo and RegistrationInfo separately since crewjam/saml doesn't expose them
 	uiInfoMap := parseAllUIInfo(data)
+	regInfoMap := parseAllRegistrationInfo(data)
 
 	// Try EntitiesDescriptor first (aggregate metadata)
 	var entities saml.EntitiesDescriptor
 	if err := xml.Unmarshal(data, &entities); err == nil && len(entities.EntityDescriptors) > 0 {
-		return parseEntitiesDescriptorWithUIInfo(&entities, uiInfoMap)
+		return parseEntitiesDescriptorWithMaps(&entities, uiInfoMap, regInfoMap)
 	}
 
 	// Fall back to single EntityDescriptor
-	idp, err := parseEntityDescriptorWithUIInfo(data, uiInfoMap)
+	idp, err := parseEntityDescriptorWithMaps(data, uiInfoMap, regInfoMap)
 	if err != nil {
 		return nil, err
 	}
@@ -329,6 +343,21 @@ type rawEntityDescriptor struct {
 type rawEntitiesDescriptor struct {
 	EntityDescriptors    []rawEntityDescriptor    `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
 	EntitiesDescriptors  []rawEntitiesDescriptor  `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
+}
+
+// rawEntityDescriptorForRegInfo is used to parse RegistrationInfo from raw XML.
+// RegistrationInfo is at EntityDescriptor/Extensions level (not IDPSSODescriptor).
+type rawEntityDescriptorForRegInfo struct {
+	EntityID   string `xml:"entityID,attr"`
+	Extensions struct {
+		RegistrationInfo *RegistrationInfo `xml:"urn:oasis:names:tc:SAML:metadata:rpi RegistrationInfo"`
+	} `xml:"urn:oasis:names:tc:SAML:2.0:metadata Extensions"`
+}
+
+// rawEntitiesDescriptorForRegInfo is used to parse RegistrationInfo from aggregate metadata.
+type rawEntitiesDescriptorForRegInfo struct {
+	EntityDescriptors   []rawEntityDescriptorForRegInfo   `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
+	EntitiesDescriptors []rawEntitiesDescriptorForRegInfo `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
 }
 
 // parseAllUIInfo extracts UIInfo for all entities from raw XML.
@@ -367,14 +396,50 @@ func extractUIInfoFromEntities(entities *rawEntitiesDescriptor, result map[strin
 	}
 }
 
-// parseEntitiesDescriptorWithUIInfo extracts all IdPs from an aggregate metadata document.
+// parseAllRegistrationInfo extracts RegistrationInfo for all entities from raw XML.
+func parseAllRegistrationInfo(data []byte) map[string]*RegistrationInfo {
+	result := make(map[string]*RegistrationInfo)
+
+	// Try parsing as EntitiesDescriptor (aggregate)
+	var entities rawEntitiesDescriptorForRegInfo
+	if err := xml.Unmarshal(data, &entities); err == nil {
+		extractRegInfoFromEntities(&entities, result)
+		if len(result) > 0 {
+			return result
+		}
+	}
+
+	// Try parsing as single EntityDescriptor
+	var entity rawEntityDescriptorForRegInfo
+	if err := xml.Unmarshal(data, &entity); err == nil {
+		if entity.Extensions.RegistrationInfo != nil {
+			result[entity.EntityID] = entity.Extensions.RegistrationInfo
+		}
+	}
+
+	return result
+}
+
+// extractRegInfoFromEntities recursively extracts RegistrationInfo from EntitiesDescriptor.
+func extractRegInfoFromEntities(entities *rawEntitiesDescriptorForRegInfo, result map[string]*RegistrationInfo) {
+	for _, ed := range entities.EntityDescriptors {
+		if ed.Extensions.RegistrationInfo != nil {
+			result[ed.EntityID] = ed.Extensions.RegistrationInfo
+		}
+	}
+	for i := range entities.EntitiesDescriptors {
+		extractRegInfoFromEntities(&entities.EntitiesDescriptors[i], result)
+	}
+}
+
+// parseEntitiesDescriptorWithMaps extracts all IdPs from an aggregate metadata document.
 // It skips entities without IDPSSODescriptor (e.g., SP metadata).
-func parseEntitiesDescriptorWithUIInfo(entities *saml.EntitiesDescriptor, uiInfoMap map[string]*UIInfo) ([]IdPInfo, error) {
+func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMap map[string]*UIInfo, regInfoMap map[string]*RegistrationInfo) ([]IdPInfo, error) {
 	var idps []IdPInfo
 
 	// Process direct EntityDescriptor children
 	for i := range entities.EntityDescriptors {
-		idp, err := extractIdPInfoWithUIInfo(&entities.EntityDescriptors[i], uiInfoMap)
+		idp, err := extractIdPInfoWithMaps(&entities.EntityDescriptors[i], uiInfoMap, regInfoMap)
 		if err != nil {
 			// Skip entities without IDPSSODescriptor (SPs, etc.)
 			continue
@@ -384,7 +449,7 @@ func parseEntitiesDescriptorWithUIInfo(entities *saml.EntitiesDescriptor, uiInfo
 
 	// Process nested EntitiesDescriptor elements (recursive)
 	for i := range entities.EntitiesDescriptors {
-		nestedIdps, err := parseEntitiesDescriptorWithUIInfo(&entities.EntitiesDescriptors[i], uiInfoMap)
+		nestedIdps, err := parseEntitiesDescriptorWithMaps(&entities.EntitiesDescriptors[i], uiInfoMap, regInfoMap)
 		if err != nil {
 			continue
 		}
@@ -398,14 +463,14 @@ func parseEntitiesDescriptorWithUIInfo(entities *saml.EntitiesDescriptor, uiInfo
 	return idps, nil
 }
 
-// parseEntityDescriptorWithUIInfo extracts IdPInfo from a single EntityDescriptor XML.
-func parseEntityDescriptorWithUIInfo(data []byte, uiInfoMap map[string]*UIInfo) (*IdPInfo, error) {
+// parseEntityDescriptorWithMaps extracts IdPInfo from a single EntityDescriptor XML.
+func parseEntityDescriptorWithMaps(data []byte, uiInfoMap map[string]*UIInfo, regInfoMap map[string]*RegistrationInfo) (*IdPInfo, error) {
 	var ed saml.EntityDescriptor
 	if err := xml.Unmarshal(data, &ed); err != nil {
 		return nil, fmt.Errorf("unmarshal xml: %w", err)
 	}
 
-	return extractIdPInfoWithUIInfo(&ed, uiInfoMap)
+	return extractIdPInfoWithMaps(&ed, uiInfoMap, regInfoMap)
 }
 
 // UIInfo represents the mdui:UIInfo element for IdP display metadata.
@@ -434,9 +499,17 @@ type IDPSSODescriptorExtensions struct {
 	UIInfo *UIInfo `xml:"UIInfo"`
 }
 
-// extractIdPInfoWithUIInfo extracts IdPInfo from a single EntityDescriptor,
-// using pre-parsed UIInfo from the uiInfoMap.
-func extractIdPInfoWithUIInfo(ed *saml.EntityDescriptor, uiInfoMap map[string]*UIInfo) (*IdPInfo, error) {
+// RegistrationInfo represents the mdrpi:RegistrationInfo element.
+// This indicates which federation registered the IdP.
+type RegistrationInfo struct {
+	RegistrationAuthority string           `xml:"registrationAuthority,attr"`
+	RegistrationInstant   string           `xml:"registrationInstant,attr"` // ISO 8601 timestamp
+	RegistrationPolicies  []LocalizedValue `xml:"RegistrationPolicy"`
+}
+
+// extractIdPInfoWithMaps extracts IdPInfo from a single EntityDescriptor,
+// using pre-parsed UIInfo and RegistrationInfo from the maps.
+func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*UIInfo, regInfoMap map[string]*RegistrationInfo) (*IdPInfo, error) {
 	if len(ed.IDPSSODescriptors) == 0 {
 		return nil, fmt.Errorf("no IDPSSODescriptor found")
 	}
@@ -502,18 +575,37 @@ func extractIdPInfoWithUIInfo(ed *saml.EntityDescriptor, uiInfoMap map[string]*U
 		}
 	}
 
+	// Extract RegistrationInfo from pre-parsed map
+	var registrationAuthority string
+	var registrationInstant time.Time
+	var registrationPolicies map[string]string
+	if regInfo := regInfoMap[ed.EntityID]; regInfo != nil {
+		registrationAuthority = regInfo.RegistrationAuthority
+		if regInfo.RegistrationInstant != "" {
+			if t, err := time.Parse(time.RFC3339, regInfo.RegistrationInstant); err == nil {
+				registrationInstant = t
+			}
+		}
+		if len(regInfo.RegistrationPolicies) > 0 {
+			registrationPolicies = localizedValuesToMap(regInfo.RegistrationPolicies)
+		}
+	}
+
 	return &IdPInfo{
-		EntityID:        ed.EntityID,
-		DisplayName:     displayName,
-		DisplayNames:    displayNames,
-		Description:     description,
-		Descriptions:    descriptions,
-		LogoURL:         logoURL,
-		InformationURL:  informationURL,
-		InformationURLs: informationURLs,
-		SSOURL:          ssoURL,
-		SSOBinding:      ssoBinding,
-		Certificates:    certs,
+		EntityID:              ed.EntityID,
+		DisplayName:           displayName,
+		DisplayNames:          displayNames,
+		Description:           description,
+		Descriptions:          descriptions,
+		LogoURL:               logoURL,
+		InformationURL:        informationURL,
+		InformationURLs:       informationURLs,
+		SSOURL:                ssoURL,
+		SSOBinding:            ssoBinding,
+		Certificates:          certs,
+		RegistrationAuthority: registrationAuthority,
+		RegistrationInstant:   registrationInstant,
+		RegistrationPolicies:  registrationPolicies,
 	}, nil
 }
 
