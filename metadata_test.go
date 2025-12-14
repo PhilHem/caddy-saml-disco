@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -330,9 +331,9 @@ func TestFileMetadataStore_Load_DFNAAISample(t *testing.T) {
 	}{
 		{"https://identity.fu-berlin.de/idp-fub", "Freie Universität Berlin"},
 		{"https://tumidp.lrz.de/idp/shibboleth", "Technical University of Munich (TUM)"},
-		{"https://login.rz.rwth-aachen.de/shibboleth", "RWTH Aachen University"},           // English from mdui
-		{"https://shib-idp.awi.de/idp/shibboleth", "Alfred Wegener Institute (AWI)"},       // English from mdui
-		{"https://idp.mpg.de/idp/shibboleth", "Max Planck Society"},                        // English from mdui
+		{"https://login.rz.rwth-aachen.de/shibboleth", "RWTH Aachen University"},              // English from mdui
+		{"https://shib-idp.awi.de/idp/shibboleth", "Alfred Wegener Institute (AWI)"},          // English from mdui
+		{"https://idp.mpg.de/idp/shibboleth", "Max Planck Society"},                           // English from mdui
 		{"https://mylogin.uni-freiburg.de/shibboleth", "Albert-Ludwigs-Universität Freiburg"}, // German only
 	}
 
@@ -2344,4 +2345,112 @@ func TestURLMetadataStore_Load_ValidMetadataWithValidUntil(t *testing.T) {
 	if len(idps) != 1 {
 		t.Errorf("expected 1 IdP, got %d", len(idps))
 	}
+}
+
+// =============================================================================
+// Background Refresh Tests (Phase 4)
+// =============================================================================
+
+// TestURLMetadataStore_BackgroundRefresh verifies that the store periodically
+// fetches metadata when created with NewURLMetadataStoreWithRefresh.
+func TestURLMetadataStore_BackgroundRefresh(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	var requestCount int
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestCount++
+		mu.Unlock()
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	// Create store with 50ms refresh interval
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond)
+	defer store.Close()
+
+	// Initial load counts as 1
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Wait for 2+ refresh cycles (120ms > 2*50ms)
+	time.Sleep(120 * time.Millisecond)
+
+	// Should have made additional requests from background refresh
+	mu.Lock()
+	count := requestCount
+	mu.Unlock()
+
+	if count < 2 {
+		t.Errorf("expected at least 2 requests (initial + background), got %d", count)
+	}
+}
+
+// TestURLMetadataStore_Close_StopsBackgroundRefresh verifies that Close()
+// stops the background refresh goroutine.
+func TestURLMetadataStore_Close_StopsBackgroundRefresh(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	var requestCount int
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestCount++
+		mu.Unlock()
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond)
+
+	// Initial load
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Close immediately
+	store.Close()
+
+	mu.Lock()
+	countAfterClose := requestCount
+	mu.Unlock()
+
+	// Wait and verify no more requests
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	finalCount := requestCount
+	mu.Unlock()
+
+	if finalCount != countAfterClose {
+		t.Errorf("requests continued after Close(): had %d, now %d", countAfterClose, finalCount)
+	}
+}
+
+// TestURLMetadataStore_Close_Idempotent verifies that Close() can be called
+// multiple times without panicking.
+func TestURLMetadataStore_Close_Idempotent(t *testing.T) {
+	store := NewURLMetadataStoreWithRefresh("http://example.com", time.Hour)
+
+	// Should not panic when called multiple times
+	store.Close()
+	store.Close()
+	store.Close()
+}
+
+// TestURLMetadataStore_Close_NoBackgroundRefresh verifies that Close() works
+// on stores created without background refresh (via NewURLMetadataStore).
+func TestURLMetadataStore_Close_NoBackgroundRefresh(t *testing.T) {
+	store := NewURLMetadataStore("http://example.com", time.Hour)
+
+	// Should not panic - Close() should be a no-op for passive stores
+	store.Close()
 }

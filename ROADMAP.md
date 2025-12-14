@@ -96,7 +96,10 @@ Development phases for caddy-saml-disco.
 - [x] Validate metadata `validUntil` attribute (reject expired metadata)
 - [x] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
 - [x] Health check endpoint (`/saml/api/health`) exposing `MetadataHealth` status
-- [ ] Periodic background metadata refresh (using `time.NewTicker`)
+- [x] Periodic background metadata refresh (using `time.NewTicker`)
+- [ ] Wire up background refresh in plugin `Provision()` (`background_refresh` config option)
+- [ ] Add logging for background refresh events (success/failure in `refreshLoop()`)
+- [ ] Harden time-based refresh tests (use synchronization instead of `time.Sleep` margins)
 - [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
 - [ ] Signature verification logging (algorithm, cert subject/expiry on success)
 - [ ] Log metadata expiry rejections (structured logging for `validUntil` failures)

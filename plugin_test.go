@@ -3029,3 +3029,59 @@ func TestHealthEndpoint_NoMetadataStore(t *testing.T) {
 		t.Errorf("error.code = %q, want %q", resp.Error.Code, "config_missing")
 	}
 }
+
+// =============================================================================
+// Cleanup/CleanerUpper Interface Tests
+// =============================================================================
+
+// TestSAMLDisco_Cleanup_WithCloseableStore verifies that Cleanup() calls Close()
+// on metadata stores that support it.
+func TestSAMLDisco_Cleanup_WithCloseableStore(t *testing.T) {
+	store := &mockCloseableMetadataStore{}
+	s := &SAMLDisco{metadataStore: store}
+
+	err := s.Cleanup()
+	if err != nil {
+		t.Errorf("Cleanup() returned error: %v", err)
+	}
+
+	if !store.closed {
+		t.Error("Cleanup() should have called Close() on the metadata store")
+	}
+}
+
+// TestSAMLDisco_Cleanup_WithNonCloseableStore verifies that Cleanup() works
+// with metadata stores that don't implement Close().
+func TestSAMLDisco_Cleanup_WithNonCloseableStore(t *testing.T) {
+	store := &mockMetadataStore{} // Doesn't have Close()
+	s := &SAMLDisco{metadataStore: store}
+
+	err := s.Cleanup()
+	if err != nil {
+		t.Errorf("Cleanup() returned error: %v", err)
+	}
+	// Should not panic or error
+}
+
+// TestSAMLDisco_Cleanup_NilMetadataStore verifies that Cleanup() handles
+// nil metadata store gracefully.
+func TestSAMLDisco_Cleanup_NilMetadataStore(t *testing.T) {
+	s := &SAMLDisco{metadataStore: nil}
+
+	err := s.Cleanup()
+	if err != nil {
+		t.Errorf("Cleanup() returned error: %v", err)
+	}
+	// Should not panic or error
+}
+
+// mockCloseableMetadataStore is a test double that implements Close().
+type mockCloseableMetadataStore struct {
+	mockMetadataStore
+	closed bool
+}
+
+func (m *mockCloseableMetadataStore) Close() error {
+	m.closed = true
+	return nil
+}

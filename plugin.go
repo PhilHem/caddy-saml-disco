@@ -1067,11 +1067,22 @@ func parseAcceptLanguage(header string) []string {
 	return result
 }
 
+// Cleanup stops background goroutines when the module is unloaded.
+// Implements caddy.CleanerUpper for graceful shutdown.
+func (s *SAMLDisco) Cleanup() error {
+	// Close the metadata store if it supports Close()
+	if closer, ok := s.metadataStore.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
 // Interface guards
 var (
 	_ caddy.Module                = (*SAMLDisco)(nil)
 	_ caddy.Provisioner           = (*SAMLDisco)(nil)
 	_ caddy.Validator             = (*SAMLDisco)(nil)
+	_ caddy.CleanerUpper          = (*SAMLDisco)(nil)
 	_ caddyhttp.MiddlewareHandler = (*SAMLDisco)(nil)
 	_ caddyfile.Unmarshaler       = (*SAMLDisco)(nil)
 	_ SessionStore                = (*CookieSessionStore)(nil)

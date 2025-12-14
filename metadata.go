@@ -411,8 +411,8 @@ type rawEntityDescriptor struct {
 
 // rawEntitiesDescriptor is used to parse UIInfo from aggregate metadata.
 type rawEntitiesDescriptor struct {
-	EntityDescriptors    []rawEntityDescriptor    `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
-	EntitiesDescriptors  []rawEntitiesDescriptor  `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
+	EntityDescriptors   []rawEntityDescriptor   `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
+	EntitiesDescriptors []rawEntitiesDescriptor `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
 }
 
 // rawEntityDescriptorForRegInfo is used to parse RegistrationInfo from raw XML.
@@ -868,9 +868,15 @@ type URLMetadataStore struct {
 	isFresh         bool      // true if last refresh succeeded
 	lastSuccessTime time.Time // time of last successful refresh
 	lastError       error     // error from last refresh (nil if success)
+
+	// Background refresh goroutine management
+	stopCh chan struct{}
+	closed bool
 }
 
-// NewURLMetadataStore creates a new URLMetadataStore.
+// NewURLMetadataStore creates a new URLMetadataStore with passive refresh.
+// Passive refresh means metadata is only fetched when Refresh() is called
+// and the cache has expired (based on cacheTTL).
 func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOption) *URLMetadataStore {
 	options := &metadataOptions{}
 	for _, opt := range opts {
@@ -885,6 +891,44 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// NewURLMetadataStoreWithRefresh creates a new URLMetadataStore with active
+// background refresh. The store will periodically fetch metadata at the
+// specified refreshInterval, regardless of cache TTL.
+// Call Close() to stop the background goroutine.
+func NewURLMetadataStoreWithRefresh(url string, refreshInterval time.Duration, opts ...MetadataOption) *URLMetadataStore {
+	s := NewURLMetadataStore(url, refreshInterval, opts...)
+	s.stopCh = make(chan struct{})
+	go s.refreshLoop(refreshInterval)
+	return s
+}
+
+// refreshLoop runs periodic metadata refresh in the background.
+func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.doRefresh(context.Background(), true) // force=true bypasses cache TTL
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+// Close stops the background refresh goroutine if running.
+// Safe to call multiple times (idempotent).
+// Safe to call on stores created without background refresh.
+func (s *URLMetadataStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopCh != nil && !s.closed {
+		close(s.stopCh)
+		s.closed = true
+	}
+	return nil
 }
 
 // Load fetches and parses the metadata from the URL.
@@ -960,9 +1004,16 @@ func (s *URLMetadataStore) Health() MetadataHealth {
 // On failure, existing cached data is preserved (graceful degradation) and
 // IsFresh() returns false. The error is still returned for logging/monitoring.
 func (s *URLMetadataStore) Refresh(ctx context.Context) error {
-	// Check if cache is still valid
+	return s.doRefresh(ctx, false)
+}
+
+// doRefresh fetches metadata from the URL.
+// If force is false, respects cache TTL and returns early if cache is valid.
+// If force is true, always fetches (used by background refresh).
+func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
+	// Check if cache is still valid (unless forced)
 	s.mu.RLock()
-	if !s.lastFetch.IsZero() && time.Since(s.lastFetch) < s.cacheTTL {
+	if !force && !s.lastFetch.IsZero() && time.Since(s.lastFetch) < s.cacheTTL {
 		s.mu.RUnlock()
 		return nil // Cache hit
 	}
