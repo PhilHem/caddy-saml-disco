@@ -1850,3 +1850,243 @@ func TestParseIdP_NoRegistrationInfo(t *testing.T) {
 		t.Errorf("RegistrationPolicies should be nil, got %v", idp.RegistrationPolicies)
 	}
 }
+
+// =============================================================================
+// Graceful Degradation Tests (serve stale metadata on fetch failure)
+// =============================================================================
+
+// TestURLMetadataStore_IsFresh_InitiallyFalse verifies that a new store
+// reports IsFresh() = false before any successful load.
+func TestURLMetadataStore_IsFresh_InitiallyFalse(t *testing.T) {
+	store := NewURLMetadataStore("http://localhost:1", time.Hour)
+
+	if store.IsFresh() {
+		t.Error("IsFresh() should be false before any load")
+	}
+}
+
+// TestURLMetadataStore_IsFresh_AfterSuccessfulLoad verifies that IsFresh()
+// returns true after a successful load.
+func TestURLMetadataStore_IsFresh_AfterSuccessfulLoad(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if !store.IsFresh() {
+		t.Error("IsFresh() should be true after successful load")
+	}
+}
+
+// TestURLMetadataStore_Refresh_PreservesDataOnFailure verifies that when
+// Refresh() fails, the existing cached data is preserved and IsFresh() becomes false.
+func TestURLMetadataStore_Refresh_PreservesDataOnFailure(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			// First request succeeds
+			w.Write(metadata)
+		} else {
+			// Subsequent requests fail
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	// Use short TTL so cache expires quickly
+	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+
+	// First load succeeds
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Verify data loaded and fresh
+	idps, _ := store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Fatalf("expected 1 IdP after initial load, got %d", len(idps))
+	}
+	if !store.IsFresh() {
+		t.Fatal("IsFresh() should be true after successful load")
+	}
+
+	// Wait for cache to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Second refresh fails (server returns 500)
+	err = store.Refresh(context.Background())
+	if err == nil {
+		t.Fatal("Refresh() should return error on HTTP 500")
+	}
+
+	// Data should still be present (graceful degradation)
+	idps, _ = store.ListIdPs("")
+	if len(idps) != 1 {
+		t.Errorf("expected 1 IdP after failed refresh (stale data), got %d", len(idps))
+	}
+
+	// But IsFresh() should now be false
+	if store.IsFresh() {
+		t.Error("IsFresh() should be false after failed refresh")
+	}
+
+	// GetIdP should still work with stale data
+	idp, err := store.GetIdP("https://idp.example.com/saml")
+	if err != nil {
+		t.Errorf("GetIdP() should work with stale data: %v", err)
+	}
+	if idp == nil {
+		t.Error("GetIdP() returned nil with stale data")
+	}
+}
+
+// TestURLMetadataStore_LastError_ReturnsNilOnSuccess verifies that LastError()
+// returns nil after a successful refresh.
+func TestURLMetadataStore_LastError_ReturnsNilOnSuccess(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if store.LastError() != nil {
+		t.Errorf("LastError() should be nil after success, got %v", store.LastError())
+	}
+}
+
+// TestURLMetadataStore_LastError_ReturnsErrorOnFailure verifies that LastError()
+// returns the error from the last failed refresh.
+func TestURLMetadataStore_LastError_ReturnsErrorOnFailure(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			w.Write(metadata)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+
+	// First load succeeds
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if store.LastError() != nil {
+		t.Errorf("LastError() should be nil after success")
+	}
+
+	// Wait for cache to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// Second refresh fails
+	_ = store.Refresh(context.Background())
+
+	// LastError should now be set
+	if store.LastError() == nil {
+		t.Error("LastError() should return error after failed refresh")
+	}
+}
+
+// TestURLMetadataStore_Health_ReturnsStatus verifies that Health() returns
+// comprehensive status information.
+func TestURLMetadataStore_Health_ReturnsStatus(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			w.Write(metadata)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+
+	// Before load: empty health
+	health := store.Health()
+	if health.IsFresh {
+		t.Error("Health.IsFresh should be false before load")
+	}
+	if health.IdPCount != 0 {
+		t.Errorf("Health.IdPCount should be 0 before load, got %d", health.IdPCount)
+	}
+
+	// After successful load
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	health = store.Health()
+	if !health.IsFresh {
+		t.Error("Health.IsFresh should be true after successful load")
+	}
+	if health.IdPCount != 1 {
+		t.Errorf("Health.IdPCount should be 1, got %d", health.IdPCount)
+	}
+	if health.LastSuccessTime.IsZero() {
+		t.Error("Health.LastSuccessTime should be set")
+	}
+	if health.LastError != nil {
+		t.Errorf("Health.LastError should be nil, got %v", health.LastError)
+	}
+
+	// Wait for cache to expire
+	time.Sleep(20 * time.Millisecond)
+
+	// After failed refresh
+	_ = store.Refresh(context.Background())
+
+	health = store.Health()
+	if health.IsFresh {
+		t.Error("Health.IsFresh should be false after failed refresh")
+	}
+	if health.IdPCount != 1 {
+		t.Errorf("Health.IdPCount should still be 1 (stale data), got %d", health.IdPCount)
+	}
+	if health.LastError == nil {
+		t.Error("Health.LastError should be set after failed refresh")
+	}
+	// LastSuccessTime should still reflect the last successful load
+	if health.LastSuccessTime.IsZero() {
+		t.Error("Health.LastSuccessTime should still be set from previous success")
+	}
+}

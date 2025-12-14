@@ -761,6 +761,21 @@ func selectBestLogo(logos []Logo) string {
 	return strings.TrimSpace(best.URL)
 }
 
+// MetadataHealth reports the health status of a metadata store.
+type MetadataHealth struct {
+	// IsFresh indicates whether the cached data is from a successful recent refresh.
+	IsFresh bool `json:"is_fresh"`
+
+	// LastSuccessTime is when metadata was last successfully fetched.
+	LastSuccessTime time.Time `json:"last_success_time,omitempty"`
+
+	// LastError is the error from the most recent failed refresh, or nil if last refresh succeeded.
+	LastError error `json:"last_error,omitempty"`
+
+	// IdPCount is the number of IdPs currently cached.
+	IdPCount int `json:"idp_count"`
+}
+
 // URLMetadataStore loads IdP metadata from a URL with caching.
 type URLMetadataStore struct {
 	url               string
@@ -769,11 +784,14 @@ type URLMetadataStore struct {
 	idpFilter         string
 	signatureVerifier SignatureVerifier
 
-	mu           sync.RWMutex
-	idps         []IdPInfo
-	lastFetch    time.Time
-	etag         string
-	lastModified string
+	mu              sync.RWMutex
+	idps            []IdPInfo
+	lastFetch       time.Time
+	etag            string
+	lastModified    string
+	isFresh         bool      // true if last refresh succeeded
+	lastSuccessTime time.Time // time of last successful refresh
+	lastError       error     // error from last refresh (nil if success)
 }
 
 // NewURLMetadataStore creates a new URLMetadataStore.
@@ -834,7 +852,37 @@ func (s *URLMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 	return result, nil
 }
 
+// IsFresh returns true if the cached metadata is from a successful recent refresh.
+// Returns false before any load, or after a failed refresh (stale data is still served).
+func (s *URLMetadataStore) IsFresh() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.isFresh
+}
+
+// LastError returns the error from the most recent failed refresh, or nil if
+// the last refresh succeeded.
+func (s *URLMetadataStore) LastError() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastError
+}
+
+// Health returns comprehensive health status for monitoring.
+func (s *URLMetadataStore) Health() MetadataHealth {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return MetadataHealth{
+		IsFresh:         s.isFresh,
+		LastSuccessTime: s.lastSuccessTime,
+		LastError:       s.lastError,
+		IdPCount:        len(s.idps),
+	}
+}
+
 // Refresh fetches metadata from the URL if cache has expired.
+// On failure, existing cached data is preserved (graceful degradation) and
+// IsFresh() returns false. The error is still returned for logging/monitoring.
 func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 	// Check if cache is still valid
 	s.mu.RLock()
@@ -848,7 +896,9 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, nil)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		refreshErr := fmt.Errorf("create request: %w", err)
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
 	}
 
 	// Set User-Agent header for identification
@@ -864,54 +914,83 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetch metadata: %w", err)
+		refreshErr := fmt.Errorf("fetch metadata: %w", err)
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
 	}
 	defer resp.Body.Close()
 
-	// Handle 304 Not Modified - data hasn't changed
+	// Handle 304 Not Modified - data hasn't changed, still counts as success
 	if resp.StatusCode == http.StatusNotModified {
 		s.mu.Lock()
 		s.lastFetch = time.Now()
+		s.isFresh = true
+		s.lastError = nil
+		// lastSuccessTime stays the same (data itself didn't change)
 		s.mu.Unlock()
 		return nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("fetch metadata: HTTP %d", resp.StatusCode)
+		refreshErr := fmt.Errorf("fetch metadata: HTTP %d", resp.StatusCode)
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
 	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response: %w", err)
+		refreshErr := fmt.Errorf("read response: %w", err)
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
 	}
 
 	// Verify signature if verifier is configured
 	if s.signatureVerifier != nil {
 		data, err = s.signatureVerifier.Verify(data)
 		if err != nil {
-			return fmt.Errorf("verify metadata signature: %w", err)
+			refreshErr := fmt.Errorf("verify metadata signature: %w", err)
+			s.markRefreshFailed(refreshErr)
+			return refreshErr
 		}
 	}
 
 	idps, err := parseMetadata(data)
 	if err != nil {
-		return fmt.Errorf("parse metadata: %w", err)
+		refreshErr := fmt.Errorf("parse metadata: %w", err)
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
 	}
 
 	// Apply IdP filter if configured
 	if s.idpFilter != "" {
 		idps = filterIdPs(idps, s.idpFilter)
 		if len(idps) == 0 {
-			return fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
+			refreshErr := fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
+			s.markRefreshFailed(refreshErr)
+			return refreshErr
 		}
 	}
 
+	// Success - update all state
+	now := time.Now()
 	s.mu.Lock()
 	s.idps = idps
-	s.lastFetch = time.Now()
+	s.lastFetch = now
 	s.etag = resp.Header.Get("ETag")
 	s.lastModified = resp.Header.Get("Last-Modified")
+	s.isFresh = true
+	s.lastSuccessTime = now
+	s.lastError = nil
 	s.mu.Unlock()
 
 	return nil
+}
+
+// markRefreshFailed updates state when refresh fails, preserving existing data.
+func (s *URLMetadataStore) markRefreshFailed(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.isFresh = false
+	s.lastError = err
+	// idps, lastSuccessTime are preserved - serve stale data
 }

@@ -94,7 +94,9 @@ Development phases for caddy-saml-disco.
 - [ ] Filter IdPs by registration authority (`registration_authority` config option)
 - [ ] Expose registration info in `/saml/api/idps` JSON response
 - [ ] Validate metadata `validUntil` attribute (reject expired metadata)
-- [ ] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
+- [x] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
+- [ ] Health check endpoint (`/saml/api/health`) exposing `MetadataHealth` status
+- [ ] Periodic background metadata refresh (using `time.NewTicker`)
 - [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
 - [ ] Signature verification logging (algorithm, cert subject/expiry on success)
 
