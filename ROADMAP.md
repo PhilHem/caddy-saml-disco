@@ -109,7 +109,7 @@ Development phases for caddy-saml-disco.
 - [x] Example: minimal single-IdP Caddyfile
 
 ### Bug Fixes
-- [ ] Fix integration tests expecting 302 from `/saml/api/select` (now returns JSON with `redirect_url`)
+- [x] Fix integration tests expecting 302 from `/saml/api/select` (now returns JSON with `redirect_url`)
 
 **Outcome:** Users can download pre-built binaries or Docker image and deploy with a single IdP.
 
