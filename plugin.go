@@ -20,7 +20,13 @@ import (
 	"go.uber.org/zap"
 )
 
-const Version = "0.9.0"
+// Version information - set via ldflags at build time
+// e.g., go build -ldflags "-X github.com/philiph/caddy-saml-disco.Version=v1.0.0"
+var (
+	Version   = "dev"
+	GitCommit = ""
+	BuildTime = ""
+)
 
 func init() {
 	caddy.RegisterModule(SAMLDisco{})
@@ -176,11 +182,18 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			idpCount = len(idps)
 		}
 	}
-	s.logger.Info("saml discovery service provisioned",
+	logFields := []zap.Field{
 		zap.String("entity_id", s.EntityID),
 		zap.Int("idp_count", idpCount),
 		zap.String("version", Version),
-	)
+	}
+	if GitCommit != "" {
+		logFields = append(logFields, zap.String("git_commit", GitCommit))
+	}
+	if BuildTime != "" {
+		logFields = append(logFields, zap.String("build_time", BuildTime))
+	}
+	s.logger.Info("saml discovery service provisioned", logFields...)
 
 	return nil
 }

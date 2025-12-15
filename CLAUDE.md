@@ -48,12 +48,16 @@ go mod tidy                              # Clean up go.mod/go.sum
 
 ### Version Bumping
 
-Update version constant in `plugin.go` and tag the release:
+Version is injected automatically via `-ldflags` during release builds. For local development builds, `Version` defaults to `"dev"`.
+
+To release:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.9.1
+git push origin v0.9.1
 ```
+
+The release workflow injects `Version`, `GitCommit`, and `BuildTime` into the binary.
 
 ### Releasing
 
