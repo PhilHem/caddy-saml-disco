@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+coverage.out
+coverage.html
+
+# Documentation (not needed in image)
+*.md
+!README.md
+docs/
+LICENSE
+
+# Development files
+.pre-commit-config.yaml
+.golangci.yml
+Makefile
+
+# Examples (users can mount their own config)
+examples/
+
+# Test fixtures
+testfixtures/
+tests/
+*_test.go
+
+# Other release binaries (only linux binaries needed)
+caddy-saml-disco-darwin-*
+caddy-saml-disco-windows-*
