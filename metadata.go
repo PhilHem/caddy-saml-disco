@@ -171,13 +171,20 @@ func WithLogger(logger *zap.Logger) MetadataOption {
 
 // InMemoryMetadataStore is a simple in-memory metadata store for testing.
 type InMemoryMetadataStore struct {
-	mu   sync.RWMutex
-	idps []IdPInfo
+	mu         sync.RWMutex
+	idps       []IdPInfo
+	validUntil *time.Time
 }
 
 // NewInMemoryMetadataStore creates a new InMemoryMetadataStore with the given IdPs.
 func NewInMemoryMetadataStore(idps []IdPInfo) *InMemoryMetadataStore {
 	return &InMemoryMetadataStore{idps: idps}
+}
+
+// NewInMemoryMetadataStoreWithValidUntil creates a new InMemoryMetadataStore with
+// the given IdPs and a validUntil timestamp for testing.
+func NewInMemoryMetadataStoreWithValidUntil(idps []IdPInfo, validUntil *time.Time) *InMemoryMetadataStore {
+	return &InMemoryMetadataStore{idps: idps, validUntil: validUntil}
 }
 
 // GetIdP returns the IdP with the given entity ID.
@@ -220,8 +227,9 @@ func (s *InMemoryMetadataStore) Health() MetadataHealth {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return MetadataHealth{
-		IsFresh:  true,
-		IdPCount: len(s.idps),
+		IsFresh:            true,
+		IdPCount:           len(s.idps),
+		MetadataValidUntil: s.validUntil,
 	}
 }
 
@@ -232,8 +240,9 @@ type FileMetadataStore struct {
 	idpFilter         string
 	signatureVerifier SignatureVerifier
 
-	mu   sync.RWMutex
-	idps []IdPInfo // Supports multiple IdPs from aggregate metadata
+	mu         sync.RWMutex
+	idps       []IdPInfo  // Supports multiple IdPs from aggregate metadata
+	validUntil *time.Time // validUntil from metadata (nil if not present)
 }
 
 // NewFileMetadataStore creates a new FileMetadataStore.
@@ -306,7 +315,7 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		}
 	}
 
-	idps, err := parseMetadata(data)
+	idps, validUntil, err := parseMetadata(data)
 	if err != nil {
 		return fmt.Errorf("parse metadata: %w", err)
 	}
@@ -321,6 +330,7 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 
 	s.mu.Lock()
 	s.idps = idps
+	s.validUntil = validUntil
 	s.mu.Unlock()
 
 	return nil
@@ -331,8 +341,9 @@ func (s *FileMetadataStore) Health() MetadataHealth {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return MetadataHealth{
-		IsFresh:  len(s.idps) > 0,
-		IdPCount: len(s.idps),
+		IsFresh:            len(s.idps) > 0,
+		IdPCount:           len(s.idps),
+		MetadataValidUntil: s.validUntil,
 	}
 }
 
@@ -353,10 +364,12 @@ func filterIdPs(idps []IdPInfo, pattern string) []IdPInfo {
 // parseMetadata parses SAML metadata XML, supporting both single EntityDescriptor
 // and aggregate EntitiesDescriptor formats.
 // Returns ErrMetadataExpired if the metadata has a validUntil attribute in the past.
-func parseMetadata(data []byte) ([]IdPInfo, error) {
+// Also returns the validUntil timestamp if present (nil otherwise).
+func parseMetadata(data []byte) ([]IdPInfo, *time.Time, error) {
 	// Check validUntil before parsing the rest
-	if err := validateMetadataExpiry(data); err != nil {
-		return nil, err
+	validUntil, err := extractAndValidateExpiry(data)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Parse UIInfo and RegistrationInfo separately since crewjam/saml doesn't expose them
@@ -366,41 +379,41 @@ func parseMetadata(data []byte) ([]IdPInfo, error) {
 	// Try EntitiesDescriptor first (aggregate metadata)
 	var entities saml.EntitiesDescriptor
 	if err := xml.Unmarshal(data, &entities); err == nil && len(entities.EntityDescriptors) > 0 {
-		return parseEntitiesDescriptorWithMaps(&entities, uiInfoMap, regInfoMap)
+		idps, err := parseEntitiesDescriptorWithMaps(&entities, uiInfoMap, regInfoMap)
+		return idps, validUntil, err
 	}
 
 	// Fall back to single EntityDescriptor
 	idp, err := parseEntityDescriptorWithMaps(data, uiInfoMap, regInfoMap)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return []IdPInfo{*idp}, nil
+	return []IdPInfo{*idp}, validUntil, nil
 }
 
-// validateMetadataExpiry checks if the metadata has expired based on validUntil attribute.
-// Returns nil if metadata is valid or has no validUntil attribute.
-// Returns an error if metadata has expired.
-func validateMetadataExpiry(data []byte) error {
+// extractAndValidateExpiry extracts validUntil from metadata and validates it.
+// Returns the validUntil timestamp (nil if not present) and an error if expired.
+func extractAndValidateExpiry(data []byte) (*time.Time, error) {
 	var validity rawMetadataValidity
 	if err := xml.Unmarshal(data, &validity); err != nil {
 		// If we can't parse, let the main parser handle the error
-		return nil
+		return nil, nil
 	}
 
 	if validity.ValidUntil == "" {
-		return nil // No validUntil attribute
+		return nil, nil // No validUntil attribute
 	}
 
 	validUntil, err := time.Parse(time.RFC3339, validity.ValidUntil)
 	if err != nil {
-		return fmt.Errorf("invalid validUntil format %q: %w", validity.ValidUntil, err)
+		return nil, fmt.Errorf("invalid validUntil format %q: %w", validity.ValidUntil, err)
 	}
 
 	if IsMetadataExpired(validUntil, time.Now()) {
-		return fmt.Errorf("%w: validUntil %s is in the past", ErrMetadataExpired, validity.ValidUntil)
+		return nil, fmt.Errorf("%w: validUntil %s is in the past", ErrMetadataExpired, validity.ValidUntil)
 	}
 
-	return nil
+	return &validUntil, nil
 }
 
 // entityUIInfo holds parsed UIInfo for a specific entity.
@@ -860,6 +873,10 @@ type MetadataHealth struct {
 
 	// IdPCount is the number of IdPs currently cached.
 	IdPCount int `json:"idp_count"`
+
+	// MetadataValidUntil is the validUntil timestamp from the metadata, if present.
+	// Used for monitoring when metadata will expire.
+	MetadataValidUntil *time.Time `json:"metadata_valid_until,omitempty"`
 }
 
 // URLMetadataStore loads IdP metadata from a URL with caching.
@@ -876,9 +893,10 @@ type URLMetadataStore struct {
 	lastFetch       time.Time
 	etag            string
 	lastModified    string
-	isFresh         bool      // true if last refresh succeeded
-	lastSuccessTime time.Time // time of last successful refresh
-	lastError       error     // error from last refresh (nil if success)
+	isFresh         bool       // true if last refresh succeeded
+	lastSuccessTime time.Time  // time of last successful refresh
+	lastError       error      // error from last refresh (nil if success)
+	validUntil      *time.Time // validUntil from metadata (nil if not present)
 
 	// Background refresh goroutine management
 	stopCh chan struct{}
@@ -1017,10 +1035,11 @@ func (s *URLMetadataStore) Health() MetadataHealth {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return MetadataHealth{
-		IsFresh:         s.isFresh,
-		LastSuccessTime: s.lastSuccessTime,
-		LastError:       s.lastError,
-		IdPCount:        len(s.idps),
+		IsFresh:            s.isFresh,
+		LastSuccessTime:    s.lastSuccessTime,
+		LastError:          s.lastError,
+		IdPCount:           len(s.idps),
+		MetadataValidUntil: s.validUntil,
 	}
 }
 
@@ -1105,7 +1124,7 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		}
 	}
 
-	idps, err := parseMetadata(data)
+	idps, validUntil, err := parseMetadata(data)
 	if err != nil {
 		refreshErr := fmt.Errorf("parse metadata: %w", err)
 		s.markRefreshFailed(refreshErr)
@@ -1132,6 +1151,7 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	s.isFresh = true
 	s.lastSuccessTime = now
 	s.lastError = nil
+	s.validUntil = validUntil
 	s.mu.Unlock()
 
 	return nil

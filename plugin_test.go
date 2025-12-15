@@ -3072,6 +3072,64 @@ func TestHealthEndpoint_VersionDefaultsToDev(t *testing.T) {
 	}
 }
 
+func TestHealthEndpoint_ReturnsValidUntil(t *testing.T) {
+	validUntil := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	store := NewInMemoryMetadataStoreWithValidUntil(
+		[]IdPInfo{{EntityID: "https://idp.example.com"}},
+		&validUntil,
+	)
+	s := &SAMLDisco{metadataStore: store}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp HealthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.MetadataValidUntil == nil {
+		t.Fatal("MetadataValidUntil should be set in response")
+	}
+	if !resp.MetadataValidUntil.Equal(validUntil) {
+		t.Errorf("MetadataValidUntil = %v, want %v", *resp.MetadataValidUntil, validUntil)
+	}
+}
+
+func TestHealthEndpoint_NoValidUntil(t *testing.T) {
+	store := NewInMemoryMetadataStore([]IdPInfo{{EntityID: "https://idp.example.com"}})
+	s := &SAMLDisco{metadataStore: store}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	_ = s.ServeHTTP(rec, req, next)
+
+	var resp HealthResponse
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp.MetadataValidUntil != nil {
+		t.Errorf("MetadataValidUntil should be nil, got %v", *resp.MetadataValidUntil)
+	}
+
+	// Verify omitempty works - field should not appear in JSON
+	body := rec.Body.String()
+	if strings.Contains(body, "metadata_valid_until") {
+		t.Error("metadata_valid_until should be omitted from JSON when nil")
+	}
+}
+
 // =============================================================================
 // Cleanup/CleanerUpper Interface Tests
 // =============================================================================

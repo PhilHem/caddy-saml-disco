@@ -2565,3 +2565,120 @@ func TestURLMetadataStore_BackgroundRefresh_LogsFailure(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// MetadataHealth validUntil Tests (Phase 5 - Federation Hardening)
+// =============================================================================
+
+func TestURLMetadataStore_Health_ReturnsValidUntil(t *testing.T) {
+	// Use dfn-aai-sample.xml which has validUntil="2025-12-31T23:59:59Z"
+	metadata, err := os.ReadFile("testdata/dfn-aai-sample.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, 1*time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	health := store.Health()
+
+	if health.MetadataValidUntil == nil {
+		t.Fatal("Health.MetadataValidUntil should be set for metadata with validUntil")
+	}
+
+	expected := time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)
+	if !health.MetadataValidUntil.Equal(expected) {
+		t.Errorf("MetadataValidUntil = %v, want %v", *health.MetadataValidUntil, expected)
+	}
+}
+
+func TestURLMetadataStore_Health_NoValidUntil(t *testing.T) {
+	// Use idp-metadata.xml which has no validUntil attribute
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, 1*time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	health := store.Health()
+
+	if health.MetadataValidUntil != nil {
+		t.Errorf("MetadataValidUntil should be nil for metadata without validUntil, got %v", *health.MetadataValidUntil)
+	}
+}
+
+func TestFileMetadataStore_Health_ReturnsValidUntil(t *testing.T) {
+	// Use dfn-aai-sample.xml which has validUntil="2025-12-31T23:59:59Z"
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	health := store.Health()
+
+	if health.MetadataValidUntil == nil {
+		t.Fatal("Health.MetadataValidUntil should be set for metadata with validUntil")
+	}
+
+	expected := time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)
+	if !health.MetadataValidUntil.Equal(expected) {
+		t.Errorf("MetadataValidUntil = %v, want %v", *health.MetadataValidUntil, expected)
+	}
+}
+
+func TestFileMetadataStore_Health_NoValidUntil(t *testing.T) {
+	// Use idp-metadata.xml which has no validUntil attribute
+	store := NewFileMetadataStore("testdata/idp-metadata.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	health := store.Health()
+
+	if health.MetadataValidUntil != nil {
+		t.Errorf("MetadataValidUntil should be nil for metadata without validUntil, got %v", *health.MetadataValidUntil)
+	}
+}
+
+func TestInMemoryMetadataStore_Health_WithValidUntil(t *testing.T) {
+	validUntil := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	store := NewInMemoryMetadataStoreWithValidUntil(
+		[]IdPInfo{{EntityID: "https://idp.example.com"}},
+		&validUntil,
+	)
+
+	health := store.Health()
+
+	if health.MetadataValidUntil == nil {
+		t.Fatal("Health.MetadataValidUntil should be set")
+	}
+	if !health.MetadataValidUntil.Equal(validUntil) {
+		t.Errorf("MetadataValidUntil = %v, want %v", *health.MetadataValidUntil, validUntil)
+	}
+}
+
+func TestInMemoryMetadataStore_Health_WithoutValidUntil(t *testing.T) {
+	store := NewInMemoryMetadataStore([]IdPInfo{{EntityID: "https://idp.example.com"}})
+
+	health := store.Health()
+
+	if health.MetadataValidUntil != nil {
+		t.Errorf("MetadataValidUntil should be nil, got %v", *health.MetadataValidUntil)
+	}
+}
