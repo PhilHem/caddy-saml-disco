@@ -46,8 +46,16 @@ jobs:
               --ldflags "${LDFLAGS}"
           done
 
+      - name: Generate checksums
+        run: |
+          sha256sum caddy-saml-disco-* > checksums.txt
+          cat checksums.txt
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: caddy-saml-disco-*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            caddy-saml-disco-*
+            checksums.txt
