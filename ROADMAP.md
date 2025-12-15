@@ -99,8 +99,8 @@ Development phases for caddy-saml-disco.
 
 ### Distribution & Documentation
 - [x] GitHub Actions workflow for release binaries (linux/amd64, linux/arm64, darwin/arm64, windows/amd64)
-- [ ] Add SHA256 checksums file to releases
-- [ ] Mark pre-release tags (`-rc`, `-beta`, `-alpha`) as pre-releases in GitHub
+- [x] Add SHA256 checksums file to releases
+- [x] Mark pre-release tags (`-rc`, `-beta`, `-alpha`) as pre-releases in GitHub
 - [x] Inject version info into binaries via `-ldflags`
 - [x] Expose version info in `/saml/api/health` endpoint (version, git_commit, build_time)
 - [x] Document version querying via CLI (`caddy version`)
