@@ -128,7 +128,10 @@ Development phases for caddy-saml-disco.
 
 ### Federation Features
 - [x] Filter IdPs by registration authority (`registration_authority_filter` config option)
-- [ ] Performance testing with large metadata files (1000+ IdPs)
+- [x] Performance testing with large metadata files (1000+ IdPs)
+  - Benchmark tests for parsing, search, and lookup operations
+  - Fixture generator for synthetic metadata (100-5000 IdPs)
+  - Memory usage estimation tests
 
 ### Test Infrastructure
 - [ ] Harden time-based refresh tests (use synchronization instead of `time.Sleep` margins)
