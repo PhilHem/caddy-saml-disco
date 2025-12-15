@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Structured logging for metadata expiry rejections**: Log warnings with source path/URL when metadata is rejected due to expired `validUntil`
+
 ## [0.10.1] - 2025-12-15
 
 ### Fixed

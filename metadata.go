@@ -3,6 +3,7 @@ package caddysamldisco
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -239,6 +240,7 @@ type FileMetadataStore struct {
 	path              string
 	idpFilter         string
 	signatureVerifier SignatureVerifier
+	logger            *zap.Logger
 
 	mu         sync.RWMutex
 	idps       []IdPInfo  // Supports multiple IdPs from aggregate metadata
@@ -255,6 +257,7 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		path:              path,
 		idpFilter:         options.idpFilter,
 		signatureVerifier: options.signatureVerifier,
+		logger:            options.logger,
 	}
 }
 
@@ -317,6 +320,13 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 
 	idps, validUntil, err := parseMetadata(data)
 	if err != nil {
+		// Log expiry rejections with structured fields
+		if errors.Is(err, ErrMetadataExpired) && s.logger != nil {
+			s.logger.Warn("metadata expired",
+				zap.String("source", s.path),
+				zap.Error(err),
+			)
+		}
 		return fmt.Errorf("parse metadata: %w", err)
 	}
 
@@ -1126,6 +1136,13 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 
 	idps, validUntil, err := parseMetadata(data)
 	if err != nil {
+		// Log expiry rejections with structured fields
+		if errors.Is(err, ErrMetadataExpired) && s.logger != nil {
+			s.logger.Warn("metadata expired",
+				zap.String("source", s.url),
+				zap.Error(err),
+			)
+		}
 		refreshErr := fmt.Errorf("parse metadata: %w", err)
 		s.markRefreshFailed(refreshErr)
 		return refreshErr

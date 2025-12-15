@@ -122,7 +122,7 @@ Development phases for caddy-saml-disco.
 ### Observability
 - [ ] Metrics exposure (Prometheus-compatible, optional)
 - [ ] Signature verification logging (algorithm, cert subject/expiry on success)
-- [ ] Log metadata expiry rejections (structured logging for `validUntil` failures)
+- [x] Log metadata expiry rejections (structured logging for `validUntil` failures)
 - [x] Expose `validUntil` in health endpoint (`MetadataValidUntil` field for monitoring)
 
 ### Federation Features

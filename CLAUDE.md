@@ -140,6 +140,28 @@ go test -tags=e2e ./...          # E2E tests
 
 CI runs each tag as a separate job.
 
+### Testing Structured Logging
+
+Use `zaptest/observer` to capture and assert on log output:
+
+```go
+core, logs := observer.New(zap.WarnLevel)
+logger := zap.New(core)
+
+// ... use logger in test subject ...
+
+warnLogs := logs.FilterMessage("metadata expired")
+if warnLogs.Len() == 0 {
+    t.Error("expected warning log")
+}
+fields := warnLogs.All()[0].ContextMap()
+if _, ok := fields["source"]; !ok {
+    t.Error("expected source field")
+}
+```
+
+See `metadata_test.go` for examples (search for `observer.New`).
+
 ### CI Parity & Pre-commit
 
 CI and pre-commit use identical commands to local development:

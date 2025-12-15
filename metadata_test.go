@@ -2290,6 +2290,49 @@ func TestFileMetadataStore_Load_SingleEntityExpired(t *testing.T) {
 	}
 }
 
+// TestFileMetadataStore_Load_ExpiredMetadata_Logs verifies that expired metadata
+// rejection is logged with structured fields.
+func TestFileMetadataStore_Load_ExpiredMetadata_Logs(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "expired.xml")
+
+	expiredXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    validUntil="2020-01-01T00:00:00Z">
+    <EntityDescriptor entityID="https://idp.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+	if err := os.WriteFile(path, []byte(expiredXML), 0644); err != nil {
+		t.Fatalf("write expired metadata: %v", err)
+	}
+
+	store := NewFileMetadataStore(path, WithLogger(logger))
+	_ = store.Load() // Expected to fail
+
+	// Assert: warning log with structured fields
+	warnLogs := logs.FilterMessage("metadata expired")
+	if warnLogs.Len() == 0 {
+		t.Error("expected 'metadata expired' warning log")
+	}
+
+	if warnLogs.Len() > 0 {
+		entry := warnLogs.All()[0]
+		fields := entry.ContextMap()
+
+		// Verify structured fields
+		if _, ok := fields["source"]; !ok {
+			t.Error("expected source field in log")
+		}
+	}
+}
+
 // TestURLMetadataStore_Load_ExpiredMetadata verifies that URL-based loading
 // also rejects expired metadata.
 func TestURLMetadataStore_Load_ExpiredMetadata(t *testing.T) {
@@ -2562,6 +2605,47 @@ func TestURLMetadataStore_BackgroundRefresh_LogsFailure(t *testing.T) {
 			if !strings.Contains(errStr, "500") {
 				t.Errorf("expected HTTP 500 in error, got: %s", errStr)
 			}
+		}
+	}
+}
+
+// TestURLMetadataStore_Load_ExpiredMetadata_Logs verifies that expired metadata
+// rejection from HTTP source is logged with structured fields.
+func TestURLMetadataStore_Load_ExpiredMetadata_Logs(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+
+	expiredXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+                    validUntil="2020-01-01T00:00:00Z">
+    <EntityDescriptor entityID="https://idp.example.com">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+                                 Location="https://idp.example.com/sso"/>
+        </IDPSSODescriptor>
+    </EntityDescriptor>
+</EntitiesDescriptor>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(expiredXML))
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour, WithLogger(logger))
+	_ = store.Load() // Expected to fail
+
+	// Assert: warning log with structured fields
+	warnLogs := logs.FilterMessage("metadata expired")
+	if warnLogs.Len() == 0 {
+		t.Error("expected 'metadata expired' warning log")
+	}
+
+	if warnLogs.Len() > 0 {
+		entry := warnLogs.All()[0]
+		fields := entry.ContextMap()
+
+		if _, ok := fields["source"]; !ok {
+			t.Error("expected source field (URL) in log")
 		}
 	}
 }
