@@ -139,12 +139,25 @@ func matchesEntityIDPattern(entityID, pattern string) bool {
 // MetadataOption is a functional option for configuring metadata stores.
 type MetadataOption func(*metadataOptions)
 
+// Clock provides time functionality for testing.
+type Clock interface {
+	Now() time.Time
+}
+
+// RealClock uses the standard time package.
+type RealClock struct{}
+
+// Now returns the current time.
+func (RealClock) Now() time.Time { return time.Now() }
+
 type metadataOptions struct {
 	idpFilter                   string
 	registrationAuthorityFilter string
 	signatureVerifier           SignatureVerifier
 	logger                      *zap.Logger
 	metricsRecorder             MetricsRecorder
+	onRefresh                   func(error)
+	clock                       Clock
 }
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
@@ -187,6 +200,22 @@ func WithLogger(logger *zap.Logger) MetadataOption {
 func WithMetricsRecorder(recorder MetricsRecorder) MetadataOption {
 	return func(o *metadataOptions) {
 		o.metricsRecorder = recorder
+	}
+}
+
+// WithOnRefresh returns an option that sets a callback invoked after each background refresh.
+// The callback receives the error (nil on success). Used for testing synchronization.
+func WithOnRefresh(fn func(error)) MetadataOption {
+	return func(o *metadataOptions) {
+		o.onRefresh = fn
+	}
+}
+
+// WithClock returns an option that sets a custom clock for time operations.
+// Used for testing cache TTL expiration without time.Sleep.
+func WithClock(clock Clock) MetadataOption {
+	return func(o *metadataOptions) {
+		o.clock = clock
 	}
 }
 
@@ -981,6 +1010,8 @@ type URLMetadataStore struct {
 	signatureVerifier           SignatureVerifier
 	logger                      *zap.Logger
 	metricsRecorder             MetricsRecorder
+	onRefresh                   func(error) // callback after background refresh (for testing)
+	clock                       Clock       // for time operations (defaults to RealClock)
 
 	mu              sync.RWMutex
 	idps            []IdPInfo
@@ -1005,6 +1036,10 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 	for _, opt := range opts {
 		opt(options)
 	}
+	clock := options.clock
+	if clock == nil {
+		clock = RealClock{}
+	}
 	return &URLMetadataStore{
 		url:                         url,
 		cacheTTL:                    cacheTTL,
@@ -1013,6 +1048,8 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		signatureVerifier:           options.signatureVerifier,
 		logger:                      options.logger,
 		metricsRecorder:             options.metricsRecorder,
+		onRefresh:                   options.onRefresh,
+		clock:                       clock,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -1049,6 +1086,9 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 					s.logger.Info("background metadata refresh succeeded",
 						zap.Int("idp_count", idpCount))
 				}
+			}
+			if s.onRefresh != nil {
+				s.onRefresh(err)
 			}
 		case <-s.stopCh:
 			return
@@ -1152,7 +1192,7 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	// Check if cache is still valid (unless forced)
 	s.mu.RLock()
-	if !force && !s.lastFetch.IsZero() && time.Since(s.lastFetch) < s.cacheTTL {
+	if !force && !s.lastFetch.IsZero() && s.clock.Now().Sub(s.lastFetch) < s.cacheTTL {
 		s.mu.RUnlock()
 		return nil // Cache hit
 	}
@@ -1189,7 +1229,7 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	// Handle 304 Not Modified - data hasn't changed, still counts as success
 	if resp.StatusCode == http.StatusNotModified {
 		s.mu.Lock()
-		s.lastFetch = time.Now()
+		s.lastFetch = s.clock.Now()
 		s.isFresh = true
 		s.lastError = nil
 		// lastSuccessTime stays the same (data itself didn't change)
@@ -1255,7 +1295,7 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	}
 
 	// Success - update all state
-	now := time.Now()
+	now := s.clock.Now()
 	s.mu.Lock()
 	s.idps = idps
 	s.lastFetch = now

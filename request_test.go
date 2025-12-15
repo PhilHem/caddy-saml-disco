@@ -157,8 +157,10 @@ func TestInMemoryRequestStore_Concurrent(t *testing.T) {
 
 // Cycle 8: Background cleanup purges expired entries
 func TestInMemoryRequestStore_BackgroundCleanup(t *testing.T) {
-	// Create store with 50ms cleanup interval
-	store := NewInMemoryRequestStoreWithCleanup(50 * time.Millisecond)
+	// Use channel to synchronize on cleanup completion
+	cleaned := make(chan struct{}, 10)
+	store := NewInMemoryRequestStoreWithCleanup(50*time.Millisecond,
+		WithOnCleanup(func() { cleaned <- struct{}{} }))
 	defer store.Close()
 
 	// Store an entry that expires immediately
@@ -166,8 +168,12 @@ func TestInMemoryRequestStore_BackgroundCleanup(t *testing.T) {
 	// Store an entry that won't expire
 	store.Store("valid", time.Now().Add(10*time.Minute))
 
-	// Wait for cleanup to run
-	time.Sleep(100 * time.Millisecond)
+	// Wait for cleanup to run (use channel instead of time.Sleep)
+	select {
+	case <-cleaned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for cleanup")
+	}
 
 	// Check that expired entry was purged by looking at internal state
 	store.mu.RLock()

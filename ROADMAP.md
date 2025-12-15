@@ -134,7 +134,11 @@ Development phases for caddy-saml-disco.
   - Memory usage estimation tests
 
 ### Test Infrastructure
-- [ ] Harden time-based refresh tests (use synchronization instead of `time.Sleep` margins)
+- [x] Harden time-based refresh tests (use synchronization instead of `time.Sleep` margins)
+  - Added `WithOnRefresh` callback hook for background refresh synchronization
+  - Added `WithOnCleanup` callback hook for cleanup goroutine synchronization
+  - Added `Clock` interface with `WithClock` option for cache TTL testing without sleep
+  - Note: JWT expiration tests retain short sleeps due to external library dependency
 - [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
 - [ ] Test fixture: pre-signed metadata for unit tests (static signed XML matching `testdata/sp-cert.pem`)
 - [ ] Consolidate duplicate `mockMetricsRecorder` implementations (metrics_test.go and metadata_test.go)
@@ -170,6 +174,56 @@ Development phases for caddy-saml-disco.
 - [ ] Comprehensive test suite (unit, integration, e2e)
 
 **Outcome:** Full-featured SAML SP plugin for Caddy.
+
+---
+
+## Phase 7: Fuzz Testing & Robustness (v2.1.0)
+
+**Goal:** Improve security and robustness through property-based and fuzz testing.
+
+### Priority 1: Security-Critical Targets
+
+- [x] `FuzzValidateRelayState` - Open redirect prevention (`plugin.go:857`)
+  - URL encoding bypasses, protocol-relative URLs, newline injection
+- [ ] `FuzzCookieSessionGet` - JWT token parsing (`session.go:102`)
+  - Malformed base64, truncated tokens, signature bypass attempts
+- [ ] `FuzzXMLDsigVerify` - XML signature verification (`signature.go:112`)
+  - Signature wrapping attacks, multiple signatures, malformed DSig
+
+### Priority 2: High-Value Parsing
+
+- [ ] `FuzzParseMetadata` - Federation metadata XML (`metadata.go:489`)
+  - XML bombs, deeply nested structures, invalid UTF-8, memory exhaustion
+- [ ] `FuzzExtractAndValidateExpiry` - Timestamp validation (`metadata.go:517`)
+  - Malformed RFC3339, timezone edge cases, far future/past dates
+- [ ] `FuzzExtractIdPInfo` - IdP info extraction (`metadata.go:732`)
+  - Missing required elements, malformed localized values
+
+### Priority 3: Input Validation
+
+- [ ] `FuzzParseAcceptLanguage` - HTTP header parsing (`plugin.go:1082`)
+  - Invalid quality values, malformed language tags
+- [ ] `FuzzMatchesEntityIDPattern` - Glob pattern matching (`metadata.go:112`)
+  - ReDoS potential, unexpected matches
+- [ ] `FuzzParseDuration` - Duration parsing with "d" suffix (`plugin.go:839`)
+  - Integer overflow on large day values
+- [ ] `FuzzSelectBestLogo` - Logo size selection (`metadata.go:964`)
+  - Integer overflow on height × width calculation
+
+### Priority 4: State & Temporal Logic
+
+- [ ] Property-based test for `InMemoryRequestStore` (`request.go:114`)
+  - Single-use enforcement, expiry validation, replay attack prevention
+
+### Infrastructure
+
+- [ ] Create `*_fuzz_test.go` files with Go 1.18+ native fuzzing
+- [ ] Add fuzz corpus directories (`testdata/fuzz/`)
+- [ ] GitHub Actions workflow for nightly fuzzing campaigns
+- [ ] XML bomb protection (max entity expansion limit)
+- [ ] Metadata size limits configuration
+
+**Outcome:** No crashes in 24-hour fuzzing runs, improved confidence in security-critical code paths.
 
 ---
 

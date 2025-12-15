@@ -164,6 +164,35 @@ if _, ok := fields["source"]; !ok {
 
 See `metadata_test.go` for examples (search for `observer.New`).
 
+### Testing Time-Based Behavior
+
+For deterministic tests of background refresh, cache TTL, and cleanup cycles, use synchronization hooks instead of `time.Sleep`:
+
+- **Background refresh**: Use `WithOnRefresh(func(error))` callback with a channel
+- **Cleanup cycles**: Use `WithOnCleanup(func())` callback with a channel
+- **Cache TTL expiration**: Use `WithClock(clock)` with `FakeClock` (defined in `metadata_test.go`)
+
+See `metadata_test.go` for `FakeClock` implementation and usage examples.
+
+**Note**: JWT expiration tests still use short sleeps (10ms) because token validation is handled by the external `crewjam/saml` library.
+
+### Fuzz Testing
+
+Two-tier approach for fuzz tests:
+
+- **Local development** (`plugin_fuzz_test.go`): Minimal seed corpus (~10 entries), fast iteration
+- **CI extended** (`plugin_fuzz_ci_test.go`): Full seed corpus (50+ entries), behind `fuzz_extended` build tag
+
+```bash
+# Local (fast, ~5s)
+go test -fuzz=FuzzValidateRelayState -fuzztime=5s .
+
+# CI (thorough, ~60s)
+go test -tags=fuzz_extended -fuzz=FuzzValidateRelayStateExtended -fuzztime=60s .
+```
+
+Pattern: Define `checkXxxInvariants()` helper for reuse across both minimal and extended fuzz tests.
+
 ### CI Parity & Pre-commit
 
 CI and pre-commit use identical commands to local development:

@@ -17,6 +17,31 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
+// FakeClock is a controllable clock for testing cache TTL expiration.
+type FakeClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+// NewFakeClock creates a FakeClock initialized to the current time.
+func NewFakeClock() *FakeClock {
+	return &FakeClock{now: time.Now()}
+}
+
+// Now returns the fake clock's current time.
+func (c *FakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+// Advance moves the clock forward by the specified duration.
+func (c *FakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 func TestFileMetadataStore_Load(t *testing.T) {
 	store := NewFileMetadataStore("testdata/idp-metadata.xml")
 
@@ -715,8 +740,9 @@ func TestURLMetadataStore_CacheExpiry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Use very short TTL
-	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+	// Use fake clock to control cache expiration without time.Sleep
+	fakeClock := NewFakeClock()
+	store := NewURLMetadataStore(server.URL, 10*time.Second, WithClock(fakeClock))
 
 	// First fetch
 	if err := store.Load(); err != nil {
@@ -726,8 +752,8 @@ func TestURLMetadataStore_CacheExpiry(t *testing.T) {
 		t.Errorf("expected 1 fetch, got %d", fetchCount)
 	}
 
-	// Wait for cache to expire
-	time.Sleep(20 * time.Millisecond)
+	// Advance clock past TTL (no time.Sleep)
+	fakeClock.Advance(11 * time.Second)
 
 	// Second call after TTL should fetch again
 	if err := store.Refresh(context.Background()); err != nil {
@@ -761,7 +787,9 @@ func TestURLMetadataStore_ConditionalRequest_ETag(t *testing.T) {
 	}))
 	defer server.Close()
 
-	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+	// Use fake clock to control cache expiration without time.Sleep
+	fakeClock := NewFakeClock()
+	store := NewURLMetadataStore(server.URL, 10*time.Second, WithClock(fakeClock))
 
 	// First fetch - should get full response with ETag
 	if err := store.Load(); err != nil {
@@ -773,8 +801,8 @@ func TestURLMetadataStore_ConditionalRequest_ETag(t *testing.T) {
 		t.Fatalf("expected 1 IdP after first load, got %d", len(idps))
 	}
 
-	// Wait for cache to expire
-	time.Sleep(20 * time.Millisecond)
+	// Advance clock past TTL (no time.Sleep)
+	fakeClock.Advance(11 * time.Second)
 
 	// Second fetch - should send If-None-Match and get 304
 	if err := store.Refresh(context.Background()); err != nil {
@@ -811,15 +839,17 @@ func TestURLMetadataStore_ConditionalRequest_LastModified(t *testing.T) {
 	}))
 	defer server.Close()
 
-	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+	// Use fake clock to control cache expiration without time.Sleep
+	fakeClock := NewFakeClock()
+	store := NewURLMetadataStore(server.URL, 10*time.Second, WithClock(fakeClock))
 
 	// First fetch
 	if err := store.Load(); err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
-	// Wait for cache to expire
-	time.Sleep(20 * time.Millisecond)
+	// Advance clock past TTL (no time.Sleep)
+	fakeClock.Advance(11 * time.Second)
 
 	// Second fetch - should send If-Modified-Since and get 304
 	if err := store.Refresh(context.Background()); err != nil {
@@ -860,7 +890,9 @@ func TestURLMetadataStore_ConditionalRequest_Modified(t *testing.T) {
 	}))
 	defer server.Close()
 
-	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+	// Use fake clock to control cache expiration without time.Sleep
+	fakeClock := NewFakeClock()
+	store := NewURLMetadataStore(server.URL, 10*time.Second, WithClock(fakeClock))
 
 	// First fetch - single IdP
 	if err := store.Load(); err != nil {
@@ -872,8 +904,8 @@ func TestURLMetadataStore_ConditionalRequest_Modified(t *testing.T) {
 		t.Fatalf("expected 1 IdP after first load, got %d", len(idps))
 	}
 
-	// Wait for cache to expire
-	time.Sleep(20 * time.Millisecond)
+	// Advance clock past TTL (no time.Sleep)
+	fakeClock.Advance(11 * time.Second)
 
 	// Second fetch - should get updated data
 	if err := store.Refresh(context.Background()); err != nil {
@@ -1914,8 +1946,9 @@ func TestURLMetadataStore_Refresh_PreservesDataOnFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Use short TTL so cache expires quickly
-	store := NewURLMetadataStore(server.URL, 10*time.Millisecond)
+	// Use fake clock to control cache expiration without time.Sleep
+	fakeClock := NewFakeClock()
+	store := NewURLMetadataStore(server.URL, 10*time.Second, WithClock(fakeClock))
 
 	// First load succeeds
 	if err := store.Load(); err != nil {
@@ -1931,8 +1964,8 @@ func TestURLMetadataStore_Refresh_PreservesDataOnFailure(t *testing.T) {
 		t.Fatal("IsFresh() should be true after successful load")
 	}
 
-	// Wait for cache to expire
-	time.Sleep(20 * time.Millisecond)
+	// Advance clock past TTL (no time.Sleep)
+	fakeClock.Advance(11 * time.Second)
 
 	// Second refresh fails (server returns 500)
 	err = store.Refresh(context.Background())
@@ -2415,8 +2448,10 @@ func TestURLMetadataStore_BackgroundRefresh(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create store with 50ms refresh interval
-	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond)
+	// Use channel to synchronize on refresh completion
+	refreshed := make(chan error, 10)
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond,
+		WithOnRefresh(func(err error) { refreshed <- err }))
 	defer store.Close()
 
 	// Initial load counts as 1
@@ -2424,16 +2459,26 @@ func TestURLMetadataStore_BackgroundRefresh(t *testing.T) {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
-	// Wait for 2+ refresh cycles (120ms > 2*50ms)
-	time.Sleep(120 * time.Millisecond)
+	// Wait for exactly 2 background refresh cycles (no time.Sleep)
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for first background refresh")
+	}
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for second background refresh")
+	}
 
 	// Should have made additional requests from background refresh
 	mu.Lock()
 	count := requestCount
 	mu.Unlock()
 
-	if count < 2 {
-		t.Errorf("expected at least 2 requests (initial + background), got %d", count)
+	// 1 initial + 2 background = 3 minimum
+	if count < 3 {
+		t.Errorf("expected at least 3 requests (initial + 2 background), got %d", count)
 	}
 }
 
@@ -2455,22 +2500,36 @@ func TestURLMetadataStore_Close_StopsBackgroundRefresh(t *testing.T) {
 	}))
 	defer server.Close()
 
-	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond)
+	// Use channel to detect refresh attempts
+	refreshed := make(chan error, 10)
+	store := NewURLMetadataStoreWithRefresh(server.URL, 10*time.Millisecond,
+		WithOnRefresh(func(err error) { refreshed <- err }))
 
 	// Initial load
 	if err := store.Load(); err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
-	// Close immediately
-	store.Close()
+	// Wait for one background refresh to confirm goroutine is running
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for background refresh")
+	}
 
+	// Record count and close
 	mu.Lock()
 	countAfterClose := requestCount
 	mu.Unlock()
+	store.Close()
 
-	// Wait and verify no more requests
-	time.Sleep(100 * time.Millisecond)
+	// After Close(), the channel should not receive more (use short timeout)
+	select {
+	case <-refreshed:
+		t.Error("received refresh after Close()")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: no refresh after close
+	}
 
 	mu.Lock()
 	finalCount := requestCount
@@ -2544,7 +2603,11 @@ func TestURLMetadataStore_BackgroundRefresh_LogsSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond, WithLogger(logger))
+	// Use channel to synchronize on refresh completion
+	refreshed := make(chan error, 10)
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond,
+		WithLogger(logger),
+		WithOnRefresh(func(err error) { refreshed <- err }))
 	defer store.Close()
 
 	// Initial load
@@ -2553,7 +2616,11 @@ func TestURLMetadataStore_BackgroundRefresh_LogsSuccess(t *testing.T) {
 	}
 
 	// Wait for at least one background refresh cycle
-	time.Sleep(120 * time.Millisecond)
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for background refresh")
+	}
 
 	// Assert: at least one success log
 	successLogs := logs.FilterMessage("background metadata refresh succeeded")
@@ -2582,11 +2649,19 @@ func TestURLMetadataStore_BackgroundRefresh_LogsFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond, WithLogger(logger))
+	// Use channel to synchronize on refresh completion
+	refreshed := make(chan error, 10)
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond,
+		WithLogger(logger),
+		WithOnRefresh(func(err error) { refreshed <- err }))
 	defer store.Close()
 
 	// Wait for at least one background refresh cycle (no initial Load needed - will fail)
-	time.Sleep(120 * time.Millisecond)
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for background refresh")
+	}
 
 	// Assert: at least one failure log
 	failLogs := logs.FilterMessage("background metadata refresh failed")

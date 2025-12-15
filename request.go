@@ -23,10 +23,22 @@ type RequestStore interface {
 // InMemoryRequestStore is an in-memory implementation of RequestStore.
 // Safe for concurrent use.
 type InMemoryRequestStore struct {
-	mu      sync.RWMutex
-	entries map[string]time.Time
-	stopCh  chan struct{}
-	closed  bool
+	mu        sync.RWMutex
+	entries   map[string]time.Time
+	stopCh    chan struct{}
+	closed    bool
+	onCleanup func() // callback after each cleanup cycle (for testing)
+}
+
+// RequestStoreOption is a functional option for configuring request stores.
+type RequestStoreOption func(*InMemoryRequestStore)
+
+// WithOnCleanup returns an option that sets a callback invoked after each cleanup cycle.
+// Used for testing synchronization.
+func WithOnCleanup(fn func()) RequestStoreOption {
+	return func(s *InMemoryRequestStore) {
+		s.onCleanup = fn
+	}
 }
 
 // NewInMemoryRequestStore creates a new in-memory request store without background cleanup.
@@ -37,10 +49,13 @@ func NewInMemoryRequestStore() *InMemoryRequestStore {
 }
 
 // NewInMemoryRequestStoreWithCleanup creates a store with periodic background cleanup.
-func NewInMemoryRequestStoreWithCleanup(cleanupInterval time.Duration) *InMemoryRequestStore {
+func NewInMemoryRequestStoreWithCleanup(cleanupInterval time.Duration, opts ...RequestStoreOption) *InMemoryRequestStore {
 	s := &InMemoryRequestStore{
 		entries: make(map[string]time.Time),
 		stopCh:  make(chan struct{}),
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 	go s.cleanupLoop(cleanupInterval)
 	return s
@@ -54,6 +69,9 @@ func (s *InMemoryRequestStore) cleanupLoop(interval time.Duration) {
 		select {
 		case <-ticker.C:
 			s.cleanup()
+			if s.onCleanup != nil {
+				s.onCleanup()
+			}
 		case <-s.stopCh:
 			return
 		}

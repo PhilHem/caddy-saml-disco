@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fuzz test for RelayState validation** (`FuzzValidateRelayState`):
+  - Tests open redirect prevention with 50+ seed corpus entries
+  - Covers URL encoding bypasses, protocol-relative URLs, header injection
+  - Verifies invariants: safe path output, no scheme/host leakage
 - **Prometheus metrics exposure** (`metrics enabled` config):
   - `MetricsRecorder` port with `PrometheusMetricsRecorder` and `NoopMetricsRecorder` adapters
   - `saml_disco_auth_attempts_total` counter with `idp_entity_id` and `status` labels
