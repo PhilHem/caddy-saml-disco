@@ -164,12 +164,7 @@ func TestDiscoveryFlow_SelectIdP_StartsAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Client that doesn't follow redirects
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	client := &http.Client{}
 
 	// POST to select IdP
 	body := strings.NewReader(`{"entity_id":"` + testIdP.BaseURL() + `"}`)
@@ -182,23 +177,30 @@ func TestDiscoveryFlow_SelectIdP_StartsAuth(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// Should redirect to IdP
-	if resp.StatusCode != http.StatusFound {
+	// API returns 200 with JSON containing redirect_url (not 302)
+	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("status = %d, want %d, body: %s", resp.StatusCode, http.StatusFound, body)
+		t.Fatalf("status = %d, want %d, body: %s", resp.StatusCode, http.StatusOK, body)
 	}
 
-	location := resp.Header.Get("Location")
-	if !strings.HasPrefix(location, testIdP.BaseURL()) {
-		t.Errorf("Location = %q, want prefix %q", location, testIdP.BaseURL())
+	// Parse JSON response
+	var result struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+
+	if !strings.HasPrefix(result.RedirectURL, testIdP.BaseURL()) {
+		t.Errorf("redirect_url = %q, want prefix %q", result.RedirectURL, testIdP.BaseURL())
 	}
 
 	// Verify SAMLRequest is in the redirect URL
-	locationURL, err := url.Parse(location)
+	redirectURL, err := url.Parse(result.RedirectURL)
 	if err != nil {
-		t.Fatalf("parse location: %v", err)
+		t.Fatalf("parse redirect URL: %v", err)
 	}
-	if locationURL.Query().Get("SAMLRequest") == "" {
+	if redirectURL.Query().Get("SAMLRequest") == "" {
 		t.Error("redirect URL should contain SAMLRequest parameter")
 	}
 }
@@ -414,13 +416,22 @@ func TestDiscoveryFlow_FullFlow_SelectAndAuthenticate(t *testing.T) {
 		t.Fatalf("POST /saml/api/select: %v", err)
 	}
 
-	if resp.StatusCode != http.StatusFound {
+	// API returns 200 with JSON containing redirect_url (not 302)
+	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected redirect, got %d: %s", resp.StatusCode, respBody)
+		t.Fatalf("expected 200 OK, got %d: %s", resp.StatusCode, respBody)
 	}
 
-	idpRedirectURL := resp.Header.Get("Location")
+	// Parse JSON response to get redirect URL
+	var selectResult struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&selectResult); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
 	resp.Body.Close()
+
+	idpRedirectURL := selectResult.RedirectURL
 	t.Logf("Step 2: Redirecting to IdP: %s", idpRedirectURL)
 
 	// Step 3: Follow redirect to IdP (this simulates browser behavior)
@@ -569,15 +580,10 @@ func TestSelectIdP_SetsRememberCookie(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Client that doesn't follow redirects
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	client := &http.Client{}
 
-	// POST to select IdP
-	body := strings.NewReader(`{"entity_id":"` + testIdP.BaseURL() + `"}`)
+	// POST to select IdP with remember=true to set the cookie
+	body := strings.NewReader(`{"entity_id":"` + testIdP.BaseURL() + `", "remember": true}`)
 	req, _ := http.NewRequest("POST", server.URL+"/saml/api/select", body)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -587,10 +593,10 @@ func TestSelectIdP_SetsRememberCookie(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// Should redirect to IdP
-	if resp.StatusCode != http.StatusFound {
+	// API returns 200 with JSON containing redirect_url (not 302)
+	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		t.Fatalf("status = %d, want %d, body: %s", resp.StatusCode, http.StatusFound, respBody)
+		t.Fatalf("status = %d, want %d, body: %s", resp.StatusCode, http.StatusOK, respBody)
 	}
 
 	// Check for remember cookie in Set-Cookie headers
