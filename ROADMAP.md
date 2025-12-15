@@ -102,7 +102,7 @@ Development phases for caddy-saml-disco.
 - [ ] Add SHA256 checksums file to releases
 - [ ] Mark pre-release tags (`-rc`, `-beta`, `-alpha`) as pre-releases in GitHub
 - [x] Inject version info into binaries via `-ldflags`
-- [ ] Expose version info in `/saml/api/health` endpoint (version, git_commit, build_time)
+- [x] Expose version info in `/saml/api/health` endpoint (version, git_commit, build_time)
 - [x] Document version querying via CLI (`caddy version`)
 - [x] Docker image with automated builds (`ghcr.io/philhem/caddy-saml-disco`)
 - [x] README expansion with single-IdP deployment guide
