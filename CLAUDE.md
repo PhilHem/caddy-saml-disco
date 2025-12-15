@@ -55,6 +55,19 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+### Releasing
+
+Releases are automated via GitHub Actions on version tags:
+
+```bash
+git tag v0.9.1
+git push origin v0.9.1
+```
+
+The workflow cross-compiles all platforms (linux/amd64, linux/arm64, darwin/arm64, windows/amd64) from a single ubuntu-latest runner using `CGO_ENABLED=0`. This is intentional - pure Go with no CGO produces identical binaries regardless of build platform, making cross-compilation both cheaper and simpler than native builds.
+
+Use pre-release tags (e.g., `v0.9.1-rc1`) to test the release workflow without creating an official release.
+
 ### Release Tracking Files
 
 This project uses `CHANGELOG.md` and `ROADMAP.md` to track changes:
