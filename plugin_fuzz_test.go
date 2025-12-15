@@ -3,10 +3,25 @@
 package caddysamldisco
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
+
+// fuzzTestKey is a shared RSA key for fuzz tests, generated once at init.
+var fuzzTestKey *rsa.PrivateKey
+
+func init() {
+	var err error
+	fuzzTestKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic("failed to generate fuzz test key: " + err.Error())
+	}
+}
 
 // fuzzRelayStateSeeds returns seed corpus entries for relay state fuzzing.
 // Minimal set covers the key attack categories.
@@ -111,5 +126,71 @@ func FuzzValidateRelayState(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input string) {
 		result := validateRelayState(input)
 		checkRelayStateInvariants(t, input, result)
+	})
+}
+
+// fuzzSessionGetSeeds returns seed corpus entries for JWT token parsing fuzzing.
+// Minimal set covers the key attack categories.
+func fuzzSessionGetSeeds() []string {
+	return []string{
+		// Empty/invalid
+		"",
+		"not-a-jwt",
+		// Valid structure, invalid content
+		"a.b.c",
+		// Missing parts
+		"header.payload",
+		// Too many parts
+		"a.b.c.d.e",
+		// Algorithm confusion: alg:none attack
+		"eyJhbGciOiJub25lIn0.e30.",
+		// Invalid base64 characters
+		"!!!.@@@.###",
+		// Truncated header
+		"eyJhbGc",
+		// Null byte injection
+		"eyJ\x00.e30.sig",
+		// Very long input
+		strings.Repeat("a", 10000),
+	}
+}
+
+// checkSessionGetInvariants verifies all security invariants for CookieSessionStore.Get output.
+func checkSessionGetInvariants(t *testing.T, input string, session *Session, err error) {
+	t.Helper()
+
+	// Invariant 1: Either valid session or ErrSessionNotFound (no other errors exposed)
+	if err != nil && !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("Get(%q) returned unexpected error type: %v", input, err)
+	}
+
+	// Invariant 2: If session returned, it has valid timestamps
+	if session != nil {
+		if session.IssuedAt.IsZero() {
+			t.Errorf("Get(%q) returned session with zero IssuedAt", input)
+		}
+		if session.ExpiresAt.IsZero() {
+			t.Errorf("Get(%q) returned session with zero ExpiresAt", input)
+		}
+	}
+
+	// Invariant 3: Mutual exclusion - session XOR error
+	if (session == nil) == (err == nil) {
+		t.Errorf("Get(%q) violated XOR: session=%v, err=%v", input, session, err)
+	}
+}
+
+// FuzzCookieSessionGet tests that CookieSessionStore.Get handles arbitrary input safely.
+// Uses minimal seed corpus for fast local development runs.
+// Run with -fuzztime=5s for quick checks.
+func FuzzCookieSessionGet(f *testing.F) {
+	for _, seed := range fuzzSessionGetSeeds() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		store := NewCookieSessionStore(fuzzTestKey, time.Hour)
+		session, err := store.Get(input)
+		checkSessionGetInvariants(t, input, session, err)
 	})
 }

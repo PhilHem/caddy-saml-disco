@@ -185,7 +185,7 @@ Development phases for caddy-saml-disco.
 
 - [x] `FuzzValidateRelayState` - Open redirect prevention (`plugin.go:857`)
   - URL encoding bypasses, protocol-relative URLs, newline injection
-- [ ] `FuzzCookieSessionGet` - JWT token parsing (`session.go:102`)
+- [x] `FuzzCookieSessionGet` - JWT token parsing (`session.go:102`)
   - Malformed base64, truncated tokens, signature bypass attempts
 - [ ] `FuzzXMLDsigVerify` - XML signature verification (`signature.go:112`)
   - Signature wrapping attacks, multiple signatures, malformed DSig
