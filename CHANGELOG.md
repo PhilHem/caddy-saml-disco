@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2025-12-15
+
 ### Added
 - **Version info in health endpoint**: `/saml/api/health` now includes `version`, `git_commit`, and `build_time` fields for build identification
 
