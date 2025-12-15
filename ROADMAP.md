@@ -98,7 +98,10 @@ Development phases for caddy-saml-disco.
 - [x] Add logging for background refresh events (success/failure in `refreshLoop()`)
 
 ### Distribution & Documentation
-- [ ] GitHub Actions workflow for release binaries (linux/amd64, darwin/arm64, windows/amd64)
+- [x] GitHub Actions workflow for release binaries (linux/amd64, linux/arm64, darwin/arm64, windows/amd64)
+- [ ] Add SHA256 checksums file to releases
+- [ ] Mark pre-release tags (`-rc`, `-beta`, `-alpha`) as pre-releases in GitHub
+- [ ] Inject version info into binaries via `-ldflags`
 - [ ] Docker image with automated builds (`ghcr.io/yourusername/caddy-saml-disco`)
 - [ ] README expansion with single-IdP deployment guide
 - [ ] Example: minimal single-IdP Caddyfile
