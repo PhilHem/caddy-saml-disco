@@ -44,6 +44,22 @@ Using [xcaddy](https://github.com/caddyserver/xcaddy):
 xcaddy build --with github.com/philhem/caddy-saml-disco
 ```
 
+### Verifying Installation
+
+Check that the plugin is installed and view version info:
+
+```bash
+caddy version
+```
+
+Output includes the plugin version:
+
+```
+v2.8.4 h1:...
+  ...
+  github.com/philhem/caddy-saml-disco v0.9.1
+```
+
 ## Quick Start: Single IdP Deployment
 
 This guide covers the most common deployment: protecting an application with SAML authentication using a single Identity Provider.
