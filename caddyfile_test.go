@@ -313,3 +313,60 @@ func TestCaddyfile_BackgroundRefresh(t *testing.T) {
 		t.Error("BackgroundRefresh = false, want true")
 	}
 }
+
+func TestCaddyfile_MetricsEnabled(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		metrics enabled
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if !s.MetricsEnabled {
+		t.Error("MetricsEnabled = false, want true")
+	}
+}
+
+func TestCaddyfile_MetricsDisabled(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		metrics off
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if s.MetricsEnabled {
+		t.Error("MetricsEnabled = true, want false")
+	}
+}
+
+func TestCaddyfile_MetricsDefault(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	// Default should be disabled
+	if s.MetricsEnabled {
+		t.Error("MetricsEnabled should default to false")
+	}
+}

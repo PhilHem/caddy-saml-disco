@@ -166,6 +166,19 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			s.MetadataSigningCert = d.Val()
 
+		case "metrics":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			switch d.Val() {
+			case "enabled", "on":
+				s.MetricsEnabled = true
+			case "disabled", "off":
+				s.MetricsEnabled = false
+			default:
+				return d.Errf("metrics must be 'enabled' or 'off', got %q", d.Val())
+			}
+
 		default:
 			return d.Errf("unrecognized subdirective: %s", d.Val())
 		}

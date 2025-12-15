@@ -56,6 +56,7 @@ type SAMLDisco struct {
 	rememberIdPDuration time.Duration
 	templateRenderer    *TemplateRenderer
 	logger              *zap.Logger
+	metricsRecorder     MetricsRecorder
 }
 
 // SetLogoStore sets the logo store. For testing purposes.
@@ -77,6 +78,9 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	s.logger.Debug("provisioning saml discovery service")
 
 	s.Config.SetDefaults()
+
+	// Initialize metrics recorder
+	s.initMetricsRecorder()
 
 	// Parse refresh interval for metadata cache TTL
 	refreshInterval, err := time.ParseDuration(s.MetadataRefreshInterval)
@@ -105,6 +109,9 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 
 	// Pass logger to metadata store for background refresh logging
 	metadataOpts = append(metadataOpts, WithLogger(s.logger))
+
+	// Pass metrics recorder to metadata store for refresh metrics
+	metadataOpts = append(metadataOpts, WithMetricsRecorder(s.getMetricsRecorder()))
 
 	// Initialize metadata store based on config
 	if s.MetadataFile != "" {
@@ -276,9 +283,11 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		// Validate session token
 		session, err := s.sessionStore.Get(cookie.Value)
 		if err != nil {
+			s.getMetricsRecorder().RecordSessionValidation(false)
 			s.redirectToIdP(w, r)
 			return nil
 		}
+		s.getMetricsRecorder().RecordSessionValidation(true)
 
 		// Store session in context for downstream handlers
 		ctx := context.WithValue(r.Context(), sessionContextKey{}, session)
@@ -380,6 +389,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
 		)
+		s.getMetricsRecorder().RecordAuthAttempt(idp.EntityID, false)
 		s.renderAppError(w, r, AuthError("SAML authentication failed", err))
 		return nil
 	}
@@ -388,6 +398,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 		zap.String("subject", result.Subject),
 		zap.String("idp_entity_id", result.IdPEntityID),
 	)
+	s.getMetricsRecorder().RecordAuthAttempt(result.IdPEntityID, true)
 
 	// Create session
 	session := &Session{
@@ -403,6 +414,7 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 		s.renderAppError(w, r, ServiceError("Failed to create session"))
 		return err
 	}
+	s.getMetricsRecorder().RecordSessionCreated()
 
 	// Set session cookie
 	s.setSessionCookie(w, r, token)
@@ -547,6 +559,15 @@ func (s *SAMLDisco) getLogger() *zap.Logger {
 		return s.logger
 	}
 	return zap.NewNop()
+}
+
+// getMetricsRecorder returns the metrics recorder, or a no-op recorder if not set.
+// This allows tests to run without calling Provision().
+func (s *SAMLDisco) getMetricsRecorder() MetricsRecorder {
+	if s.metricsRecorder != nil {
+		return s.metricsRecorder
+	}
+	return NewNoopMetricsRecorder()
 }
 
 // renderDiscoveryHTML renders the IdP selection page using the template renderer.
@@ -1026,6 +1047,20 @@ func (s *SAMLDisco) SetTemplateRenderer(renderer *TemplateRenderer) {
 // SetRememberIdPDuration sets the remember IdP duration for testing.
 func (s *SAMLDisco) SetRememberIdPDuration(d time.Duration) {
 	s.rememberIdPDuration = d
+}
+
+// SetMetricsRecorder sets the metrics recorder for testing.
+func (s *SAMLDisco) SetMetricsRecorder(recorder MetricsRecorder) {
+	s.metricsRecorder = recorder
+}
+
+// initMetricsRecorder initializes the metrics recorder based on configuration.
+func (s *SAMLDisco) initMetricsRecorder() {
+	if s.MetricsEnabled {
+		s.metricsRecorder = NewPrometheusMetricsRecorder()
+	} else {
+		s.metricsRecorder = NewNoopMetricsRecorder()
+	}
 }
 
 // localizeIdPList applies localization to a slice of IdPInfo based on

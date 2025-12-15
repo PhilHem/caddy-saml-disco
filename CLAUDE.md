@@ -89,7 +89,7 @@ Before releasing, check if these files need updates based on commits since last 
 
 ### Ports (Interfaces)
 
-Core interfaces: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `SignatureVerifier`. See individual `.go` files for definitions.
+Core interfaces: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `SignatureVerifier`, `MetricsRecorder`. See individual `.go` files for definitions.
 
 ### Adapters
 
@@ -97,6 +97,7 @@ Core interfaces: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `
 - **Session**: `cookie_session.go` (JWT in cookies)
 - **Logo**: `logo.go` (InMemoryLogoStore, CachingLogoStore)
 - **Signature**: `signature.go` (XMLDsigVerifier using goxmldsig, NoopVerifier for testing)
+- **Metrics**: `metrics.go` (PrometheusMetricsRecorder, NoopMetricsRecorder)
 - **Caddy**: `plugin.go` (module registration), `caddyfile.go` (config parsing)
 
 ## Key Constraints
@@ -111,7 +112,8 @@ Core interfaces: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `
 - **Cookies**: `HttpOnly`, `Secure` (TLS), `SameSite=Lax` ✓
 - **X-Forwarded-Proto**: Trusted when `r.TLS == nil` → use explicit `acs_url` in complex deployments
 - **Cookie Secure flag**: Uses `r.TLS != nil` (does not trust header)
-- **TODO**: Metadata signature verification & `validUntil` validation (ROADMAP Phase 4)
+- **Metadata signature verification**: Enabled via `verify_metadata_signature` + `metadata_signing_cert` config
+- **Metadata validUntil**: Automatically validated; expired metadata is rejected with structured logging
 
 ## Development Workflow (TDD)
 

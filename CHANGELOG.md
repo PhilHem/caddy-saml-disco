@@ -8,8 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Prometheus metrics exposure** (`metrics enabled` config):
+  - `MetricsRecorder` port with `PrometheusMetricsRecorder` and `NoopMetricsRecorder` adapters
+  - `saml_disco_auth_attempts_total` counter with `idp_entity_id` and `status` labels
+  - `saml_disco_sessions_created_total` counter for new session creation
+  - `saml_disco_session_validations_total` counter with `status` label (valid/invalid)
+  - `saml_disco_metadata_refresh_total` counter with `source` and `status` labels
+  - `saml_disco_metadata_idp_count` gauge for current IdP count
+  - Metrics exposed via Caddy's admin API `/metrics` endpoint
+- **Metadata refresh metrics instrumentation**: `RecordMetadataRefresh` called from `FileMetadataStore` and `URLMetadataStore` on refresh success/failure
 - **Structured logging for metadata expiry rejections**: Log warnings with source path/URL when metadata is rejected due to expired `validUntil`
 - **Signature verification logging**: Log algorithm, certificate subject, and expiry on successful metadata signature verification
+- **Health endpoint `validUntil` field**: `/saml/api/health` now includes `MetadataValidUntil` for monitoring metadata expiry
 
 ## [0.10.1] - 2025-12-15
 

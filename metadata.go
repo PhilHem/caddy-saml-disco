@@ -143,6 +143,7 @@ type metadataOptions struct {
 	idpFilter         string
 	signatureVerifier SignatureVerifier
 	logger            *zap.Logger
+	metricsRecorder   MetricsRecorder
 }
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
@@ -167,6 +168,14 @@ func WithSignatureVerifier(verifier SignatureVerifier) MetadataOption {
 func WithLogger(logger *zap.Logger) MetadataOption {
 	return func(o *metadataOptions) {
 		o.logger = logger
+	}
+}
+
+// WithMetricsRecorder returns an option that sets the metrics recorder for the metadata store.
+// When set, metadata refresh operations will be recorded as metrics.
+func WithMetricsRecorder(recorder MetricsRecorder) MetadataOption {
+	return func(o *metadataOptions) {
+		o.metricsRecorder = recorder
 	}
 }
 
@@ -241,6 +250,7 @@ type FileMetadataStore struct {
 	idpFilter         string
 	signatureVerifier SignatureVerifier
 	logger            *zap.Logger
+	metricsRecorder   MetricsRecorder
 
 	mu         sync.RWMutex
 	idps       []IdPInfo  // Supports multiple IdPs from aggregate metadata
@@ -258,6 +268,7 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		idpFilter:         options.idpFilter,
 		signatureVerifier: options.signatureVerifier,
 		logger:            options.logger,
+		metricsRecorder:   options.metricsRecorder,
 	}
 }
 
@@ -307,6 +318,9 @@ func (s *FileMetadataStore) ListIdPs(filter string) ([]IdPInfo, error) {
 func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
+		if s.metricsRecorder != nil {
+			s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
+		}
 		return fmt.Errorf("read metadata file: %w", err)
 	}
 
@@ -314,6 +328,9 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 	if s.signatureVerifier != nil {
 		data, err = s.signatureVerifier.Verify(data)
 		if err != nil {
+			if s.metricsRecorder != nil {
+				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
+			}
 			return fmt.Errorf("verify metadata signature: %w", err)
 		}
 	}
@@ -327,6 +344,9 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 				zap.Error(err),
 			)
 		}
+		if s.metricsRecorder != nil {
+			s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
+		}
 		return fmt.Errorf("parse metadata: %w", err)
 	}
 
@@ -334,6 +354,9 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 	if s.idpFilter != "" {
 		idps = filterIdPs(idps, s.idpFilter)
 		if len(idps) == 0 {
+			if s.metricsRecorder != nil {
+				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
+			}
 			return fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
 		}
 	}
@@ -342,6 +365,10 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 	s.idps = idps
 	s.validUntil = validUntil
 	s.mu.Unlock()
+
+	if s.metricsRecorder != nil {
+		s.metricsRecorder.RecordMetadataRefresh("file", true, len(idps))
+	}
 
 	return nil
 }
@@ -897,6 +924,7 @@ type URLMetadataStore struct {
 	idpFilter         string
 	signatureVerifier SignatureVerifier
 	logger            *zap.Logger
+	metricsRecorder   MetricsRecorder
 
 	mu              sync.RWMutex
 	idps            []IdPInfo
@@ -927,6 +955,7 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		idpFilter:         options.idpFilter,
 		signatureVerifier: options.signatureVerifier,
 		logger:            options.logger,
+		metricsRecorder:   options.metricsRecorder,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -1171,6 +1200,10 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	s.validUntil = validUntil
 	s.mu.Unlock()
 
+	if s.metricsRecorder != nil {
+		s.metricsRecorder.RecordMetadataRefresh("url", true, len(idps))
+	}
+
 	return nil
 }
 
@@ -1180,5 +1213,8 @@ func (s *URLMetadataStore) markRefreshFailed(err error) {
 	defer s.mu.Unlock()
 	s.isFresh = false
 	s.lastError = err
+	if s.metricsRecorder != nil {
+		s.metricsRecorder.RecordMetadataRefresh("url", false, 0)
+	}
 	// idps, lastSuccessTime are preserved - serve stale data
 }

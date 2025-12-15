@@ -97,6 +97,11 @@ type Config struct {
 	// MetadataSigningCert is the path to the PEM file containing the
 	// federation signing certificate(s) used to verify metadata signatures.
 	MetadataSigningCert string `json:"metadata_signing_cert,omitempty"`
+
+	// MetricsEnabled enables Prometheus metrics exposition.
+	// Metrics are exposed via Caddy's admin API /metrics endpoint.
+	// Defaults to false.
+	MetricsEnabled bool `json:"metrics_enabled,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).

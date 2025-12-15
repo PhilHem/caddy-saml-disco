@@ -120,10 +120,11 @@ Development phases for caddy-saml-disco.
 **Goal:** Production-ready for large federation environments with multiple IdPs.
 
 ### Observability
-- [ ] Metrics exposure (Prometheus-compatible, optional)
+- [x] Metrics exposure (Prometheus-compatible, optional)
 - [x] Signature verification logging (algorithm, cert subject/expiry on success)
 - [x] Log metadata expiry rejections (structured logging for `validUntil` failures)
 - [x] Expose `validUntil` in health endpoint (`MetadataValidUntil` field for monitoring)
+- [x] Instrument metadata refresh with metrics (call `RecordMetadataRefresh` from MetadataStore)
 
 ### Federation Features
 - [ ] Filter IdPs by registration authority (`registration_authority` config option)
@@ -133,6 +134,7 @@ Development phases for caddy-saml-disco.
 - [ ] Harden time-based refresh tests (use synchronization instead of `time.Sleep` margins)
 - [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
 - [ ] Test fixture: pre-signed metadata for unit tests (static signed XML matching `testdata/sp-cert.pem`)
+- [ ] Consolidate duplicate `mockMetricsRecorder` implementations (metrics_test.go and metadata_test.go)
 
 **Outcome:** Ready for production use in large federation environments (e.g., eduGAIN, InCommon).
 

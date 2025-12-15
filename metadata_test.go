@@ -2766,3 +2766,193 @@ func TestInMemoryMetadataStore_Health_WithoutValidUntil(t *testing.T) {
 		t.Errorf("MetadataValidUntil should be nil, got %v", *health.MetadataValidUntil)
 	}
 }
+
+// metadataTestMetricsRecorder records metrics calls for testing metadata stores.
+type metadataTestMetricsRecorder struct {
+	mu           sync.Mutex
+	refreshCalls []struct {
+		source   string
+		success  bool
+		idpCount int
+	}
+}
+
+func (m *metadataTestMetricsRecorder) RecordAuthAttempt(idpEntityID string, success bool) {}
+func (m *metadataTestMetricsRecorder) RecordSessionCreated()                              {}
+func (m *metadataTestMetricsRecorder) RecordSessionValidation(valid bool)                 {}
+func (m *metadataTestMetricsRecorder) RecordMetadataRefresh(source string, success bool, idpCount int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.refreshCalls = append(m.refreshCalls, struct {
+		source   string
+		success  bool
+		idpCount int
+	}{source, success, idpCount})
+}
+
+func (m *metadataTestMetricsRecorder) getRefreshCalls() []struct {
+	source   string
+	success  bool
+	idpCount int
+} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.refreshCalls
+}
+
+func TestFileMetadataStore_RecordsMetricsOnSuccess(t *testing.T) {
+	mock := &metadataTestMetricsRecorder{}
+	store := NewFileMetadataStore("testdata/idp-metadata.xml", WithMetricsRecorder(mock))
+
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	calls := mock.getRefreshCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 metrics call, got %d", len(calls))
+	}
+
+	call := calls[0]
+	if call.source != "file" {
+		t.Errorf("source = %q, want %q", call.source, "file")
+	}
+	if !call.success {
+		t.Error("success = false, want true")
+	}
+	if call.idpCount != 1 {
+		t.Errorf("idpCount = %d, want 1", call.idpCount)
+	}
+}
+
+func TestFileMetadataStore_RecordsMetricsOnFailure(t *testing.T) {
+	mock := &metadataTestMetricsRecorder{}
+	store := NewFileMetadataStore("/nonexistent/path/metadata.xml", WithMetricsRecorder(mock))
+
+	err := store.Load()
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+
+	calls := mock.getRefreshCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 metrics call, got %d", len(calls))
+	}
+
+	call := calls[0]
+	if call.source != "file" {
+		t.Errorf("source = %q, want %q", call.source, "file")
+	}
+	if call.success {
+		t.Error("success = true, want false")
+	}
+	if call.idpCount != 0 {
+		t.Errorf("idpCount = %d, want 0", call.idpCount)
+	}
+}
+
+func TestURLMetadataStore_RecordsMetricsOnSuccess(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	mock := &metadataTestMetricsRecorder{}
+	store := NewURLMetadataStore(server.URL, time.Hour, WithMetricsRecorder(mock))
+
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	calls := mock.getRefreshCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 metrics call, got %d", len(calls))
+	}
+
+	call := calls[0]
+	if call.source != "url" {
+		t.Errorf("source = %q, want %q", call.source, "url")
+	}
+	if !call.success {
+		t.Error("success = false, want true")
+	}
+	if call.idpCount != 1 {
+		t.Errorf("idpCount = %d, want 1", call.idpCount)
+	}
+}
+
+func TestURLMetadataStore_RecordsMetricsOnFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	mock := &metadataTestMetricsRecorder{}
+	store := NewURLMetadataStore(server.URL, time.Hour, WithMetricsRecorder(mock))
+
+	err := store.Load()
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+
+	calls := mock.getRefreshCalls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 metrics call, got %d", len(calls))
+	}
+
+	call := calls[0]
+	if call.source != "url" {
+		t.Errorf("source = %q, want %q", call.source, "url")
+	}
+	if call.success {
+		t.Error("success = true, want false")
+	}
+	if call.idpCount != 0 {
+		t.Errorf("idpCount = %d, want 0", call.idpCount)
+	}
+}
+
+func TestURLMetadataStore_DoesNotRecordMetricsOnCacheHit(t *testing.T) {
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	mock := &metadataTestMetricsRecorder{}
+	store := NewURLMetadataStore(server.URL, time.Hour, WithMetricsRecorder(mock))
+
+	// First load
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Second load (should be cache hit)
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+
+	// Only one HTTP request should have been made
+	if requestCount != 1 {
+		t.Errorf("expected 1 HTTP request, got %d", requestCount)
+	}
+
+	// Only one metrics call (from first load, not from cache hit)
+	calls := mock.getRefreshCalls()
+	if len(calls) != 1 {
+		t.Errorf("expected 1 metrics call (no metrics on cache hit), got %d", len(calls))
+	}
+}
