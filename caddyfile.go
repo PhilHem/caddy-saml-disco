@@ -24,6 +24,7 @@ import (
 //	    templates_dir <path>
 //	    login_redirect <url>
 //	    idp_filter <pattern>
+//	    registration_authority_filter <pattern>
 //	    verify_metadata_signature
 //	    metadata_signing_cert <path>
 //	}
@@ -113,6 +114,12 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			s.IdPFilter = d.Val()
+
+		case "registration_authority_filter":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.RegistrationAuthorityFilter = d.Val()
 
 		case "discovery_template":
 			if !d.NextArg() {

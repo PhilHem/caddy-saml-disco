@@ -54,6 +54,12 @@ type Config struct {
 	// Supports glob patterns (e.g., "*.example.edu").
 	IdPFilter string `json:"idp_filter,omitempty"`
 
+	// RegistrationAuthorityFilter filters IdPs by their registration authority URI.
+	// Only IdPs registered by matching federations will be loaded.
+	// Supports comma-separated patterns (e.g., "https://www.aai.dfn.de,https://incommon.org").
+	// Each pattern supports glob-like patterns: "*substring*", "prefix*", "*suffix".
+	RegistrationAuthorityFilter string `json:"registration_authority_filter,omitempty"`
+
 	// RememberIdPCookieName is the name of the cookie that stores the last-used IdP.
 	// Defaults to "saml_last_idp".
 	RememberIdPCookieName string `json:"remember_idp_cookie_name,omitempty"`

@@ -2956,3 +2956,120 @@ func TestURLMetadataStore_DoesNotRecordMetricsOnCacheHit(t *testing.T) {
 		t.Errorf("expected 1 metrics call (no metrics on cache hit), got %d", len(calls))
 	}
 }
+
+// TestFilterIdPsByRegistrationAuthority tests the pure domain filter function
+func TestFilterIdPsByRegistrationAuthority(t *testing.T) {
+	idps := []IdPInfo{
+		{EntityID: "https://idp1.example.com", RegistrationAuthority: "https://www.aai.dfn.de"},
+		{EntityID: "https://idp2.example.com", RegistrationAuthority: "https://incommon.org"},
+		{EntityID: "https://idp3.example.com", RegistrationAuthority: "https://www.aai.dfn.de"},
+		{EntityID: "https://idp4.example.com", RegistrationAuthority: ""}, // No registration authority
+	}
+
+	tests := []struct {
+		name     string
+		pattern  string
+		expected int
+	}{
+		// Empty pattern should return all IdPs
+		{"empty pattern", "", 4},
+		// Exact match
+		{"exact match DFN", "https://www.aai.dfn.de", 2},
+		{"exact match InCommon", "https://incommon.org", 1},
+		// Substring pattern
+		{"substring dfn", "*dfn*", 2},
+		{"substring incommon", "*incommon*", 1},
+		// Prefix pattern
+		{"prefix https://www.aai", "https://www.aai*", 2},
+		// Suffix pattern
+		{"suffix .de", "*.de", 2},
+		{"suffix .org", "*.org", 1},
+		// No match (IdPs without registration authority are excluded)
+		{"no match", "https://nonexistent.org", 0},
+		// Comma-separated patterns (multiple federations)
+		{"multiple federations", "https://www.aai.dfn.de,https://incommon.org", 3},
+		{"multiple with spaces", "https://www.aai.dfn.de, https://incommon.org", 3},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := filterIdPsByRegistrationAuthority(idps, tc.pattern)
+			if len(result) != tc.expected {
+				t.Errorf("filterIdPsByRegistrationAuthority(%q) returned %d IdPs, want %d",
+					tc.pattern, len(result), tc.expected)
+			}
+		})
+	}
+}
+
+// TestFileMetadataStore_WithRegistrationAuthorityFilter tests filtering via FileMetadataStore
+func TestFileMetadataStore_WithRegistrationAuthorityFilter(t *testing.T) {
+	// dfn-aai-sample.xml contains IdPs registered by https://www.aai.dfn.de
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithRegistrationAuthorityFilter("https://www.aai.dfn.de"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// All 4 IdPs in dfn-aai-sample.xml have DFN registration authority
+	if len(idps) != 4 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 4", len(idps))
+	}
+}
+
+// TestFileMetadataStore_WithRegistrationAuthorityFilter_NoMatch tests error when no IdPs match
+func TestFileMetadataStore_WithRegistrationAuthorityFilter_NoMatch(t *testing.T) {
+	// Filter for a federation that doesn't exist in the test data
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithRegistrationAuthorityFilter("https://nonexistent.org"))
+	err := store.Load()
+
+	// Should fail because no IdPs match
+	if err == nil {
+		t.Error("Expected error when no IdPs match registration authority filter")
+	}
+}
+
+// TestFileMetadataStore_WithRegistrationAuthorityFilter_NoRegistrationInfo tests
+// that IdPs without registration info are excluded
+func TestFileMetadataStore_WithRegistrationAuthorityFilter_NoRegistrationInfo(t *testing.T) {
+	// aggregate-metadata.xml has IdPs without registration info
+	store := NewFileMetadataStore("testdata/aggregate-metadata.xml",
+		WithRegistrationAuthorityFilter("*"))
+	err := store.Load()
+
+	// Should fail because IdPs have no registration authority
+	if err == nil {
+		t.Error("Expected error when IdPs have no registration authority")
+	}
+}
+
+// TestFileMetadataStore_BothFilters tests combining IdP filter with registration authority filter
+func TestFileMetadataStore_BothFilters(t *testing.T) {
+	// Filter by both entity ID pattern and registration authority
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithIdPFilter("*berlin*"),
+		WithRegistrationAuthorityFilter("https://www.aai.dfn.de"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Only FU Berlin should match both filters
+	if len(idps) != 1 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 1", len(idps))
+	}
+
+	if len(idps) > 0 && idps[0].EntityID != "https://identity.fu-berlin.de/idp-fub" {
+		t.Errorf("Expected FU Berlin, got %s", idps[0].EntityID)
+	}
+}

@@ -93,6 +93,9 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	if s.IdPFilter != "" {
 		metadataOpts = append(metadataOpts, WithIdPFilter(s.IdPFilter))
 	}
+	if s.RegistrationAuthorityFilter != "" {
+		metadataOpts = append(metadataOpts, WithRegistrationAuthorityFilter(s.RegistrationAuthorityFilter))
+	}
 
 	// Configure signature verification if enabled
 	if s.VerifyMetadataSignature {

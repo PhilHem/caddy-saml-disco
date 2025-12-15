@@ -127,7 +127,7 @@ Development phases for caddy-saml-disco.
 - [x] Instrument metadata refresh with metrics (call `RecordMetadataRefresh` from MetadataStore)
 
 ### Federation Features
-- [ ] Filter IdPs by registration authority (`registration_authority` config option)
+- [x] Filter IdPs by registration authority (`registration_authority_filter` config option)
 - [ ] Performance testing with large metadata files (1000+ IdPs)
 
 ### Test Infrastructure

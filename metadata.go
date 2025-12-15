@@ -140,10 +140,11 @@ func matchesEntityIDPattern(entityID, pattern string) bool {
 type MetadataOption func(*metadataOptions)
 
 type metadataOptions struct {
-	idpFilter         string
-	signatureVerifier SignatureVerifier
-	logger            *zap.Logger
-	metricsRecorder   MetricsRecorder
+	idpFilter                   string
+	registrationAuthorityFilter string
+	signatureVerifier           SignatureVerifier
+	logger                      *zap.Logger
+	metricsRecorder             MetricsRecorder
 }
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
@@ -152,6 +153,16 @@ type metadataOptions struct {
 func WithIdPFilter(pattern string) MetadataOption {
 	return func(o *metadataOptions) {
 		o.idpFilter = pattern
+	}
+}
+
+// WithRegistrationAuthorityFilter returns an option that filters IdPs by registration authority.
+// Only IdPs registered by matching federations will be loaded.
+// Supports comma-separated patterns (e.g., "https://www.aai.dfn.de,https://incommon.org").
+// Each pattern supports glob-like patterns: "*substring*", "prefix*", "*suffix".
+func WithRegistrationAuthorityFilter(pattern string) MetadataOption {
+	return func(o *metadataOptions) {
+		o.registrationAuthorityFilter = pattern
 	}
 }
 
@@ -246,11 +257,12 @@ func (s *InMemoryMetadataStore) Health() MetadataHealth {
 // FileMetadataStore loads IdP metadata from a local file.
 // Supports both single EntityDescriptor and aggregate EntitiesDescriptor formats.
 type FileMetadataStore struct {
-	path              string
-	idpFilter         string
-	signatureVerifier SignatureVerifier
-	logger            *zap.Logger
-	metricsRecorder   MetricsRecorder
+	path                        string
+	idpFilter                   string
+	registrationAuthorityFilter string
+	signatureVerifier           SignatureVerifier
+	logger                      *zap.Logger
+	metricsRecorder             MetricsRecorder
 
 	mu         sync.RWMutex
 	idps       []IdPInfo  // Supports multiple IdPs from aggregate metadata
@@ -264,11 +276,12 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		opt(options)
 	}
 	return &FileMetadataStore{
-		path:              path,
-		idpFilter:         options.idpFilter,
-		signatureVerifier: options.signatureVerifier,
-		logger:            options.logger,
-		metricsRecorder:   options.metricsRecorder,
+		path:                        path,
+		idpFilter:                   options.idpFilter,
+		registrationAuthorityFilter: options.registrationAuthorityFilter,
+		signatureVerifier:           options.signatureVerifier,
+		logger:                      options.logger,
+		metricsRecorder:             options.metricsRecorder,
 	}
 }
 
@@ -361,6 +374,17 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		}
 	}
 
+	// Apply registration authority filter if configured
+	if s.registrationAuthorityFilter != "" {
+		idps = filterIdPsByRegistrationAuthority(idps, s.registrationAuthorityFilter)
+		if len(idps) == 0 {
+			if s.metricsRecorder != nil {
+				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
+			}
+			return fmt.Errorf("no IdPs match registration authority filter %q", s.registrationAuthorityFilter)
+		}
+	}
+
 	s.mu.Lock()
 	s.idps = idps
 	s.validUntil = validUntil
@@ -393,6 +417,37 @@ func filterIdPs(idps []IdPInfo, pattern string) []IdPInfo {
 	for _, idp := range idps {
 		if matchesEntityIDPattern(idp.EntityID, pattern) {
 			filtered = append(filtered, idp)
+		}
+	}
+	return filtered
+}
+
+// filterIdPsByRegistrationAuthority returns only IdPs whose registration authority
+// matches the pattern. Supports comma-separated patterns for multiple authorities.
+// IdPs without a registration authority are excluded when a filter is active.
+func filterIdPsByRegistrationAuthority(idps []IdPInfo, pattern string) []IdPInfo {
+	if pattern == "" {
+		return idps
+	}
+
+	// Parse comma-separated patterns
+	patterns := strings.Split(pattern, ",")
+	for i := range patterns {
+		patterns[i] = strings.TrimSpace(patterns[i])
+	}
+
+	var filtered []IdPInfo
+	for _, idp := range idps {
+		// Skip IdPs without a registration authority
+		if idp.RegistrationAuthority == "" {
+			continue
+		}
+		// Check if registration authority matches any pattern
+		for _, p := range patterns {
+			if matchesEntityIDPattern(idp.RegistrationAuthority, p) {
+				filtered = append(filtered, idp)
+				break
+			}
 		}
 	}
 	return filtered
@@ -918,13 +973,14 @@ type MetadataHealth struct {
 
 // URLMetadataStore loads IdP metadata from a URL with caching.
 type URLMetadataStore struct {
-	url               string
-	httpClient        *http.Client
-	cacheTTL          time.Duration
-	idpFilter         string
-	signatureVerifier SignatureVerifier
-	logger            *zap.Logger
-	metricsRecorder   MetricsRecorder
+	url                         string
+	httpClient                  *http.Client
+	cacheTTL                    time.Duration
+	idpFilter                   string
+	registrationAuthorityFilter string
+	signatureVerifier           SignatureVerifier
+	logger                      *zap.Logger
+	metricsRecorder             MetricsRecorder
 
 	mu              sync.RWMutex
 	idps            []IdPInfo
@@ -950,12 +1006,13 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		opt(options)
 	}
 	return &URLMetadataStore{
-		url:               url,
-		cacheTTL:          cacheTTL,
-		idpFilter:         options.idpFilter,
-		signatureVerifier: options.signatureVerifier,
-		logger:            options.logger,
-		metricsRecorder:   options.metricsRecorder,
+		url:                         url,
+		cacheTTL:                    cacheTTL,
+		idpFilter:                   options.idpFilter,
+		registrationAuthorityFilter: options.registrationAuthorityFilter,
+		signatureVerifier:           options.signatureVerifier,
+		logger:                      options.logger,
+		metricsRecorder:             options.metricsRecorder,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -1182,6 +1239,16 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		idps = filterIdPs(idps, s.idpFilter)
 		if len(idps) == 0 {
 			refreshErr := fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
+			s.markRefreshFailed(refreshErr)
+			return refreshErr
+		}
+	}
+
+	// Apply registration authority filter if configured
+	if s.registrationAuthorityFilter != "" {
+		idps = filterIdPsByRegistrationAuthority(idps, s.registrationAuthorityFilter)
+		if len(idps) == 0 {
+			refreshErr := fmt.Errorf("no IdPs match registration authority filter %q", s.registrationAuthorityFilter)
 			s.markRefreshFailed(refreshErr)
 			return refreshErr
 		}
