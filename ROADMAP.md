@@ -78,20 +78,17 @@ Development phases for caddy-saml-disco.
 
 ---
 
-## Phase 4: Production Hardening (v0.4.0)
+## Phase 4: Single-IdP Release (v1.0.0)
 
-**Goal:** Production-ready with proper error handling and logging.
+**Goal:** Production-ready release for single-IdP deployments with distributable binaries.
 
+### Completed (from previous hardening work)
 - [x] Structured logging via Caddy's logger
 - [x] Comprehensive error pages
 - [x] Request ID tracking
-- [ ] Metrics exposure (optional)
 - [x] Security review (cookie flags, CSRF, etc.)
-- [ ] Documentation site or README expansion
-- [ ] Performance testing with large metadata files
 - [x] **Metadata signature verification** (critical for federation trust)
 - [x] Parse `mdrpi:RegistrationInfo` for trust chain validation
-- [ ] Filter IdPs by registration authority (`registration_authority` config option)
 - [x] Expose registration info in `/saml/api/idps` JSON response
 - [x] Validate metadata `validUntil` attribute (reject expired metadata)
 - [x] Graceful handling of metadata fetch failures (serve stale if fresh unavailable)
@@ -99,41 +96,73 @@ Development phases for caddy-saml-disco.
 - [x] Periodic background metadata refresh (using `time.NewTicker`)
 - [x] Wire up background refresh in plugin `Provision()` (`background_refresh` config option)
 - [x] Add logging for background refresh events (success/failure in `refreshLoop()`)
-- [ ] Harden time-based refresh tests (use synchronization instead of `time.Sleep` margins)
-- [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
-- [ ] Signature verification logging (algorithm, cert subject/expiry on success)
-- [ ] Log metadata expiry rejections (structured logging for `validUntil` failures)
-- [ ] Expose `validUntil` in health endpoint (`MetadataValidUntil` field for monitoring)
-- [ ] Fix integration tests expecting 302 from `/saml/api/select` (now returns JSON with `redirect_url`)
+
+### Distribution & Documentation
 - [ ] GitHub Actions workflow for release binaries (linux/amd64, darwin/arm64, windows/amd64)
 - [ ] Docker image with automated builds (`ghcr.io/yourusername/caddy-saml-disco`)
+- [ ] README expansion with single-IdP deployment guide
+- [ ] Example: minimal single-IdP Caddyfile
 
-**Outcome:** Ready for production use in federation environments.
+### Bug Fixes
+- [ ] Fix integration tests expecting 302 from `/saml/api/select` (now returns JSON with `redirect_url`)
+
+**Outcome:** Users can download pre-built binaries or Docker image and deploy with a single IdP.
 
 ---
 
-## Phase 5: Advanced Features (v1.0.0)
+## Phase 5: Federation Hardening (v1.1.0)
 
-**Goal:** Feature-complete v1 release.
+**Goal:** Production-ready for large federation environments with multiple IdPs.
 
+### Observability
+- [ ] Metrics exposure (Prometheus-compatible, optional)
+- [ ] Signature verification logging (algorithm, cert subject/expiry on success)
+- [ ] Log metadata expiry rejections (structured logging for `validUntil` failures)
+- [ ] Expose `validUntil` in health endpoint (`MetadataValidUntil` field for monitoring)
+
+### Federation Features
+- [ ] Filter IdPs by registration authority (`registration_authority` config option)
+- [ ] Performance testing with large metadata files (1000+ IdPs)
+
+### Test Infrastructure
+- [ ] Harden time-based refresh tests (use synchronization instead of `time.Sleep` margins)
+- [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
+
+**Outcome:** Ready for production use in large federation environments (e.g., eduGAIN, InCommon).
+
+---
+
+## Phase 6: Advanced Features (v2.0.0)
+
+**Goal:** Feature-complete release with advanced SAML capabilities.
+
+### Attribute Handling
 - [ ] Attribute mapping configuration (OID → friendly names like `eduPersonPrincipalName` → `username`)
 - [ ] Header injection customization (`REMOTE_USER`, `X-Forwarded-User`, custom headers)
+- [ ] Scope-based attribute validation (shibmd:Scope)
+
+### Authentication Options
 - [ ] Single Logout (SLO) support
 - [ ] Forced re-authentication (`forceAuthn` parameter for sensitive routes)
 - [ ] Authentication context class requests (request MFA/specific auth strength)
+
+### Security & Multi-tenancy
 - [ ] Encrypted assertions
 - [ ] Multiple SP configurations per instance
-- [ ] Comprehensive test suite (unit, integration, e2e)
-- [ ] Parse `mdattr:EntityAttributes` for entity categories (R&S, SIRTFI)
-- [ ] Scope-based attribute validation (shibmd:Scope)
 - [ ] Certificate rotation handling (multiple signing certs per IdP)
+
+### Federation Metadata
+- [ ] Parse `mdattr:EntityAttributes` for entity categories (R&S, SIRTFI)
 - [ ] Filter IdPs by entity category or assurance level
+
+### Quality
+- [ ] Comprehensive test suite (unit, integration, e2e)
 
 **Outcome:** Full-featured SAML SP plugin for Caddy.
 
 ---
 
-## Future (post-v1)
+## Future (post-v2)
 
 - Redis/database session storage for HA
 - IdP-initiated SSO support
