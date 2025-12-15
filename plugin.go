@@ -28,6 +28,14 @@ var (
 	BuildTime = ""
 )
 
+// HealthResponse is the JSON response for /saml/api/health
+type HealthResponse struct {
+	Version   string `json:"version"`
+	GitCommit string `json:"git_commit,omitempty"`
+	BuildTime string `json:"build_time,omitempty"`
+	MetadataHealth
+}
+
 func init() {
 	caddy.RegisterModule(SAMLDisco{})
 	httpcaddyfile.RegisterHandlerDirective("saml_disco", parseCaddyfile)
@@ -643,8 +651,14 @@ func (s *SAMLDisco) handleHealth(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	health := s.metadataStore.Health()
+	resp := HealthResponse{
+		Version:        Version,
+		GitCommit:      GitCommit,
+		BuildTime:      BuildTime,
+		MetadataHealth: health,
+	}
 	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(health)
+	return json.NewEncoder(w).Encode(resp)
 }
 
 func (s *SAMLDisco) handleLogoEndpoint(w http.ResponseWriter, r *http.Request) error {

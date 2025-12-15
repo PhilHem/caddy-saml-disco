@@ -2992,15 +2992,18 @@ func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
 		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
 	}
 
-	var health MetadataHealth
-	if err := json.NewDecoder(rec.Body).Decode(&health); err != nil {
+	var resp HealthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if health.IdPCount != 1 {
-		t.Errorf("IdPCount = %d, want 1", health.IdPCount)
+	if resp.IdPCount != 1 {
+		t.Errorf("IdPCount = %d, want 1", resp.IdPCount)
 	}
-	if !health.IsFresh {
+	if !resp.IsFresh {
 		t.Error("IsFresh should be true for in-memory store")
+	}
+	if resp.Version == "" {
+		t.Error("Version should not be empty")
 	}
 }
 
@@ -3027,6 +3030,45 @@ func TestHealthEndpoint_NoMetadataStore(t *testing.T) {
 	}
 	if resp.Error.Code != "config_missing" {
 		t.Errorf("error.code = %q, want %q", resp.Error.Code, "config_missing")
+	}
+}
+
+func TestHealthEndpoint_IncludesVersionInfo(t *testing.T) {
+	store := NewInMemoryMetadataStore([]IdPInfo{{EntityID: "https://idp1.example.com"}})
+	s := &SAMLDisco{metadataStore: store}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	_ = s.ServeHTTP(rec, req, next)
+
+	var resp HealthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Version should always be present (defaults to "dev")
+	if resp.Version == "" {
+		t.Error("Version should not be empty")
+	}
+}
+
+func TestHealthEndpoint_VersionDefaultsToDev(t *testing.T) {
+	store := NewInMemoryMetadataStore([]IdPInfo{})
+	s := &SAMLDisco{metadataStore: store}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/api/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	_ = s.ServeHTTP(rec, req, next)
+
+	var resp HealthResponse
+	json.NewDecoder(rec.Body).Decode(&resp)
+
+	if resp.Version != "dev" {
+		t.Errorf("Version = %q, want %q", resp.Version, "dev")
 	}
 }
 
