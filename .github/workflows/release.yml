@@ -40,10 +40,9 @@ jobs:
           for platform in "${platforms[@]}"; do
             IFS=':' read -r os arch ext <<< "$platform"
             echo "Building for $os/$arch with version ${VERSION}..."
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch xcaddy build \
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch XCADDY_GO_BUILD_FLAGS="-ldflags '${LDFLAGS}'" xcaddy build \
               --with github.com/philiph/caddy-saml-disco=. \
-              --output "caddy-saml-disco-${os}-${arch}${ext}" \
-              --ldflags "${LDFLAGS}"
+              --output "caddy-saml-disco-${os}-${arch}${ext}"
           done
 
       - name: Generate checksums
