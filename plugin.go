@@ -96,7 +96,7 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("load metadata signing certificate: %w", err)
 		}
-		verifier := NewXMLDsigVerifierWithCerts(certs)
+		verifier := NewXMLDsigVerifierWithCertsAndLogger(certs, s.logger)
 		metadataOpts = append(metadataOpts, WithSignatureVerifier(verifier))
 		s.logger.Info("metadata signature verification enabled",
 			zap.String("cert_file", s.MetadataSigningCert),

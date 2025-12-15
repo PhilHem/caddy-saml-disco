@@ -11,6 +11,10 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/beevik/etree"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // =============================================================================
@@ -401,3 +405,155 @@ func TestConfig_Validate_VerificationWithCert(t *testing.T) {
 // The following test documents what should be tested there:
 // - verify_metadata_signature directive (flag)
 // - metadata_signing_cert directive (path)
+
+// =============================================================================
+// Phase 5: Signature Verification Logging
+// =============================================================================
+
+// Cycle 5.1: VerificationDetails struct exists with required fields
+func TestVerificationDetails_Fields(t *testing.T) {
+	details := VerificationDetails{
+		Algorithm:   "RSA-SHA256",
+		CertSubject: "CN=Test Signer",
+		CertExpiry:  time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC),
+	}
+
+	if details.Algorithm != "RSA-SHA256" {
+		t.Errorf("Algorithm = %q, want %q", details.Algorithm, "RSA-SHA256")
+	}
+	if details.CertSubject != "CN=Test Signer" {
+		t.Errorf("CertSubject = %q, want %q", details.CertSubject, "CN=Test Signer")
+	}
+	if details.CertExpiry.Year() != 2025 {
+		t.Errorf("CertExpiry.Year() = %d, want 2025", details.CertExpiry.Year())
+	}
+}
+
+// Cycle 5.2: algorithmName maps XML DSig URIs to human-readable names
+func TestAlgorithmName(t *testing.T) {
+	cases := []struct {
+		uri  string
+		name string
+	}{
+		{"http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", "RSA-SHA256"},
+		{"http://www.w3.org/2000/09/xmldsig#rsa-sha1", "RSA-SHA1"},
+		{"http://www.w3.org/2001/04/xmldsig-more#rsa-sha384", "RSA-SHA384"},
+		{"http://www.w3.org/2001/04/xmldsig-more#rsa-sha512", "RSA-SHA512"},
+		{"http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256", "ECDSA-SHA256"},
+		{"http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384", "ECDSA-SHA384"},
+		{"http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512", "ECDSA-SHA512"},
+		{"http://unknown.algorithm", "http://unknown.algorithm"}, // unknown returns URI as-is
+	}
+
+	for _, tc := range cases {
+		got := algorithmName(tc.uri)
+		if got != tc.name {
+			t.Errorf("algorithmName(%q) = %q, want %q", tc.uri, got, tc.name)
+		}
+	}
+}
+
+// Cycle 5.3: Test extractSignatureAlgorithm extracts algorithm from XML
+func TestExtractSignatureAlgorithm(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	// XML with signature containing algorithm
+	xmlWithSig := []byte(`<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+    <SignedInfo>
+      <SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+    </SignedInfo>
+  </Signature>
+</EntitiesDescriptor>`)
+
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(xmlWithSig); err != nil {
+		t.Fatalf("parse XML: %v", err)
+	}
+
+	algo := verifier.extractSignatureAlgorithm(doc.Root())
+	if algo != "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" {
+		t.Errorf("extractSignatureAlgorithm() = %q, want RSA-SHA256 URI", algo)
+	}
+}
+
+// Cycle 5.3b: Test extractSignatureAlgorithm returns empty for unsigned XML
+func TestExtractSignatureAlgorithm_NoSignature(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	xmlNoSig := []byte(`<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+  <EntityDescriptor entityID="https://idp.example.com"/>
+</EntitiesDescriptor>`)
+
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(xmlNoSig); err != nil {
+		t.Fatalf("parse XML: %v", err)
+	}
+
+	algo := verifier.extractSignatureAlgorithm(doc.Root())
+	if algo != "" {
+		t.Errorf("extractSignatureAlgorithm() = %q, want empty string", algo)
+	}
+}
+
+// Cycle 5.3c: Constructor with logger exists
+func TestNewXMLDsigVerifierWithLogger(t *testing.T) {
+	core, _ := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifierWithLogger(cert, logger)
+
+	if verifier == nil {
+		t.Fatal("NewXMLDsigVerifierWithLogger() returned nil")
+	}
+}
+
+// Cycle 5.4: No log on verification failure
+func TestXMLDsigVerifier_NoLogOnFailure(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifierWithLogger(cert, logger)
+
+	// Unsigned XML will fail verification
+	unsignedXML := []byte(`<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+  <EntityDescriptor entityID="https://idp.example.com"/>
+</EntitiesDescriptor>`)
+
+	_, err := verifier.Verify(unsignedXML)
+	if err == nil {
+		t.Fatal("Verify() should have failed for unsigned XML")
+	}
+
+	// Should NOT log success message on failure
+	infoLogs := logs.FilterMessage("metadata signature verified")
+	if infoLogs.Len() != 0 {
+		t.Errorf("should not log success on failure, got %d logs", infoLogs.Len())
+	}
+}
+
+// Cycle 5.5: NewXMLDsigVerifierWithCertsAndLogger constructor
+func TestNewXMLDsigVerifierWithCertsAndLogger(t *testing.T) {
+	core, _ := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifierWithCertsAndLogger([]*x509.Certificate{cert, cert}, logger)
+
+	if verifier == nil {
+		t.Fatal("NewXMLDsigVerifierWithCertsAndLogger() returned nil")
+	}
+	if verifier.logger != logger {
+		t.Error("logger not set correctly")
+	}
+	if len(verifier.certs) != 2 {
+		t.Errorf("expected 2 certs, got %d", len(verifier.certs))
+	}
+}
