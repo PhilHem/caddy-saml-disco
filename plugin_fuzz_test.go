@@ -194,3 +194,83 @@ func FuzzCookieSessionGet(f *testing.F) {
 		checkSessionGetInvariants(t, input, session, err)
 	})
 }
+
+// fuzzParseMetadataSeeds returns seed corpus entries for metadata XML parsing fuzzing.
+// Minimal set covers key attack categories for XML parsers.
+func fuzzParseMetadataSeeds() []string {
+	return []string{
+		// Valid single EntityDescriptor
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+		// Valid aggregate EntitiesDescriptor
+		`<?xml version="1.0"?><EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"><EntityDescriptor entityID="https://idp1.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp1.example.com/sso"/></IDPSSODescriptor></EntityDescriptor></EntitiesDescriptor>`,
+		// Empty inputs
+		"",
+		"   ",
+		"\n\t\n",
+		// Malformed XML
+		"<not valid xml",
+		"<EntityDescriptor>",
+		"<EntityDescriptor></EntityDescriptor",
+		// SP-only metadata (no IDPSSODescriptor)
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://sp.example.com"><SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://sp.example.com/acs" index="0"/></SPSSODescriptor></EntityDescriptor>`,
+		// Invalid validUntil format
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com" validUntil="not-a-date"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+		// Expired validUntil
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com" validUntil="2020-01-01T00:00:00Z"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+		// XXE attempt (entity expansion)
+		`<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="&xxe;"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+		// Null byte injection
+		"<?xml version=\"1.0\"?><EntityDescriptor\x00 xmlns=\"urn:oasis:names:tc:SAML:2.0:metadata\"/>",
+		// Invalid UTF-8
+		"<?xml version=\"1.0\"?><EntityDescriptor xmlns=\"urn:oasis:names:tc:SAML:2.0:metadata\" entityID=\"\xff\xfe\"/>",
+		// Very long entityID
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="` + strings.Repeat("a", 10000) + `"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+	}
+}
+
+// checkParseMetadataInvariants verifies all security invariants for parseMetadata output.
+func checkParseMetadataInvariants(t *testing.T, input []byte, idps []IdPInfo, validUntil *time.Time, err error) {
+	t.Helper()
+
+	// Invariant 1: Error XOR valid IdPs (when IdPs expected)
+	// Note: Empty IdPs slice with nil error is valid for SP-only or empty aggregate metadata that fails
+	if err != nil && len(idps) > 0 {
+		t.Errorf("parseMetadata returned both error and IdPs: err=%v, idps=%d", err, len(idps))
+	}
+
+	// Invariant 2: If IdPs returned, each must have non-empty EntityID
+	for i, idp := range idps {
+		if idp.EntityID == "" {
+			t.Errorf("parseMetadata returned IdP[%d] with empty EntityID", i)
+		}
+	}
+
+	// Invariant 3: If validUntil returned, it must not be zero
+	if validUntil != nil && validUntil.IsZero() {
+		t.Error("parseMetadata returned zero validUntil timestamp")
+	}
+
+	// Invariant 4: validUntil should only be returned with successful parse
+	// (if we got an expiry error, validUntil should be nil)
+	if err != nil && validUntil != nil {
+		// This is actually allowed - the function may return validUntil even on error
+		// for informational purposes, but let's verify it's reasonable
+		if validUntil.IsZero() {
+			t.Error("parseMetadata returned zero validUntil with error")
+		}
+	}
+}
+
+// FuzzParseMetadata tests that parseMetadata handles arbitrary XML input safely.
+// Uses minimal seed corpus for fast local development runs.
+// Run with -fuzztime=5s for quick checks.
+func FuzzParseMetadata(f *testing.F) {
+	for _, seed := range fuzzParseMetadataSeeds() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		idps, validUntil, err := parseMetadata([]byte(input))
+		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
+	})
+}

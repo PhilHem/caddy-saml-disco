@@ -730,6 +730,9 @@ type RegistrationInfo struct {
 // extractIdPInfoWithMaps extracts IdPInfo from a single EntityDescriptor,
 // using pre-parsed UIInfo and RegistrationInfo from the maps.
 func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*UIInfo, regInfoMap map[string]*RegistrationInfo) (*IdPInfo, error) {
+	if ed.EntityID == "" {
+		return nil, fmt.Errorf("missing entityID attribute")
+	}
 	if len(ed.IDPSSODescriptors) == 0 {
 		return nil, fmt.Errorf("no IDPSSODescriptor found")
 	}

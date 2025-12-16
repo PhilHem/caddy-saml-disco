@@ -192,7 +192,7 @@ Development phases for caddy-saml-disco.
 
 ### Priority 2: High-Value Parsing
 
-- [ ] `FuzzParseMetadata` - Federation metadata XML (`metadata.go:489`)
+- [x] `FuzzParseMetadata` - Federation metadata XML (`metadata.go:489`)
   - XML bombs, deeply nested structures, invalid UTF-8, memory exhaustion
 - [ ] `FuzzExtractAndValidateExpiry` - Timestamp validation (`metadata.go:517`)
   - Malformed RFC3339, timezone edge cases, far future/past dates
