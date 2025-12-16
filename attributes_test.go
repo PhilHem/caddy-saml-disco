@@ -205,6 +205,151 @@ func TestMapAttributesToHeaders_MultipleMappings(t *testing.T) {
 }
 
 // =============================================================================
+// OID Registry Tests
+// =============================================================================
+
+func TestResolveAttributeName_FriendlyNameToOID(t *testing.T) {
+	oid, friendlyName := ResolveAttributeName("eduPersonPrincipalName")
+	if oid != "urn:oid:1.3.6.1.4.1.5923.1.1.1.6" {
+		t.Errorf("expected OID urn:oid:1.3.6.1.4.1.5923.1.1.1.6, got %q", oid)
+	}
+	if friendlyName != "eduPersonPrincipalName" {
+		t.Errorf("expected friendly name eduPersonPrincipalName, got %q", friendlyName)
+	}
+}
+
+func TestResolveAttributeName_OIDToFriendlyName(t *testing.T) {
+	oid, friendlyName := ResolveAttributeName("urn:oid:1.3.6.1.4.1.5923.1.1.1.6")
+	if oid != "urn:oid:1.3.6.1.4.1.5923.1.1.1.6" {
+		t.Errorf("expected OID urn:oid:1.3.6.1.4.1.5923.1.1.1.6, got %q", oid)
+	}
+	if friendlyName != "eduPersonPrincipalName" {
+		t.Errorf("expected friendly name eduPersonPrincipalName, got %q", friendlyName)
+	}
+}
+
+func TestResolveAttributeName_UnknownName(t *testing.T) {
+	oid, friendlyName := ResolveAttributeName("customAttribute")
+	if oid != "customAttribute" {
+		t.Errorf("expected unknown name to pass through as OID, got %q", oid)
+	}
+	if friendlyName != "customAttribute" {
+		t.Errorf("expected unknown name to pass through as friendly name, got %q", friendlyName)
+	}
+}
+
+func TestResolveAttributeName_AllCommonAttributes(t *testing.T) {
+	tests := []struct {
+		name         string
+		expectedOID  string
+		expectedName string
+	}{
+		{"eduPersonPrincipalName", "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", "eduPersonPrincipalName"},
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.6", "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", "eduPersonPrincipalName"},
+		{"eduPersonEntitlement", "urn:oid:1.3.6.1.4.1.5923.1.1.1.7", "eduPersonEntitlement"},
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.7", "urn:oid:1.3.6.1.4.1.5923.1.1.1.7", "eduPersonEntitlement"},
+		{"eduPersonScopedAffiliation", "urn:oid:1.3.6.1.4.1.5923.1.1.1.9", "eduPersonScopedAffiliation"},
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.9", "urn:oid:1.3.6.1.4.1.5923.1.1.1.9", "eduPersonScopedAffiliation"},
+		{"eduPersonTargetedID", "urn:oid:1.3.6.1.4.1.5923.1.1.1.10", "eduPersonTargetedID"},
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.10", "urn:oid:1.3.6.1.4.1.5923.1.1.1.10", "eduPersonTargetedID"},
+		{"mail", "urn:oid:0.9.2342.19200300.100.1.3", "mail"},
+		{"urn:oid:0.9.2342.19200300.100.1.3", "urn:oid:0.9.2342.19200300.100.1.3", "mail"},
+		{"givenName", "urn:oid:2.5.4.42", "givenName"},
+		{"urn:oid:2.5.4.42", "urn:oid:2.5.4.42", "givenName"},
+		{"sn", "urn:oid:2.5.4.4", "sn"},
+		{"urn:oid:2.5.4.4", "urn:oid:2.5.4.4", "sn"},
+		{"displayName", "urn:oid:2.16.840.1.113730.3.1.241", "displayName"},
+		{"urn:oid:2.16.840.1.113730.3.1.241", "urn:oid:2.16.840.1.113730.3.1.241", "displayName"},
+		{"schacHomeOrganization", "urn:oid:1.3.6.1.4.1.25178.1.2.9", "schacHomeOrganization"},
+		{"urn:oid:1.3.6.1.4.1.25178.1.2.9", "urn:oid:1.3.6.1.4.1.25178.1.2.9", "schacHomeOrganization"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oid, friendlyName := ResolveAttributeName(tt.name)
+			if oid != tt.expectedOID {
+				t.Errorf("OID: expected %q, got %q", tt.expectedOID, oid)
+			}
+			if friendlyName != tt.expectedName {
+				t.Errorf("friendly name: expected %q, got %q", tt.expectedName, friendlyName)
+			}
+		})
+	}
+}
+
+func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesFriendlyName_IdPSendsOID(t *testing.T) {
+	// User configures with friendly name, IdP sends OID
+	attrs := map[string][]string{
+		"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user@example.com"},
+	}
+	mappings := []AttributeMapping{
+		{SAMLAttribute: "eduPersonPrincipalName", HeaderName: "X-Remote-User"},
+	}
+
+	result, err := MapAttributesToHeaders(attrs, mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["X-Remote-User"] != "user@example.com" {
+		t.Errorf("expected X-Remote-User=user@example.com, got %q", result["X-Remote-User"])
+	}
+}
+
+func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesOID_IdPSendsFriendlyName(t *testing.T) {
+	// User configures with OID, IdP sends friendly name
+	attrs := map[string][]string{
+		"eduPersonPrincipalName": {"user@example.com"},
+	}
+	mappings := []AttributeMapping{
+		{SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", HeaderName: "X-Remote-User"},
+	}
+
+	result, err := MapAttributesToHeaders(attrs, mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["X-Remote-User"] != "user@example.com" {
+		t.Errorf("expected X-Remote-User=user@example.com, got %q", result["X-Remote-User"])
+	}
+}
+
+func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesFriendlyName_IdPSendsFriendlyName(t *testing.T) {
+	// User configures with friendly name, IdP sends friendly name
+	attrs := map[string][]string{
+		"eduPersonPrincipalName": {"user@example.com"},
+	}
+	mappings := []AttributeMapping{
+		{SAMLAttribute: "eduPersonPrincipalName", HeaderName: "X-Remote-User"},
+	}
+
+	result, err := MapAttributesToHeaders(attrs, mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["X-Remote-User"] != "user@example.com" {
+		t.Errorf("expected X-Remote-User=user@example.com, got %q", result["X-Remote-User"])
+	}
+}
+
+func TestMapAttributesToHeaders_UnknownAttribute_PassesThrough(t *testing.T) {
+	// Unknown attributes should work as-is (backward compatibility)
+	attrs := map[string][]string{
+		"customAttribute": {"value"},
+	}
+	mappings := []AttributeMapping{
+		{SAMLAttribute: "customAttribute", HeaderName: "X-Custom"},
+	}
+
+	result, err := MapAttributesToHeaders(attrs, mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["X-Custom"] != "value" {
+		t.Errorf("expected X-Custom=value, got %q", result["X-Custom"])
+	}
+}
+
+// =============================================================================
 // Property-Based Tests
 // =============================================================================
 
@@ -375,6 +520,115 @@ func TestMapAttributesToHeaders_Property_XPrefixEnforced(t *testing.T) {
 
 		// Property: headers without X- prefix must error
 		return err != nil
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestResolveAttributeName_Property_Bidirectionality(t *testing.T) {
+	f := func(attrName string) bool {
+		// Skip empty strings
+		if attrName == "" {
+			return true
+		}
+
+		oid1, friendlyName1 := ResolveAttributeName(attrName)
+		oid2, friendlyName2 := ResolveAttributeName(oid1)
+		friendlyName3, oid3 := ResolveAttributeName(friendlyName1)
+
+		// Property: resolving the OID should give back the same friendly name
+		if friendlyName2 != friendlyName1 {
+			return false
+		}
+
+		// Property: resolving the friendly name should give back the same OID
+		if oid3 != oid1 {
+			return false
+		}
+
+		// Property: resolving in either direction should be consistent
+		return oid2 == oid1 && friendlyName3 == friendlyName1
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestResolveAttributeName_Property_Idempotence(t *testing.T) {
+	f := func(attrName string) bool {
+		// Skip empty strings
+		if attrName == "" {
+			return true
+		}
+
+		oid1, friendlyName1 := ResolveAttributeName(attrName)
+		oid2, friendlyName2 := ResolveAttributeName(oid1)
+		oid3, friendlyName3 := ResolveAttributeName(friendlyName1)
+
+		// Property: resolving multiple times should give same result
+		if oid1 != oid2 || oid2 != oid3 {
+			return false
+		}
+		if friendlyName1 != friendlyName2 || friendlyName2 != friendlyName3 {
+			return false
+		}
+
+		return true
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestResolveAttributeName_Property_Passthrough(t *testing.T) {
+	f := func(attrName string) bool {
+		// Skip empty strings
+		if attrName == "" {
+			return true
+		}
+
+		// Skip known attributes (they should resolve to OIDs)
+		knownOIDs := []string{
+			"urn:oid:1.3.6.1.4.1.5923.1.1.1.6",
+			"urn:oid:1.3.6.1.4.1.5923.1.1.1.7",
+			"urn:oid:1.3.6.1.4.1.5923.1.1.1.9",
+			"urn:oid:1.3.6.1.4.1.5923.1.1.1.10",
+			"urn:oid:0.9.2342.19200300.100.1.3",
+			"urn:oid:2.5.4.42",
+			"urn:oid:2.5.4.4",
+			"urn:oid:2.16.840.1.113730.3.1.241",
+			"urn:oid:1.3.6.1.4.1.25178.1.2.9",
+		}
+		knownNames := []string{
+			"eduPersonPrincipalName",
+			"eduPersonEntitlement",
+			"eduPersonScopedAffiliation",
+			"eduPersonTargetedID",
+			"mail",
+			"givenName",
+			"sn",
+			"displayName",
+			"schacHomeOrganization",
+		}
+
+		for _, known := range knownOIDs {
+			if attrName == known {
+				return true // Skip known OIDs
+			}
+		}
+		for _, known := range knownNames {
+			if attrName == known {
+				return true // Skip known friendly names
+			}
+		}
+
+		// Property: unknown names should pass through unchanged
+		oid, friendlyName := ResolveAttributeName(attrName)
+		return oid == attrName && friendlyName == attrName
 	}
 
 	if err := quick.Check(f, nil); err != nil {

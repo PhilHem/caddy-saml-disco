@@ -10,6 +10,57 @@ import (
 // This prevents DoS attacks via extremely long attribute values.
 const MaxHeaderValueLength = 8192
 
+// oidRegistry maps OIDs to their friendly names and vice versa.
+// This is a pure domain component with no external dependencies.
+var oidRegistry = map[string]string{
+	// eduPerson attributes
+	"urn:oid:1.3.6.1.4.1.5923.1.1.1.6":  "eduPersonPrincipalName",
+	"eduPersonPrincipalName":             "urn:oid:1.3.6.1.4.1.5923.1.1.1.6",
+	"urn:oid:1.3.6.1.4.1.5923.1.1.1.7":  "eduPersonEntitlement",
+	"eduPersonEntitlement":                "urn:oid:1.3.6.1.4.1.5923.1.1.1.7",
+	"urn:oid:1.3.6.1.4.1.5923.1.1.1.9":  "eduPersonScopedAffiliation",
+	"eduPersonScopedAffiliation":         "urn:oid:1.3.6.1.4.1.5923.1.1.1.9",
+	"urn:oid:1.3.6.1.4.1.5923.1.1.1.10": "eduPersonTargetedID",
+	"eduPersonTargetedID":                 "urn:oid:1.3.6.1.4.1.5923.1.1.1.10",
+	// LDAP attributes
+	"urn:oid:0.9.2342.19200300.100.1.3": "mail",
+	"mail":                               "urn:oid:0.9.2342.19200300.100.1.3",
+	"urn:oid:2.5.4.42":                  "givenName",
+	"givenName":                          "urn:oid:2.5.4.42",
+	"urn:oid:2.5.4.4":                   "sn",
+	"sn":                                 "urn:oid:2.5.4.4",
+	"urn:oid:2.16.840.1.113730.3.1.241": "displayName",
+	"displayName":                        "urn:oid:2.16.840.1.113730.3.1.241",
+	// SCHAC attributes
+	"urn:oid:1.3.6.1.4.1.25178.1.2.9": "schacHomeOrganization",
+	"schacHomeOrganization":           "urn:oid:1.3.6.1.4.1.25178.1.2.9",
+}
+
+// ResolveAttributeName resolves an attribute name to its OID and friendly name pair.
+// If the input is a known OID, returns the OID and its friendly name.
+// If the input is a known friendly name, returns the OID and friendly name.
+// If the input is unknown, returns it unchanged for both OID and friendly name.
+//
+// This is a pure function with no side effects or I/O.
+func ResolveAttributeName(name string) (oid, friendlyName string) {
+	if name == "" {
+		return "", ""
+	}
+
+	// Check if it's a known OID or friendly name
+	if resolved, ok := oidRegistry[name]; ok {
+		// If name is an OID, resolved is the friendly name
+		if strings.HasPrefix(name, "urn:oid:") {
+			return name, resolved
+		}
+		// If name is a friendly name, resolved is the OID
+		return resolved, name
+	}
+
+	// Unknown name passes through unchanged
+	return name, name
+}
+
 // AttributeMapping maps a SAML attribute to an HTTP header.
 // This is a core domain model with no external dependencies.
 type AttributeMapping struct {
@@ -46,8 +97,26 @@ func MapAttributesToHeaders(attrs map[string][]string, mappings []AttributeMappi
 			return nil, fmt.Errorf("invalid header name %q: must start with X- and contain only A-Za-z0-9-", m.HeaderName)
 		}
 
-		// Look up attribute
-		values, exists := attrs[m.SAMLAttribute]
+		// Resolve attribute name to both OID and friendly name
+		oid, friendlyName := ResolveAttributeName(m.SAMLAttribute)
+
+		// Try to look up attribute using both forms (IdP may send either)
+		var values []string
+		var exists bool
+
+		// First try the configured form
+		values, exists = attrs[m.SAMLAttribute]
+		if !exists {
+			// If configured as OID, try friendly name (IdP might send friendly name)
+			if m.SAMLAttribute == oid && friendlyName != oid {
+				values, exists = attrs[friendlyName]
+			}
+			// If configured as friendly name, try OID (IdP might send OID)
+			if !exists && m.SAMLAttribute == friendlyName && oid != friendlyName {
+				values, exists = attrs[oid]
+			}
+		}
+
 		if !exists || len(values) == 0 {
 			continue
 		}
