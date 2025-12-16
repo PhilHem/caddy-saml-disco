@@ -127,6 +127,7 @@ Development phases for caddy-saml-disco.
 - [x] Instrument metadata refresh with metrics (call `RecordMetadataRefresh` from MetadataStore)
 
 ### Federation Features
+- [ ] Sign SP metadata with SP private key (`sign_metadata` config option)
 - [x] Filter IdPs by registration authority (`registration_authority_filter` config option)
 - [x] Performance testing with large metadata files (1000+ IdPs)
   - Benchmark tests for parsing, search, and lookup operations
@@ -139,7 +140,11 @@ Development phases for caddy-saml-disco.
   - Added `WithOnCleanup` callback hook for cleanup goroutine synchronization
   - Added `Clock` interface with `WithClock` option for cache TTL testing without sleep
   - Note: JWT expiration tests retain short sleeps due to external library dependency
-- [ ] Test fixture: signed metadata generator (runtime signing for integration tests)
+- [x] Test fixture: signed metadata generator (runtime signing for integration tests)
+  - `testfixtures/metadata/` package with `Signer` type
+  - `Sign()` method for signing arbitrary metadata XML
+  - `GenerateIdPMetadata()` and `GenerateAggregateMetadata()` convenience methods
+  - Full integration with `XMLDsigVerifier` for end-to-end testing
 - [ ] Test fixture: pre-signed metadata for unit tests (static signed XML matching `testdata/sp-cert.pem`)
 - [ ] Consolidate duplicate `mockMetricsRecorder` implementations (metrics_test.go and metadata_test.go)
 
@@ -151,9 +156,22 @@ Development phases for caddy-saml-disco.
 
 **Goal:** Feature-complete release with advanced SAML capabilities.
 
-### Attribute Handling
-- [ ] Attribute mapping configuration (OID → friendly names like `eduPersonPrincipalName` → `username`)
-- [ ] Header injection customization (`REMOTE_USER`, `X-Forwarded-User`, custom headers)
+### Attribute Handling (Shibboleth-style)
+
+Propagate SAML attributes to backend applications via HTTP headers, following the pattern established by Shibboleth SP.
+
+- [ ] Attribute-to-header mapping configuration
+  ```caddyfile
+  attribute_headers {
+      urn:oid:1.3.6.1.4.1.5923.1.1.1.6  X-Remote-User      # eduPersonPrincipalName
+      urn:oid:1.3.6.1.4.1.5923.1.1.1.7  X-Entitlements     # eduPersonEntitlement
+      urn:oid:0.9.2342.19200300.100.1.3 X-Mail             # mail
+  }
+  ```
+- [ ] Built-in OID → friendly name mapping for common attributes (eduPerson, SCHAC)
+- [ ] Multi-valued attribute handling (`multi_value_separator` config, default `;`)
+- [ ] Optional header prefix (`header_prefix "X-Saml-"`)
+- [ ] Strip incoming headers with mapped names before injection (prevent spoofing, default enabled)
 - [ ] Scope-based attribute validation (shibmd:Scope)
 
 ### Authentication Options
@@ -215,6 +233,19 @@ Development phases for caddy-saml-disco.
 - [ ] Property-based test for `InMemoryRequestStore` (`request.go:114`)
   - Single-use enforcement, expiry validation, replay attack prevention
 
+### Priority 5: Attribute Header Injection
+
+- [ ] `FuzzAttributeHeaderInjection` - Header name/value sanitization
+  - Newline injection in header values (HTTP response splitting)
+  - Invalid characters in header names
+  - Oversized attribute values
+- [ ] Property-based test for header stripping
+  - Incoming spoofed headers always removed before injection
+  - Case-insensitive header matching
+- [ ] Property-based test for multi-value handling
+  - Separator injection attacks (`;` in attribute values)
+  - Round-trip consistency (inject → parse → same values)
+
 ### Infrastructure
 
 - [ ] Create `*_fuzz_test.go` files with Go 1.18+ native fuzzing
@@ -224,6 +255,64 @@ Development phases for caddy-saml-disco.
 - [ ] Metadata size limits configuration
 
 **Outcome:** No crashes in 24-hour fuzzing runs, improved confidence in security-critical code paths.
+
+---
+
+## Phase 8: Local Entitlements (v2.2.0)
+
+**Goal:** Lightweight file-based authorization for small internal services without external infrastructure.
+
+### Core Features
+
+- [ ] File-based entitlements store (JSON/YAML)
+  ```caddyfile
+  local_entitlements {
+      file /etc/caddy/entitlements.json
+      default_action deny   # or "allow"
+      header X-Local-Entitlements
+  }
+  ```
+- [ ] User lookup by SAML subject (exact match)
+- [ ] Pattern/scope matching (`*@example.edu`, `staff@*`)
+- [ ] Hot-reload on file change (like metadata refresh)
+- [ ] Inject local entitlements as HTTP header
+
+### Entitlements File Format
+
+```json
+{
+  "users": {
+    "user@example.edu": ["admin", "editor"],
+    "other@uni.edu": ["viewer"]
+  },
+  "patterns": {
+    "*@example.edu": ["internal"],
+    "admin-*@uni.edu": ["admin"]
+  }
+}
+```
+
+### Access Control
+
+- [ ] `default_action deny` - reject users not in entitlements file (allowlist mode)
+- [ ] `default_action allow` - permit all authenticated users (blocklist mode)
+- [ ] Custom deny page/redirect for unauthorized users
+- [ ] Require specific entitlement for route access (`require_entitlement admin`)
+
+### Integration
+
+- [ ] Combine with SAML attributes (local entitlements supplement IdP-provided ones)
+- [ ] Example: `examples/local-entitlements/` with Caddyfile and sample JSON
+- [ ] Documentation: when to use local entitlements vs external authz
+
+### Testing
+
+- [ ] Unit tests for pattern matching
+- [ ] Integration tests for file reload
+- [ ] Fuzz test for pattern matching (ReDoS prevention)
+- [ ] Property-based test for allowlist/blocklist consistency
+
+**Outcome:** Small deployments can manage access control without external authorization infrastructure.
 
 ---
 
