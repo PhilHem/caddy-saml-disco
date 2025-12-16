@@ -414,3 +414,152 @@ func FuzzXMLDsigVerify(f *testing.F) {
 		checkXMLDsigVerifyInvariants(t, []byte(input), result, err)
 	})
 }
+
+// truncate shortens a string for readable error messages in fuzz tests.
+func truncate(s string) string {
+	if len(s) > 50 {
+		return s[:50] + "..."
+	}
+	return s
+}
+
+// fuzzExtractAndValidateExpirySeeds returns minimal seed corpus for extractAndValidateExpiry fuzzing.
+// Covers key attack categories: valid cases, malformed RFC3339, expired timestamps, timezone edge cases.
+func fuzzExtractAndValidateExpirySeeds() []string {
+	return []string{
+		// Valid cases
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00Z"/>`,
+		`<EntitiesDescriptor validUntil="2099-12-31T23:59:59Z"/>`,
+
+		// No validUntil (valid, returns nil)
+		`<EntityDescriptor entityID="test"/>`,
+		`<EntitiesDescriptor/>`,
+
+		// Malformed RFC3339
+		`<EntityDescriptor validUntil="not-a-date"/>`,
+		`<EntityDescriptor validUntil="2024-01-01"/>`,
+		`<EntityDescriptor validUntil="01/01/2024"/>`,
+
+		// Expired timestamps
+		`<EntityDescriptor validUntil="2020-01-01T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="1970-01-01T00:00:00Z"/>`,
+
+		// Timezone edge cases
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00+00:00"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00-08:00"/>`,
+
+		// Malformed XML (graceful handling)
+		`not xml at all`,
+		`<broken`,
+	}
+}
+
+// fuzzExtractAndValidateExpirySeedsExtended returns full seed corpus for CI.
+func fuzzExtractAndValidateExpirySeedsExtended() []string {
+	return []string{
+		// === All minimal seeds ===
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00Z"/>`,
+		`<EntitiesDescriptor validUntil="2099-12-31T23:59:59Z"/>`,
+		`<EntityDescriptor entityID="test"/>`,
+		`<EntitiesDescriptor/>`,
+		`<EntityDescriptor validUntil="not-a-date"/>`,
+		`<EntityDescriptor validUntil="2024-01-01"/>`,
+		`<EntityDescriptor validUntil="01/01/2024"/>`,
+		`<EntityDescriptor validUntil="2020-01-01T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="1970-01-01T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00+00:00"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00-08:00"/>`,
+		`not xml at all`,
+		`<broken`,
+
+		// === Extended RFC3339 variations ===
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00.000Z"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00.123456789Z"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T12:30:45+05:30"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00-12:00"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00+14:00"/>`,
+
+		// === Malformed timestamps ===
+		`<EntityDescriptor validUntil=""/>`,
+		`<EntityDescriptor validUntil=" "/>`,
+		`<EntityDescriptor validUntil="2024-13-01T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2024-01-32T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2024-01-01T25:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2024-01-01T00:60:00Z"/>`,
+		`<EntityDescriptor validUntil="2024-01-01T00:00:60Z"/>`,
+		`<EntityDescriptor validUntil="2024-01-01T00:00:00"/>`,
+		`<EntityDescriptor validUntil="2024-01-01 00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2024/01/01T00:00:00Z"/>`,
+
+		// === Far future/past dates ===
+		`<EntityDescriptor validUntil="9999-12-31T23:59:59Z"/>`,
+		// Note: 0001-01-01T00:00:00Z is Go's zero time, treated as "no expiry" by design
+		`<EntityDescriptor validUntil="0001-01-01T00:00:01Z"/>`,
+		`<EntityDescriptor validUntil="1969-12-31T23:59:59Z"/>`,
+
+		// === Boundary conditions ===
+		`<EntityDescriptor validUntil="2000-01-01T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2038-01-19T03:14:07Z"/>`,
+		`<EntityDescriptor validUntil="2038-01-19T03:14:08Z"/>`,
+
+		// === XML variations ===
+		`<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" validUntil="2099-01-01T00:00:00Z"/>`,
+		`<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" validUntil="2099-01-01T00:00:00Z"/>`,
+		`<?xml version="1.0"?><EntityDescriptor validUntil="2099-01-01T00:00:00Z"/>`,
+		`<!-- comment --><EntityDescriptor validUntil="2099-01-01T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00Z"><!-- inner --></EntityDescriptor>`,
+
+		// === Attack patterns ===
+		`<EntityDescriptor validUntil="2099-01-01T00:00:00Z&#x00;"/>`,
+		strings.Repeat("<a>", 1000) + strings.Repeat("</a>", 1000),
+		`<EntityDescriptor validUntil="` + strings.Repeat("9", 1000) + `"/>`,
+
+		// === Unicode in timestamp ===
+		`<EntityDescriptor validUntil="２０９９-01-01T00:00:00Z"/>`,
+		`<EntityDescriptor validUntil="2099‐01‐01T00:00:00Z"/>`,
+	}
+}
+
+// checkExtractAndValidateExpiryInvariants validates security invariants for extractAndValidateExpiry.
+func checkExtractAndValidateExpiryInvariants(t *testing.T, input string, result *time.Time, err error) {
+	t.Helper()
+
+	// Invariant 1: Error and result are mutually exclusive
+	// If error, result must be nil
+	if err != nil && result != nil {
+		t.Errorf("extractAndValidateExpiry(%q): both error and result non-nil", truncate(input))
+	}
+
+	// Invariant 2: Valid result must be in the future (not expired)
+	// The function explicitly rejects expired timestamps, so any returned value must be future
+	if result != nil {
+		if !result.After(time.Now()) {
+			t.Errorf("extractAndValidateExpiry(%q): returned past timestamp %v", truncate(input), result)
+		}
+	}
+
+	// Invariant 3: Expired metadata error uses sentinel
+	if err != nil && result == nil {
+		if strings.Contains(err.Error(), "in the past") {
+			if !errors.Is(err, ErrMetadataExpired) {
+				t.Errorf("extractAndValidateExpiry(%q): expired error not wrapped with ErrMetadataExpired", truncate(input))
+			}
+		}
+	}
+
+	// Invariant 4: No panic on any input (implicit - test runs)
+}
+
+// FuzzExtractAndValidateExpiry tests that extractAndValidateExpiry handles arbitrary XML input safely.
+// Uses minimal seed corpus for fast local development runs.
+// Run with: go test -fuzz=FuzzExtractAndValidateExpiry -fuzztime=5s .
+func FuzzExtractAndValidateExpiry(f *testing.F) {
+	for _, seed := range fuzzExtractAndValidateExpirySeeds() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		result, err := extractAndValidateExpiry([]byte(input))
+		checkExtractAndValidateExpiryInvariants(t, input, result, err)
+	})
+}

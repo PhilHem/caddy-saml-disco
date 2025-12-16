@@ -366,3 +366,16 @@ func FuzzXMLDsigVerifyExtended(f *testing.F) {
 		checkXMLDsigVerifyInvariants(t, []byte(input), result, err)
 	})
 }
+
+// FuzzExtractAndValidateExpiryExtended uses full seed corpus for CI.
+// Run with: go test -tags=fuzz_extended -fuzz=FuzzExtractAndValidateExpiryExtended -fuzztime=60s .
+func FuzzExtractAndValidateExpiryExtended(f *testing.F) {
+	for _, seed := range fuzzExtractAndValidateExpirySeedsExtended() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		result, err := extractAndValidateExpiry([]byte(input))
+		checkExtractAndValidateExpiryInvariants(t, input, result, err)
+	})
+}

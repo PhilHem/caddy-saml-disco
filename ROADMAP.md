@@ -194,7 +194,7 @@ Development phases for caddy-saml-disco.
 
 - [x] `FuzzParseMetadata` - Federation metadata XML (`metadata.go:489`)
   - XML bombs, deeply nested structures, invalid UTF-8, memory exhaustion
-- [ ] `FuzzExtractAndValidateExpiry` - Timestamp validation (`metadata.go:517`)
+- [x] `FuzzExtractAndValidateExpiry` - Timestamp validation (`metadata.go:517`)
   - Malformed RFC3339, timezone edge cases, far future/past dates
 - [ ] `FuzzExtractIdPInfo` - IdP info extraction (`metadata.go:732`)
   - Missing required elements, malformed localized values
