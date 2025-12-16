@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 )
 
 // FuzzValidateRelayStateExtended uses the full seed corpus for thorough CI testing.
@@ -16,7 +18,7 @@ func FuzzValidateRelayStateExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := validateRelayState(input)
+		result := caddyadapter.ValidateRelayState(input)
 		checkRelayStateInvariants(t, input, result)
 	})
 }
@@ -498,5 +500,249 @@ func FuzzExtractIdPInfoExtended(f *testing.F) {
 		idps, _, err := parseMetadata([]byte(input))
 		checkExtractIdPInfoInvariants(t, []byte(input), idps, err)
 		_ = err
+	})
+}
+
+// fuzzParseAcceptLanguageSeedsExtended returns the full seed corpus for CI Accept-Language parsing tests.
+func fuzzParseAcceptLanguageSeedsExtended() []string {
+	return []string{
+		// === All minimal seeds ===
+		"", "en", "de", "en-US",
+		"de, en;q=0.9", "en;q=0.5, de;q=0.9",
+		"*", "en;q=0", "   ",
+		";;;", "q=0.5", "en;q=invalid",
+		strings.Repeat("a", 10000),
+
+		// === RFC 2616 quality edge cases ===
+		"en;q=0.000", "en;q=1.000", "en;q=0.001",
+		"en;q=0.999", "en;q=0.123456789",
+
+		// === Whitespace variations ===
+		"en , de", "en\t,\tde", "en\n,\nde",
+		"en , de ; q=0.8", "en\t,\tde\t;\tq=0.8",
+		"  en  ,  de  ", "\ten\t,\tde\t",
+
+		// === Regional variants ===
+		"zh-Hans-CN", "sr-Latn-RS", "pt-BR;q=0.9, pt-PT;q=0.8",
+		"en-US, en-GB;q=0.9", "fr-CA, fr-FR;q=0.8",
+		"es-ES, es-MX;q=0.9, es-AR;q=0.7",
+
+		// === Unicode attacks ===
+		"en\x00de", "en\ufeffde",
+		"en\u200bde", // Zero-width space
+		"en\u200cde", // Zero-width non-joiner
+
+		// === Header injection attempts ===
+		"en\r\nX-Injected: value",
+		"en\nX-Injected: value",
+		"en\rX-Injected: value",
+		"en;q=0.9\r\nX-Injected: value",
+
+		// === Multiple semicolons ===
+		"en;q=0.9;q=0.5", "en;;q=0.9",
+		"en;q=0.9;extra=value", "en;;;q=0.9",
+
+		// === Negative/overflow quality ===
+		"en;q=-1", "en;q=999999999",
+		"en;q=-0.1", "en;q=2.0",
+		"en;q=inf", "en;q=nan",
+
+		// === Malformed quality values ===
+		"en;q=", "en;q=.", "en;q=..",
+		"en;q=abc", "en;q=0x10",
+		"en;q=1e10", "en;q=1e-10",
+
+		// === Empty/missing parts ===
+		",", "en,", ",de",
+		";", "en;", ";q=0.9",
+		"en, ,de", "en,,de",
+
+		// === Very long inputs ===
+		strings.Repeat("en, ", 1000),
+		strings.Repeat("en-US;q=0.9, ", 500),
+	}
+}
+
+// FuzzParseAcceptLanguageExtended uses the full seed corpus for thorough CI testing.
+// Run in CI with: go test -tags=fuzz_extended -fuzz=FuzzParseAcceptLanguageExtended -fuzztime=60s .
+func FuzzParseAcceptLanguageExtended(f *testing.F) {
+	for _, seed := range fuzzParseAcceptLanguageSeedsExtended() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		result := caddyadapter.ParseAcceptLanguage(input)
+		checkParseAcceptLanguageInvariants(t, input, result)
+	})
+}
+
+// fuzzMatchesEntityIDPatternSeedsExtended returns the full seed corpus for CI entityID pattern matching tests.
+func fuzzMatchesEntityIDPatternSeedsExtended() [][]string {
+	base := fuzzMatchesEntityIDPatternSeeds()
+	extended := [][]string{
+		// === Very long inputs ===
+		{strings.Repeat("a", 10000), "*"},
+		{strings.Repeat("a", 10000), strings.Repeat("a", 5000) + "*"},
+		{"https://idp.example.com", strings.Repeat("*", 1000)},
+		{strings.Repeat("https://idp.example.com/", 100), "*example*"},
+
+		// === Unicode normalization attacks ===
+		{"https://idp.example.com", "https://idp.example.com"}, // Normal ASCII
+		{"https://idp.example.com", "https://idp.example.com"}, // Same, but test normalization
+		{"https://idp.example.com/日本語", "*日本語*"},
+		{"https://idp.example.com/日本語", "https://*"},
+		{"https://idp.example.com/日本語", "*.com/日本語"},
+
+		// === Glob metacharacters (should be treated as literal) ===
+		{"https://idp.example.com", "https://idp.example?com"},
+		{"https://idp.example.com", "https://idp.example[com"},
+		{"https://idp.example.com", "https://idp.example{com"},
+		{"https://idp.example.com", "https://idp.example.com?"},
+		{"https://idp.example.com", "https://idp.example.com[]"},
+		{"https://idp.example.com", "https://idp.example.com{}"},
+
+		// === Regex-like patterns (should be treated as literal) ===
+		{"https://idp.example.com", ".*"},
+		{"https://idp.example.com", ".+*"},
+		{"https://idp.example.com", ".*+"},
+		{"https://idp.example.com", ".*?*"},
+		{"https://idp.example.com", "https://.*"},
+		{"https://idp.example.com", ".*.com"},
+
+		// === Null byte injection ===
+		{"https://idp.example.com", "https://idp.example.com\x00"},
+		{"https://idp.example.com\x00", "*"},
+		{"https://idp.example.com", "\x00*"},
+		{"https://idp.example.com", "*\x00"},
+
+		// === Whitespace tricks ===
+		{"https://idp.example.com", " https://idp.example.com"},
+		{"https://idp.example.com", "https://idp.example.com "},
+		{"https://idp.example.com", " https://idp.example.com "},
+		{"https://idp.example.com", "* example *"},
+		{"https://idp.example.com", "\t*"},
+		{"https://idp.example.com", "*\n"},
+
+		// === Multiple wildcards ===
+		{"https://idp.example.com", "**"},
+		{"https://idp.example.com", "***"},
+		{"https://idp.example.com", "*example*test*"},
+		{"https://idp.example.com", "https://*example*"},
+		{"https://idp.example.com", "*example*.com"},
+
+		// === Edge cases with wildcards ===
+		{"*", "*"},
+		{"*", "**"},
+		{"**", "*"},
+		{"**", "**"},
+		{"https://idp.example.com", "*https://idp.example.com*"},
+		{"https://idp.example.com", "https://idp.example.com*"},
+		{"https://idp.example.com", "*https://idp.example.com"},
+
+		// === Empty/whitespace entityID ===
+		{"", ""},
+		{"", "*"},
+		{"   ", "*"},
+		{"\t\n", "*"},
+		{"", "test*"},
+		{"", "*test"},
+
+		// === Control characters ===
+		{"https://idp.example.com", "https://idp.example.com\x01"},
+		{"https://idp.example.com\x02", "*"},
+		{"https://idp.example.com", "\x03*"},
+
+		// === Special URL characters ===
+		{"https://idp.example.com/path?query=value", "*path*"},
+		{"https://idp.example.com/path?query=value", "*query*"},
+		{"https://idp.example.com/path#fragment", "*fragment*"},
+		{"https://idp.example.com:8080/path", "*:8080*"},
+		{"https://user:pass@idp.example.com", "*@*"},
+
+		// === Case sensitivity ===
+		{"https://IDP.EXAMPLE.COM", "https://idp.example.com"},
+		{"https://IDP.EXAMPLE.COM", "*example*"},
+		{"https://IDP.EXAMPLE.COM", "*EXAMPLE*"},
+
+		// === Pattern with literal asterisk ===
+		{"https://idp.example.com", "https://idp.example.com*"},
+		{"https://idp.example.com*", "*"},
+		{"https://idp.example.com*", "https://idp.example.com*"},
+		{"https://idp.example.com*", "*example*"},
+
+		// === Very short patterns ===
+		{"https://idp.example.com", "*"},
+		{"https://idp.example.com", "**"},
+		{"https://idp.example.com", "a*"},
+		{"https://idp.example.com", "*a"},
+		{"https://idp.example.com", "a*b"},
+
+		// === Pattern matching entire entityID ===
+		{"https://idp.example.com", "*https://idp.example.com*"},
+		{"https://idp.example.com", "https://*example.com"},
+		{"https://idp.example.com", "https://idp.*.com"},
+		{"https://idp.example.com", "https://idp.example.*"},
+	}
+
+	return append(base, extended...)
+}
+
+// FuzzMatchesEntityIDPatternExtended uses the full seed corpus for thorough CI testing.
+// Run in CI with: go test -tags=fuzz_extended -fuzz=FuzzMatchesEntityIDPatternExtended -fuzztime=60s .
+func FuzzMatchesEntityIDPatternExtended(f *testing.F) {
+	for _, seed := range fuzzMatchesEntityIDPatternSeedsExtended() {
+		f.Add(seed[0], seed[1])
+	}
+
+	f.Fuzz(func(t *testing.T, entityID, pattern string) {
+		result := MatchesEntityIDPattern(entityID, pattern)
+		checkMatchesEntityIDPatternInvariants(t, entityID, pattern, result)
+	})
+}
+
+// fuzzParseDurationSeedsExtended returns the full seed corpus for CI duration parsing tests.
+func fuzzParseDurationSeedsExtended() []string {
+	base := fuzzParseDurationSeeds()
+	extended := []string{
+		// === Boundary values ===
+		"106751d", "106752d", // At and just over max safe days
+		"0d", "1d", "-1d",    // Edge cases around zero
+
+		// === Various overflow patterns ===
+		"9223372036854775807d", "-9223372036854775808d", // Max/min int64
+		"999999999999999d", "1000000000000000d",          // Very large values
+		"2147483647d", "-2147483648d",                   // Max/min int32
+
+		// === Whitespace/encoding tricks ===
+		" 30d", "30d ", "30\td", "30\nd",               // Whitespace
+		"30d\r", "30d\n",                                // Control chars
+
+		// === Mixed formats (should fail gracefully) ===
+		"1d2h", "1h1d", "30d30m",                       // Mixed day/hour formats
+
+		// === Decimal/float attempts ===
+		"30.5d", "30.0d", "0.5d",                       // Decimal days
+
+		// === Unicode and special chars ===
+		"３０d", "30ｄ",                                  // Full-width chars
+		"30d\x00", "\x0030d",                            // Null bytes
+
+		// === Very long inputs ===
+		strings.Repeat("9", 100) + "d",                 // Very long number
+		strings.Repeat("d", 1000),                      // Many 'd' chars
+	}
+	return append(base, extended...)
+}
+
+// FuzzParseDurationExtended uses the full seed corpus for thorough CI testing.
+// Run in CI with: go test -tags=fuzz_extended -fuzz=FuzzParseDurationExtended -fuzztime=60s .
+func FuzzParseDurationExtended(f *testing.F) {
+	for _, seed := range fuzzParseDurationSeedsExtended() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		dur, err := caddyadapter.ParseDuration(input)
+		checkParseDurationInvariants(t, input, dur, err)
 	})
 }
