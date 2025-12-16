@@ -5,21 +5,49 @@ package caddysamldisco
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
+	"math/big"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/beevik/etree"
 )
 
 // fuzzTestKey is a shared RSA key for fuzz tests, generated once at init.
 var fuzzTestKey *rsa.PrivateKey
+
+// fuzzTestCert is a shared certificate for XMLDsig fuzz tests, generated once at init.
+var fuzzTestCert *x509.Certificate
 
 func init() {
 	var err error
 	fuzzTestKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		panic("failed to generate fuzz test key: " + err.Error())
+	}
+
+	// Generate a self-signed certificate for XMLDsig verification tests
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "Fuzz Test Signer",
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &fuzzTestKey.PublicKey, fuzzTestKey)
+	if err != nil {
+		panic("failed to generate fuzz test cert: " + err.Error())
+	}
+	fuzzTestCert, err = x509.ParseCertificate(certDER)
+	if err != nil {
+		panic("failed to parse fuzz test cert: " + err.Error())
 	}
 }
 
@@ -272,5 +300,117 @@ func FuzzParseMetadata(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input string) {
 		idps, validUntil, err := parseMetadata([]byte(input))
 		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
+	})
+}
+
+// fuzzXMLDsigVerifySeeds returns seed corpus entries for XML signature verification fuzzing.
+// Minimal set covers key attack categories for XML-DSig parsers.
+func fuzzXMLDsigVerifySeeds() []string {
+	return []string{
+		// Empty/whitespace inputs
+		"",
+		"   ",
+		"\n\t\n",
+
+		// Malformed XML
+		"<not valid xml",
+		"<Root>",
+		"<Root></Root",
+
+		// Valid XML without signature (should fail verification)
+		`<?xml version="1.0"?><Root xmlns="urn:test">content</Root>`,
+		`<?xml version="1.0"?><EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"><EntityDescriptor entityID="https://idp.example.com"/></EntitiesDescriptor>`,
+
+		// Empty Signature element
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/></Root>`,
+
+		// Signature with missing SignedInfo
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Signature with empty SignedInfo
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo/><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Signature with missing SignatureMethod
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Null byte injection
+		"<?xml version=\"1.0\"?><Root\x00><Signature/></Root>",
+
+		// Very long input
+		`<?xml version="1.0"?><Root xmlns="urn:test">` + strings.Repeat("x", 10000) + `</Root>`,
+	}
+}
+
+// fuzzXMLDsigVerifySeedsExtended returns the full seed corpus for CI XML signature verification tests.
+func fuzzXMLDsigVerifySeedsExtended() []string {
+	return []string{
+		// === All minimal seeds ===
+		"",
+		"   ",
+		"\n\t\n",
+		"<not valid xml",
+		"<Root>",
+		"<Root></Root",
+		`<?xml version="1.0"?><Root xmlns="urn:test">content</Root>`,
+		`<?xml version="1.0"?><EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"><EntityDescriptor entityID="https://idp.example.com"/></EntitiesDescriptor>`,
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/></Root>`,
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo/><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+		"<?xml version=\"1.0\"?><Root\x00><Signature/></Root>",
+		`<?xml version="1.0"?><Root xmlns="urn:test">` + strings.Repeat("x", 10000) + `</Root>`,
+	}
+}
+
+// checkXMLDsigVerifyInvariants verifies all security invariants for XMLDsigVerifier.Verify output.
+func checkXMLDsigVerifyInvariants(t *testing.T, input []byte, result []byte, err error) {
+	t.Helper()
+
+	// Invariant 1: Error XOR result - never both, never neither
+	if (result == nil) == (err == nil) {
+		t.Errorf("Verify violated XOR: result=%v bytes, err=%v", len(result), err)
+	}
+
+	// Invariant 2: All errors must be *AppError
+	if err != nil {
+		var appErr *AppError
+		if !errors.As(err, &appErr) {
+			t.Errorf("Verify returned non-AppError: %T %v", err, err)
+		}
+
+		// Invariant 3: Error code must be ErrCodeSignatureInvalid or ErrCodeServiceError
+		if appErr != nil {
+			if appErr.Code != ErrCodeSignatureInvalid && appErr.Code != ErrCodeServiceError {
+				t.Errorf("Verify returned unexpected error code: %v", appErr.Code)
+			}
+		}
+	}
+
+	// Invariant 4: If result returned, it must be non-empty
+	if result != nil && len(result) == 0 {
+		t.Error("Verify returned empty result bytes")
+	}
+
+	// Invariant 5: If result returned, it must be valid XML (re-parseable)
+	if result != nil {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(result); err != nil {
+			t.Errorf("Verify returned invalid XML: %v", err)
+		}
+	}
+}
+
+// FuzzXMLDsigVerify tests that XMLDsigVerifier.Verify handles arbitrary XML input safely.
+// Uses minimal seed corpus for fast local development runs.
+// Run with -fuzztime=5s for quick checks.
+func FuzzXMLDsigVerify(f *testing.F) {
+	for _, seed := range fuzzXMLDsigVerifySeeds() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		verifier := NewXMLDsigVerifier(fuzzTestCert)
+		result, err := verifier.Verify([]byte(input))
+		checkXMLDsigVerifyInvariants(t, []byte(input), result, err)
 	})
 }

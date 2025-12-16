@@ -187,7 +187,7 @@ Development phases for caddy-saml-disco.
   - URL encoding bypasses, protocol-relative URLs, newline injection
 - [x] `FuzzCookieSessionGet` - JWT token parsing (`session.go:102`)
   - Malformed base64, truncated tokens, signature bypass attempts
-- [ ] `FuzzXMLDsigVerify` - XML signature verification (`signature.go:112`)
+- [x] `FuzzXMLDsigVerify` - XML signature verification (`signature.go:112`)
   - Signature wrapping attacks, multiple signatures, malformed DSig
 
 ### Priority 2: High-Value Parsing

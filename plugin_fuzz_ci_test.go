@@ -251,3 +251,118 @@ func FuzzParseMetadataExtended(f *testing.F) {
 		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
 	})
 }
+
+// fuzzXMLDsigVerifySeedsExtendedCI returns the full seed corpus for CI XML signature verification tests.
+// This extends fuzzXMLDsigVerifySeedsExtended with additional attack patterns.
+func fuzzXMLDsigVerifySeedsExtendedCI() []string {
+	base := fuzzXMLDsigVerifySeedsExtended()
+
+	extended := []string{
+		// === Signature wrapping attacks ===
+		// Multiple Signature elements (attacker injects second signature)
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>eHl6</SignatureValue></Signature></Root>`,
+
+		// Nested Signature element (signature inside signature)
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo/></Signature></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Signature with sibling unsigned content
+		`<?xml version="1.0"?><Root xmlns="urn:test"><UnsignedEvil>malicious</UnsignedEvil><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === Malformed DSig structures ===
+		// Missing Reference element
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Empty Reference element
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Reference with external URI (SSRF attempt)
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI="http://evil.com/data"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>YWJj</DigestValue></Reference></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Missing DigestValue
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI=""><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/></Reference></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === Algorithm confusion attacks ===
+		// Unknown algorithm URI
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://evil.com/custom-algorithm"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Empty algorithm attribute
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm=""/><SignatureMethod Algorithm=""/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// MD5 algorithm (weak/deprecated)
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-md5"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// SHA1 algorithm (weak)
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === Namespace variations ===
+		// ds: prefix
+		`<?xml version="1.0"?><Root xmlns="urn:test"><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></ds:SignedInfo><ds:SignatureValue>YWJj</ds:SignatureValue></ds:Signature></Root>`,
+
+		// Mixed namespace prefixes
+		`<?xml version="1.0"?><Root xmlns="urn:test"><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#"><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><ds:SignatureValue>YWJj</ds:SignatureValue></ds:Signature></Root>`,
+
+		// Wrong namespace for Signature
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://wrong.namespace"><SignedInfo/><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === XXE in signature context ===
+		`<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="&xxe;"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === KeyInfo variations ===
+		// KeyInfo with X509Data
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue><KeyInfo><X509Data><X509Certificate>YWJj</X509Certificate></X509Data></KeyInfo></Signature></Root>`,
+
+		// KeyInfo with KeyValue (RSA)
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue><KeyInfo><KeyValue><RSAKeyValue><Modulus>YWJj</Modulus><Exponent>AQAB</Exponent></RSAKeyValue></KeyValue></KeyInfo></Signature></Root>`,
+
+		// Empty KeyInfo
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue><KeyInfo/></Signature></Root>`,
+
+		// === Large/boundary inputs ===
+		// Very long SignatureValue
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>` + strings.Repeat("YWJj", 10000) + `</SignatureValue></Signature></Root>`,
+
+		// Deeply nested elements inside Signature
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><a><b><c><d><e><f><g><h><i><j>deep</j></i></h></g></f></e></d></c></b></a></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === Binary/control characters in signature ===
+		"<?xml version=\"1.0\"?><Root xmlns=\"urn:test\"><Signature xmlns=\"http://www.w3.org/2000/09/xmldsig#\"><SignedInfo/><SignatureValue>\x00\x01\x02</SignatureValue></Signature></Root>",
+
+		// Invalid base64 in SignatureValue
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>!!!not-base64!!!</SignatureValue></Signature></Root>`,
+
+		// === SAML-specific metadata with signature ===
+		`<?xml version="1.0"?><EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature><EntityDescriptor entityID="https://idp.example.com"/></EntitiesDescriptor>`,
+
+		// Signature inside EntityDescriptor
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"/></EntityDescriptor>`,
+
+		// === Transform attacks ===
+		// XSLT transform (potential code execution)
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/TR/1999/REC-xslt-19991116"><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0"><xsl:template match="/"/></xsl:stylesheet></Transform></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>YWJj</DigestValue></Reference></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// Multiple transforms
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>YWJj</DigestValue></Reference></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === Unicode in signature elements ===
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#日本語"/></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+
+		// === Comments inside signature ===
+		`<?xml version="1.0"?><Root xmlns="urn:test"><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><!-- comment --><SignedInfo><!-- another comment --></SignedInfo><SignatureValue>YWJj</SignatureValue></Signature></Root>`,
+	}
+
+	return append(base, extended...)
+}
+
+// FuzzXMLDsigVerifyExtended uses the full seed corpus for thorough CI testing.
+// Run in CI with: go test -tags=fuzz_extended -fuzz=FuzzXMLDsigVerifyExtended -fuzztime=60s .
+func FuzzXMLDsigVerifyExtended(f *testing.F) {
+	for _, seed := range fuzzXMLDsigVerifySeedsExtendedCI() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		verifier := NewXMLDsigVerifier(fuzzTestCert)
+		result, err := verifier.Verify([]byte(input))
+		checkXMLDsigVerifyInvariants(t, []byte(input), result, err)
+	})
+}

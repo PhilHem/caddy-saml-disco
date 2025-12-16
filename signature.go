@@ -119,12 +119,20 @@ func (v *XMLDsigVerifier) Verify(data []byte) ([]byte, error) {
 		}
 	}
 
+	root := doc.Root()
+	if root == nil {
+		return nil, &AppError{
+			Code:    ErrCodeSignatureInvalid,
+			Message: "Empty XML document",
+		}
+	}
+
 	// Extract algorithm before validation for logging
-	algorithm := v.extractSignatureAlgorithm(doc.Root())
+	algorithm := v.extractSignatureAlgorithm(root)
 
 	ctx := dsig.NewDefaultValidationContext(v.certStore)
 
-	validated, err := ctx.Validate(doc.Root())
+	validated, err := ctx.Validate(root)
 	if err != nil {
 		return nil, &AppError{
 			Code:    ErrCodeSignatureInvalid,

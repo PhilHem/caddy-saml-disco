@@ -193,6 +193,8 @@ go test -tags=fuzz_extended -fuzz=FuzzValidateRelayStateExtended -fuzztime=60s .
 
 Pattern: Define `checkXxxInvariants()` helper for reuse across both minimal and extended fuzz tests.
 
+**etree gotcha**: When fuzzing XML-parsing functions using etree, always check that `doc.Root()` is non-nil before use. Empty documents (e.g., whitespace-only input) parse successfully but return nil root elements, causing panics in downstream code.
+
 ### CI Parity & Pre-commit
 
 CI and pre-commit use identical commands to local development:
