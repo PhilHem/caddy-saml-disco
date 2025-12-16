@@ -118,6 +118,12 @@ type Config struct {
 	// Header names must start with "X-" to prevent overwriting standard headers.
 	// Example: map eduPersonPrincipalName to X-Remote-User.
 	AttributeHeaders []AttributeMapping `json:"attribute_headers,omitempty"`
+
+	// StripAttributeHeaders controls whether incoming HTTP headers that match
+	// configured attribute header names are removed before new values are set.
+	// This prevents clients from spoofing headers such as X-Remote-User.
+	// Defaults to true.
+	StripAttributeHeaders *bool `json:"strip_attribute_headers,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).
@@ -192,4 +198,12 @@ func (c *Config) SetDefaults() {
 	if c.RememberIdPDuration == "" {
 		c.RememberIdPDuration = "30d"
 	}
+	if c.StripAttributeHeaders == nil {
+		c.StripAttributeHeaders = boolPtr(true)
+	}
+}
+
+func boolPtr(v bool) *bool {
+	b := v
+	return &b
 }

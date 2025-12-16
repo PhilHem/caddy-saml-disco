@@ -1,6 +1,8 @@
 package caddysamldisco
 
 import (
+	"strings"
+
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -221,6 +223,20 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 
 				s.AttributeHeaders = append(s.AttributeHeaders, mapping)
+			}
+
+		case "strip_attribute_headers":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			val := strings.ToLower(d.Val())
+			switch val {
+			case "on", "true", "enabled":
+				s.StripAttributeHeaders = boolPtr(true)
+			case "off", "false", "disabled":
+				s.StripAttributeHeaders = boolPtr(false)
+			default:
+				return d.Errf("strip_attribute_headers must be on/off, got %q", d.Val())
 			}
 
 		default:

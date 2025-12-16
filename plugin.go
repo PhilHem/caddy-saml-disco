@@ -571,6 +571,16 @@ func (s *SAMLDisco) getDefaultLanguage() string {
 // This enables downstream handlers to access user attributes via headers like X-Remote-User.
 // Only headers with X- prefix are allowed for security.
 func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *Session) {
+	if len(s.AttributeHeaders) == 0 {
+		return
+	}
+
+	if s.shouldStripAttributeHeaders() {
+		for _, mapping := range s.AttributeHeaders {
+			r.Header.Del(mapping.HeaderName)
+		}
+	}
+
 	if session == nil || len(session.Attributes) == 0 {
 		return
 	}
@@ -598,6 +608,13 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *Session) {
 	for header, value := range headers {
 		r.Header.Set(header, value)
 	}
+}
+
+func (s *SAMLDisco) shouldStripAttributeHeaders() bool {
+	if s == nil || s.StripAttributeHeaders == nil {
+		return true
+	}
+	return *s.StripAttributeHeaders
 }
 
 // getLogger returns the logger, or a no-op logger if not set.

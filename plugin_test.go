@@ -202,6 +202,79 @@ func TestServeHTTP_ValidSession_PassesToNext(t *testing.T) {
 	}
 }
 
+func TestApplyAttributeHeaders_StripsSpoofedValues(t *testing.T) {
+	s := &SAMLDisco{
+		Config: Config{
+			AttributeHeaders: []AttributeMapping{
+				{SAMLAttribute: "role", HeaderName: "X-Role"},
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-Role", "evil-admin")
+
+	session := &Session{
+		Subject:    "user@example.com",
+		Attributes: map[string]string{"role": "member"},
+	}
+
+	s.applyAttributeHeaders(req, session)
+
+	if got := req.Header.Get("X-Role"); got != "member" {
+		t.Fatalf("X-Role header = %q, want %q", got, "member")
+	}
+}
+
+func TestApplyAttributeHeaders_StripsWhenAttributeMissing(t *testing.T) {
+	s := &SAMLDisco{
+		Config: Config{
+			AttributeHeaders: []AttributeMapping{
+				{SAMLAttribute: "role", HeaderName: "X-Role"},
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-Role", "evil-admin")
+
+	session := &Session{
+		Subject:    "user@example.com",
+		Attributes: map[string]string{},
+	}
+
+	s.applyAttributeHeaders(req, session)
+
+	if got := req.Header.Get("X-Role"); got != "" {
+		t.Fatalf("X-Role header should be stripped, got %q", got)
+	}
+}
+
+func TestApplyAttributeHeaders_DisabledPreservesIncoming(t *testing.T) {
+	s := &SAMLDisco{
+		Config: Config{
+			AttributeHeaders: []AttributeMapping{
+				{SAMLAttribute: "role", HeaderName: "X-Role"},
+			},
+			StripAttributeHeaders: boolPtr(false),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-Role", "evil-admin")
+
+	session := &Session{
+		Subject:    "user@example.com",
+		Attributes: map[string]string{},
+	}
+
+	s.applyAttributeHeaders(req, session)
+
+	if got := req.Header.Get("X-Role"); got != "evil-admin" {
+		t.Fatalf("X-Role header should remain spoofed when stripping disabled, got %q", got)
+	}
+}
+
 // TestServeHTTP_SAMLEndpoints_BypassSessionCheck verifies that SAML endpoints
 // do not require session authentication.
 func TestServeHTTP_SAMLEndpoints_BypassSessionCheck(t *testing.T) {
