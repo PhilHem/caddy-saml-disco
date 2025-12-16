@@ -42,6 +42,63 @@ func TestCaddyfile_DiscoveryTemplate(t *testing.T) {
 	}
 }
 
+func TestCaddyfile_ForceAuthn(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		force_authn
+		force_authn_paths /admin/* /settings/security
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if !s.ForceAuthn {
+		t.Error("ForceAuthn should be true")
+	}
+	if len(s.ForceAuthnPaths) != 2 {
+		t.Errorf("ForceAuthnPaths = %v, want 2 paths", s.ForceAuthnPaths)
+	}
+	if s.ForceAuthnPaths[0] != "/admin/*" {
+		t.Errorf("ForceAuthnPaths[0] = %q, want %q", s.ForceAuthnPaths[0], "/admin/*")
+	}
+	if s.ForceAuthnPaths[1] != "/settings/security" {
+		t.Errorf("ForceAuthnPaths[1] = %q, want %q", s.ForceAuthnPaths[1], "/settings/security")
+	}
+}
+
+func TestCaddyfile_AuthnContext(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		sp_key testdata/sp-key.pem
+		sp_cert testdata/sp-cert.pem
+		metadata_url https://idp.example.com/metadata
+		authn_context urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract
+		authn_context_comparison exact
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if len(s.AuthnContext) != 1 {
+		t.Errorf("AuthnContext = %v, want 1 entry", s.AuthnContext)
+	}
+	if s.AuthnContext[0] != "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract" {
+		t.Errorf("AuthnContext[0] = %q, want %q", s.AuthnContext[0], "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract")
+	}
+	if s.AuthnContextComparison != "exact" {
+		t.Errorf("AuthnContextComparison = %q, want exact", s.AuthnContextComparison)
+	}
+}
+
 func TestCaddyfile_ServiceName(t *testing.T) {
 	input := `saml_disco {
 		entity_id https://sp.example.com

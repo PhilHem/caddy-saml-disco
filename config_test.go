@@ -14,6 +14,24 @@ func TestConfig_RememberIdP_Defaults(t *testing.T) {
 	}
 }
 
+func TestConfig_ForceAuthn_Default(t *testing.T) {
+	cfg := &Config{}
+	cfg.SetDefaults()
+
+	if cfg.ForceAuthn {
+		t.Error("ForceAuthn should default to false")
+	}
+}
+
+func TestConfig_ForceAuthnPaths_Default(t *testing.T) {
+	cfg := &Config{}
+	cfg.SetDefaults()
+
+	if cfg.ForceAuthnPaths != nil && len(cfg.ForceAuthnPaths) != 0 {
+		t.Errorf("ForceAuthnPaths should default to empty, got %v", cfg.ForceAuthnPaths)
+	}
+}
+
 func TestConfig_DiscoveryTemplate_FieldExists(t *testing.T) {
 	cfg := &Config{
 		DiscoveryTemplate: "fels",
