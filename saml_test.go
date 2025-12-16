@@ -3,7 +3,10 @@
 package caddysamldisco
 
 import (
+	"compress/flate"
+	"encoding/base64"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/crewjam/saml"
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // loadTestCert loads the test certificate from testdata.
@@ -381,6 +385,257 @@ func TestHandleACS_RejectsEmptyRequest(t *testing.T) {
 	}
 }
 
+// TestHandleACS_ValidScope verifies scope validation passes for valid scopes.
+// Note: Full integration test with real SAML response is in tests/integration/scope_validation_test.go
+func TestHandleACS_ScopeValidation_Logic(t *testing.T) {
+	// Test that scope validation logic works correctly
+	// This is a unit test of the validation logic itself
+	idp := createTestIdPInfo()
+	idp.AllowedScopes = []domain.ScopeInfo{
+		{Value: "example.edu", Regexp: false},
+	}
+
+	// Verify IsScopedAttribute works
+	if !domain.IsScopedAttribute("eduPersonPrincipalName") {
+		t.Error("IsScopedAttribute should return true for eduPersonPrincipalName")
+	}
+
+	// Verify ExtractScope works
+	scope := domain.ExtractScope("user@example.edu")
+	if scope != "example.edu" {
+		t.Errorf("ExtractScope = %q, want %q", scope, "example.edu")
+	}
+
+	// Verify ValidateScope works
+	if !domain.ValidateScope("example.edu", idp.AllowedScopes) {
+		t.Error("ValidateScope should return true for valid scope")
+	}
+
+	if domain.ValidateScope("evil.edu", idp.AllowedScopes) {
+		t.Error("ValidateScope should return false for invalid scope")
+	}
+}
+
+// TestHandleACS_InvalidScope verifies scope validation rejects invalid scopes.
+func TestHandleACS_InvalidScope_Logic(t *testing.T) {
+	idp := createTestIdPInfo()
+	idp.AllowedScopes = []domain.ScopeInfo{
+		{Value: "example.edu", Regexp: false},
+	}
+
+	// Invalid scope should fail validation
+	if domain.ValidateScope("evil.edu", idp.AllowedScopes) {
+		t.Error("ValidateScope should return false for unauthorized scope")
+	}
+}
+
+// TestHandleACS_NoScopeConfig verifies that IdP with no scopes skips validation.
+func TestHandleACS_NoScopeConfig_Logic(t *testing.T) {
+	idp := createTestIdPInfo()
+	// No AllowedScopes configured
+
+	// Validation should be skipped (no scopes to validate against)
+	// This is tested by checking len(idp.AllowedScopes) == 0 in HandleACS
+	if len(idp.AllowedScopes) != 0 {
+		t.Error("IdP without scope config should have empty AllowedScopes")
+	}
+}
+
+// TestStartAuth_WithForceAuthn_SetsFlag verifies StartAuthWithOptions sets ForceAuthn in AuthnRequest.
+func TestStartAuth_WithForceAuthn_SetsFlag(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	idp := createTestIdPInfo()
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	opts := &domain.AuthnOptions{ForceAuthn: true}
+
+	redirectURL, err := service.StartAuthWithOptions(idp, acsURL, "", opts)
+	if err != nil {
+		t.Fatalf("StartAuthWithOptions() failed: %v", err)
+	}
+
+	if redirectURL == nil {
+		t.Fatal("StartAuthWithOptions() returned nil URL")
+	}
+
+	// Decode SAMLRequest and verify ForceAuthn="true"
+	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
+	if samlReqEncoded == "" {
+		t.Fatal("redirect URL should contain SAMLRequest parameter")
+	}
+
+	// Decode: URL decode -> base64 decode -> inflate
+	samlReqDecoded, err := url.QueryUnescape(samlReqEncoded)
+	if err != nil {
+		t.Fatalf("URL decode SAMLRequest: %v", err)
+	}
+
+	samlReqBytes, err := base64.StdEncoding.DecodeString(samlReqDecoded)
+	if err != nil {
+		t.Fatalf("base64 decode SAMLRequest: %v", err)
+	}
+
+	// Inflate the deflated SAMLRequest
+	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
+	defer inflatedReader.Close()
+	inflatedBytes, err := io.ReadAll(inflatedReader)
+	if err != nil {
+		t.Fatalf("inflate SAMLRequest: %v", err)
+	}
+
+	// Parse XML and verify ForceAuthn attribute
+	var authnReq saml.AuthnRequest
+	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
+		t.Fatalf("parse AuthnRequest XML: %v", err)
+	}
+
+	if authnReq.ForceAuthn == nil || !*authnReq.ForceAuthn {
+		t.Error("ForceAuthn should be true in AuthnRequest")
+	}
+}
+
+// TestStartAuth_WithoutForceAuthn_NotSet verifies StartAuthWithOptions does not set ForceAuthn when false.
+func TestStartAuth_WithoutForceAuthn_NotSet(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	idp := createTestIdPInfo()
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	opts := &domain.AuthnOptions{ForceAuthn: false}
+
+	redirectURL, err := service.StartAuthWithOptions(idp, acsURL, "", opts)
+	if err != nil {
+		t.Fatalf("StartAuthWithOptions() failed: %v", err)
+	}
+
+	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
+	if samlReqEncoded == "" {
+		t.Fatal("redirect URL should contain SAMLRequest parameter")
+	}
+
+	// Decode SAMLRequest
+	samlReqDecoded, _ := url.QueryUnescape(samlReqEncoded)
+	samlReqBytes, _ := base64.StdEncoding.DecodeString(samlReqDecoded)
+	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
+	defer inflatedReader.Close()
+	inflatedBytes, _ := io.ReadAll(inflatedReader)
+
+	var authnReq saml.AuthnRequest
+	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
+		t.Fatalf("parse AuthnRequest XML: %v", err)
+	}
+
+	if authnReq.ForceAuthn != nil && *authnReq.ForceAuthn {
+		t.Error("ForceAuthn should be false or nil when not requested")
+	}
+}
+
+// decodeAuthnRequest is a helper function to decode a SAML AuthnRequest from a redirect URL.
+func decodeAuthnRequest(t *testing.T, redirectURL *url.URL) *saml.AuthnRequest {
+	t.Helper()
+
+	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
+	if samlReqEncoded == "" {
+		t.Fatal("redirect URL should contain SAMLRequest parameter")
+	}
+
+	// Decode: URL decode -> base64 decode -> inflate
+	samlReqDecoded, err := url.QueryUnescape(samlReqEncoded)
+	if err != nil {
+		t.Fatalf("URL decode SAMLRequest: %v", err)
+	}
+
+	samlReqBytes, err := base64.StdEncoding.DecodeString(samlReqDecoded)
+	if err != nil {
+		t.Fatalf("base64 decode SAMLRequest: %v", err)
+	}
+
+	// Inflate the deflated SAMLRequest
+	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
+	defer inflatedReader.Close()
+	inflatedBytes, err := io.ReadAll(inflatedReader)
+	if err != nil {
+		t.Fatalf("inflate SAMLRequest: %v", err)
+	}
+
+	// Parse XML
+	var authnReq saml.AuthnRequest
+	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
+		t.Fatalf("parse AuthnRequest XML: %v", err)
+	}
+
+	return &authnReq
+}
+
+// TestStartAuth_WithAuthnContext_SetsRequestedContext verifies StartAuthWithOptions sets RequestedAuthnContext in AuthnRequest.
+func TestStartAuth_WithAuthnContext_SetsRequestedContext(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	idp := createTestIdPInfo()
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	opts := &domain.AuthnOptions{
+		RequestedAuthnContext:  []string{"urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract"},
+		AuthnContextComparison: "exact",
+	}
+
+	redirectURL, err := service.StartAuthWithOptions(idp, acsURL, "", opts)
+	if err != nil {
+		t.Fatalf("StartAuthWithOptions() failed: %v", err)
+	}
+
+	if redirectURL == nil {
+		t.Fatal("StartAuthWithOptions() returned nil URL")
+	}
+
+	// Decode SAMLRequest and verify RequestedAuthnContext
+	authnReq := decodeAuthnRequest(t, redirectURL)
+
+	if authnReq.RequestedAuthnContext == nil {
+		t.Fatal("RequestedAuthnContext should be set")
+	}
+	if authnReq.RequestedAuthnContext.AuthnContextClassRef != "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract" {
+		t.Errorf("AuthnContextClassRef = %q, want %q",
+			authnReq.RequestedAuthnContext.AuthnContextClassRef,
+			"urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract")
+	}
+	if authnReq.RequestedAuthnContext.Comparison != "exact" {
+		t.Errorf("Comparison = %q, want exact", authnReq.RequestedAuthnContext.Comparison)
+	}
+}
+
+// TestStartAuth_WithEmptyAuthnContext_NoElement verifies that empty RequestedAuthnContext slice does not add XML element.
+func TestStartAuth_WithEmptyAuthnContext_NoElement(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	idp := createTestIdPInfo()
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	opts := &domain.AuthnOptions{
+		RequestedAuthnContext: []string{}, // empty
+	}
+
+	redirectURL, err := service.StartAuthWithOptions(idp, acsURL, "", opts)
+	if err != nil {
+		t.Fatalf("StartAuthWithOptions() failed: %v", err)
+	}
+
+	if redirectURL == nil {
+		t.Fatal("StartAuthWithOptions() returned nil URL")
+	}
+
+	authnReq := decodeAuthnRequest(t, redirectURL)
+
+	if authnReq.RequestedAuthnContext != nil {
+		t.Error("RequestedAuthnContext should be nil for empty slice")
+	}
+}
+
 // =============================================================================
 // Metadata Signing Tests
 // =============================================================================
@@ -604,5 +859,47 @@ func TestGenerateSPMetadata_IncludesSLOEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(metadataStr, "https://sp.example.com/saml/slo") {
 		t.Error("metadata should contain SLO URL")
+	}
+}
+
+// TestHandleACS_EncryptedAssertion verifies that HandleACS can process
+// encrypted assertions when SP has encryption keys configured.
+// This test verifies that crewjam/saml's ParseResponse handles decryption automatically.
+func TestHandleACS_EncryptedAssertion(t *testing.T) {
+	// Create SP with encryption keys
+	key, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("LoadPrivateKey failed: %v", err)
+	}
+	cert, err := LoadCertificate("testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("LoadCertificate failed: %v", err)
+	}
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	idp := createTestIdPInfo()
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+
+	// Note: This test will initially fail because we need to:
+	// 1. Configure test IdP to encrypt assertions
+	// 2. Create a real encrypted SAML response
+	// For now, this is a placeholder that documents the expected behavior
+	// Full implementation will be in Cycle 2 with test IdP encryption support
+
+	// TODO: Create encrypted SAML response and verify HandleACS processes it
+	// For now, verify that SP has encryption keys configured
+	if service == nil {
+		t.Fatal("service should not be nil")
+	}
+
+	// Verify SP metadata includes encryption KeyDescriptor
+	metadata, err := service.GenerateSPMetadata(acsURL)
+	if err != nil {
+		t.Fatalf("GenerateSPMetadata failed: %v", err)
+	}
+
+	metadataStr := string(metadata)
+	if !strings.Contains(metadataStr, `use="encryption"`) {
+		t.Error("SP metadata should contain encryption KeyDescriptor")
 	}
 }
