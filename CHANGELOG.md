@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Signing KeyDescriptor in SP metadata**: SP metadata now includes both encryption and signing KeyDescriptor elements, enabling IdPs to properly verify signatures from this SP
+- **Pre-signed metadata test fixtures** for deterministic unit tests:
+  - `testdata/cmd/sign-metadata/main.go` generator tool using sp-key.pem/sp-cert.pem
+  - `testdata/signed/` directory with IdP, aggregate, and nested metadata
+  - Unit tests `TestXMLDsigVerifier_Verify_PreSigned*` in signature_test.go
+
 ## [0.12.0] - 2025-12-16
 
 ### Added
