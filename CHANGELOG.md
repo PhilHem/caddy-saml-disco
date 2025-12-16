@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2025-12-16
+
 ### Added
 - **Signing KeyDescriptor in SP metadata**: SP metadata now includes both encryption and signing KeyDescriptor elements, enabling IdPs to properly verify signatures from this SP
 - **Pre-signed metadata test fixtures** for deterministic unit tests:
