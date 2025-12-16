@@ -128,6 +128,7 @@ Development phases for caddy-saml-disco.
 
 ### Federation Features
 - [x] Sign SP metadata with SP private key (`sign_metadata` config option)
+- [ ] Add signing KeyDescriptor to SP metadata (currently only encryption KeyDescriptor is emitted)
 - [x] Filter IdPs by registration authority (`registration_authority_filter` config option)
 - [x] Performance testing with large metadata files (1000+ IdPs)
   - Benchmark tests for parsing, search, and lookup operations
@@ -145,7 +146,10 @@ Development phases for caddy-saml-disco.
   - `Sign()` method for signing arbitrary metadata XML
   - `GenerateIdPMetadata()` and `GenerateAggregateMetadata()` convenience methods
   - Full integration with `XMLDsigVerifier` for end-to-end testing
-- [ ] Test fixture: pre-signed metadata for unit tests (static signed XML matching `testdata/sp-cert.pem`)
+- [x] Test fixture: pre-signed metadata for unit tests (static signed XML matching `testdata/sp-cert.pem`)
+  - `testdata/cmd/sign-metadata/main.go` generator tool
+  - `testdata/signed/` directory with signed IdP, aggregate, and nested metadata
+  - Unit tests in `signature_test.go` (Cycle 2.9)
 - [ ] Consolidate duplicate `mockMetricsRecorder` implementations (metrics_test.go and metadata_test.go)
 
 **Outcome:** Ready for production use in large federation environments (e.g., eduGAIN, InCommon).
