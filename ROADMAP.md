@@ -174,11 +174,11 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
       urn:oid:0.9.2342.19200300.100.1.3 X-Mail             # mail
   }
   ```
-- [ ] Built-in OID → friendly name mapping for common attributes (eduPerson, SCHAC)
+- [x] Built-in OID → friendly name mapping for common attributes (eduPerson, SCHAC)
 - [x] Multi-valued attribute handling (per-mapping `separator` config, default `;`)
-- [ ] Integration test for attribute-to-header flow (verify headers reach downstream handlers)
+- [x] Integration test for attribute-to-header flow (verify headers reach downstream handlers)
 - [ ] Optional header prefix (`header_prefix "X-Saml-"`)
-- [ ] Strip incoming headers with mapped names before injection (prevent spoofing, default enabled)
+- [x] Strip incoming headers with mapped names before injection (prevent spoofing, default enabled)
 - [ ] Scope-based attribute validation (shibmd:Scope)
 
 ### Authentication Options
