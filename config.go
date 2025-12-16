@@ -124,6 +124,12 @@ type Config struct {
 	// This prevents clients from spoofing headers such as X-Remote-User.
 	// Defaults to true.
 	StripAttributeHeaders *bool `json:"strip_attribute_headers,omitempty"`
+
+	// HeaderPrefix is prepended to all attribute header names.
+	// Must start with "X-" if set. When set, individual header names
+	// in AttributeHeaders don't need the X- prefix.
+	// Example: prefix "X-Saml-" + header "User" = "X-Saml-User"
+	HeaderPrefix string `json:"header_prefix,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).
@@ -165,6 +171,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("metadata_signing_cert is required when verify_metadata_signature is enabled")
 	}
 
+	// Validate header prefix
+	if c.HeaderPrefix != "" {
+		if !IsValidHeaderName(c.HeaderPrefix) {
+			return fmt.Errorf("header_prefix %q must start with X- and contain only A-Za-z0-9-", c.HeaderPrefix)
+		}
+	}
+
 	// Validate attribute header mappings
 	for i, m := range c.AttributeHeaders {
 		if m.SAMLAttribute == "" {
@@ -173,8 +186,18 @@ func (c *Config) Validate() error {
 		if m.HeaderName == "" {
 			return fmt.Errorf("attribute_headers[%d]: header_name is required", i)
 		}
-		if !IsValidHeaderName(m.HeaderName) {
-			return fmt.Errorf("attribute_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
+
+		// If prefix is set, validate the final combined name
+		// Otherwise, validate the header name directly (must start with X-)
+		if c.HeaderPrefix != "" {
+			finalName := ApplyHeaderPrefix(c.HeaderPrefix, m.HeaderName)
+			if !IsValidHeaderName(finalName) {
+				return fmt.Errorf("attribute_headers[%d]: header_name %q with prefix %q results in invalid name %q: must start with X- and contain only A-Za-z0-9-", i, m.HeaderName, c.HeaderPrefix, finalName)
+			}
+		} else {
+			if !IsValidHeaderName(m.HeaderName) {
+				return fmt.Errorf("attribute_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
+			}
 		}
 	}
 

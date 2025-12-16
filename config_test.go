@@ -147,3 +147,64 @@ func TestConfig_CORSValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestConfig_Validate_HeaderPrefixMustStartWithX(t *testing.T) {
+	c := &Config{
+		EntityID:     "test",
+		MetadataFile: "test.xml",
+		HeaderPrefix: "Saml-", // Missing X-
+		AttributeHeaders: []AttributeMapping{
+			{SAMLAttribute: "mail", HeaderName: "User"},
+		},
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Error("expected error for prefix not starting with X-")
+	}
+}
+
+func TestConfig_Validate_HeaderPrefixAllowsSimpleNames(t *testing.T) {
+	c := &Config{
+		EntityID:     "test",
+		MetadataFile: "test.xml",
+		HeaderPrefix: "X-Saml-",
+		AttributeHeaders: []AttributeMapping{
+			{SAMLAttribute: "mail", HeaderName: "User"}, // No X- needed
+		},
+	}
+	err := c.Validate()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestConfig_Validate_HeaderPrefixValidatesFinalName(t *testing.T) {
+	c := &Config{
+		EntityID:     "test",
+		MetadataFile: "test.xml",
+		HeaderPrefix: "X-Saml-",
+		AttributeHeaders: []AttributeMapping{
+			{SAMLAttribute: "mail", HeaderName: "User-Header"}, // Valid when combined
+		},
+	}
+	err := c.Validate()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestConfig_Validate_HeaderPrefixEmpty_RequiresXPrefix(t *testing.T) {
+	// Without prefix, headers must start with X-
+	c := &Config{
+		EntityID:     "test",
+		MetadataFile: "test.xml",
+		HeaderPrefix: "", // Empty prefix
+		AttributeHeaders: []AttributeMapping{
+			{SAMLAttribute: "mail", HeaderName: "User"}, // Missing X- should fail
+		},
+	}
+	err := c.Validate()
+	if err == nil {
+		t.Error("expected error for header without X- prefix when prefix is empty")
+	}
+}

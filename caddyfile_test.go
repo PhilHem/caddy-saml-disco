@@ -410,3 +410,56 @@ func TestCaddyfile_SignMetadata_Default(t *testing.T) {
 		t.Error("SignMetadata should default to false")
 	}
 }
+
+func TestCaddyfile_HeaderPrefix(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		header_prefix "X-Saml-"
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if s.HeaderPrefix != "X-Saml-" {
+		t.Errorf("HeaderPrefix = %q, want %q", s.HeaderPrefix, "X-Saml-")
+	}
+}
+
+func TestCaddyfile_HeaderPrefix_RequiresArg(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		header_prefix
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Error("UnmarshalCaddyfile should error on header_prefix without argument")
+	}
+}
+
+func TestCaddyfile_HeaderPrefix_Default(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	// Default should be empty string
+	if s.HeaderPrefix != "" {
+		t.Errorf("HeaderPrefix = %q, want empty string", s.HeaderPrefix)
+	}
+}

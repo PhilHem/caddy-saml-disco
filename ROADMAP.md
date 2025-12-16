@@ -177,7 +177,7 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 - [x] Built-in OID → friendly name mapping for common attributes (eduPerson, SCHAC)
 - [x] Multi-valued attribute handling (per-mapping `separator` config, default `;`)
 - [x] Integration test for attribute-to-header flow (verify headers reach downstream handlers)
-- [ ] Optional header prefix (`header_prefix "X-Saml-"`)
+- [x] Optional header prefix (`header_prefix "X-Saml-"`)
 - [x] Strip incoming headers with mapped names before injection (prevent spoofing, default enabled)
 - [ ] Scope-based attribute validation (shibmd:Scope)
 

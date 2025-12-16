@@ -721,3 +721,76 @@ func isValidHeaderNameForTest(name string) bool {
 	}
 	return true
 }
+
+// =============================================================================
+// Header Prefix Tests
+// =============================================================================
+
+func TestApplyHeaderPrefix_EmptyPrefix(t *testing.T) {
+	// Prefix empty - header name unchanged
+	result := ApplyHeaderPrefix("", "X-Remote-User")
+	if result != "X-Remote-User" {
+		t.Errorf("expected X-Remote-User, got %s", result)
+	}
+}
+
+func TestApplyHeaderPrefix_WithPrefix(t *testing.T) {
+	// Prefix applied to header name
+	result := ApplyHeaderPrefix("X-Saml-", "User")
+	if result != "X-Saml-User" {
+		t.Errorf("expected X-Saml-User, got %s", result)
+	}
+}
+
+func TestApplyHeaderPrefix_WithPrefixAndExistingX(t *testing.T) {
+	// Prefix applied even if header already has X-
+	result := ApplyHeaderPrefix("X-Saml-", "X-Remote-User")
+	if result != "X-Saml-X-Remote-User" {
+		t.Errorf("expected X-Saml-X-Remote-User, got %s", result)
+	}
+}
+
+func TestMapAttributesToHeaders_WithPrefix(t *testing.T) {
+	attrs := map[string][]string{"mail": {"user@example.com"}}
+	mappings := []AttributeMapping{{SAMLAttribute: "mail", HeaderName: "User"}}
+	prefix := "X-Saml-"
+
+	result, err := MapAttributesToHeadersWithPrefix(attrs, mappings, prefix)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["X-Saml-User"] != "user@example.com" {
+		t.Errorf("expected header X-Saml-User=user@example.com, got %v", result)
+	}
+	// Should not have unprefixed header
+	if _, exists := result["User"]; exists {
+		t.Error("should not have unprefixed header 'User'")
+	}
+}
+
+func TestMapAttributesToHeaders_WithPrefix_NoXRequired(t *testing.T) {
+	// When prefix is set, header names don't need X- prefix
+	attrs := map[string][]string{"mail": {"user@example.com"}}
+	mappings := []AttributeMapping{{SAMLAttribute: "mail", HeaderName: "Remote-User"}}
+	prefix := "X-Saml-"
+
+	result, err := MapAttributesToHeadersWithPrefix(attrs, mappings, prefix)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["X-Saml-Remote-User"] != "user@example.com" {
+		t.Errorf("expected header X-Saml-Remote-User=user@example.com, got %v", result)
+	}
+}
+
+func TestMapAttributesToHeaders_WithoutPrefix_RequiresX(t *testing.T) {
+	// Without prefix, existing behavior - must start with X-
+	attrs := map[string][]string{"mail": {"user@example.com"}}
+	mappings := []AttributeMapping{{SAMLAttribute: "mail", HeaderName: "User"}} // Missing X-
+	prefix := ""
+
+	_, err := MapAttributesToHeadersWithPrefix(attrs, mappings, prefix)
+	if err == nil {
+		t.Error("expected error for header without X- prefix when prefix is empty")
+	}
+}

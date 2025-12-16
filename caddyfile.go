@@ -239,6 +239,12 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("strip_attribute_headers must be on/off, got %q", d.Val())
 			}
 
+		case "header_prefix":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.HeaderPrefix = d.Val()
+
 		default:
 			return d.Errf("unrecognized subdirective: %s", d.Val())
 		}

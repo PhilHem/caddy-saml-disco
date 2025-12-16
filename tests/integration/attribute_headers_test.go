@@ -470,3 +470,132 @@ func sanitizeForHeaderName(s string) string {
 	}
 	return result.String()
 }
+
+// TestAttributeHeaders_HeaderPrefix tests that header prefix is correctly applied.
+func TestAttributeHeaders_HeaderPrefix(t *testing.T) {
+	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("load SP key: %v", err)
+	}
+
+	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+
+	session := &caddysamldisco.Session{
+		Subject: "user@example.com",
+		Attributes: map[string]string{
+			"mail": "user@example.com",
+		},
+		IdPEntityID: "https://idp.example.com",
+		IssuedAt:    time.Now(),
+		ExpiresAt:   time.Now().Add(8 * time.Hour),
+	}
+
+	token, err := sessionStore.Create(session)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Configure with header prefix
+	disco := &caddysamldisco.SAMLDisco{
+		Config: caddysamldisco.Config{
+			SessionCookieName: "saml_session",
+			HeaderPrefix:      "X-Saml-",
+			AttributeHeaders: []caddysamldisco.AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "User"}, // No X- needed with prefix
+			},
+		},
+	}
+	disco.SetSessionStore(sessionStore)
+
+	captured := &capturedHeaders{}
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  "saml_session",
+		Value: token,
+	})
+	rec := httptest.NewRecorder()
+
+	err = disco.ServeHTTP(rec, req, captured)
+	if err != nil {
+		t.Fatalf("ServeHTTP error: %v", err)
+	}
+
+	if !captured.called {
+		t.Fatal("downstream handler was not called")
+	}
+
+	// Verify prefixed header was set correctly
+	got := captured.headers.Get("X-Saml-User")
+	if got != "user@example.com" {
+		t.Errorf("X-Saml-User header = %q, want %q", got, "user@example.com")
+	}
+
+	// Verify unprefixed header was NOT set
+	if captured.headers.Get("User") != "" {
+		t.Error("unprefixed header 'User' should not be set")
+	}
+}
+
+// TestAttributeHeaders_HeaderPrefix_StripsIncomingHeaders tests that incoming
+// headers with prefixed names are stripped.
+func TestAttributeHeaders_HeaderPrefix_StripsIncomingHeaders(t *testing.T) {
+	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("load SP key: %v", err)
+	}
+
+	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+
+	session := &caddysamldisco.Session{
+		Subject: "user@example.com",
+		Attributes: map[string]string{
+			"role": "member",
+		},
+		IdPEntityID: "https://idp.example.com",
+		IssuedAt:    time.Now(),
+		ExpiresAt:   time.Now().Add(8 * time.Hour),
+	}
+
+	token, err := sessionStore.Create(session)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	disco := &caddysamldisco.SAMLDisco{
+		Config: caddysamldisco.Config{
+			SessionCookieName: "saml_session",
+			HeaderPrefix:      "X-Saml-",
+			AttributeHeaders: []caddysamldisco.AttributeMapping{
+				{SAMLAttribute: "role", HeaderName: "Role"},
+			},
+		},
+	}
+	disco.SetSessionStore(sessionStore)
+
+	captured := &capturedHeaders{}
+
+	// Request with spoofed prefixed header
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("X-Saml-Role", "evil-admin") // Spoofed header
+	req.AddCookie(&http.Cookie{
+		Name:  "saml_session",
+		Value: token,
+	})
+	rec := httptest.NewRecorder()
+
+	err = disco.ServeHTTP(rec, req, captured)
+	if err != nil {
+		t.Fatalf("ServeHTTP error: %v", err)
+	}
+
+	if !captured.called {
+		t.Fatal("downstream handler was not called")
+	}
+
+	// Should see attribute value, NOT spoofed value
+	got := captured.headers.Get("X-Saml-Role")
+	if got != "member" {
+		t.Errorf("X-Saml-Role header = %q, want %q (spoofed header should be stripped)", got, "member")
+	}
+}

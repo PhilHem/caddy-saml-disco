@@ -577,7 +577,9 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *Session) {
 
 	if s.shouldStripAttributeHeaders() {
 		for _, mapping := range s.AttributeHeaders {
-			r.Header.Del(mapping.HeaderName)
+			// Strip using prefixed header name if prefix is configured
+			headerToStrip := ApplyHeaderPrefix(s.HeaderPrefix, mapping.HeaderName)
+			r.Header.Del(headerToStrip)
 		}
 	}
 
@@ -593,8 +595,8 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *Session) {
 		multiAttrs[k] = []string{v}
 	}
 
-	// Map attributes to headers
-	headers, err := MapAttributesToHeaders(multiAttrs, s.AttributeHeaders)
+	// Map attributes to headers (with prefix if configured)
+	headers, err := MapAttributesToHeadersWithPrefix(multiAttrs, s.AttributeHeaders, s.HeaderPrefix)
 	if err != nil {
 		// Configuration error - should have been caught at startup
 		s.getLogger().Error("failed to map attributes to headers",
