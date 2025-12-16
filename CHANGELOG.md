@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2025-12-16
+
+### Added
+- **Single Logout (SLO) support**:
+  - SP-initiated logout flow (`/saml/logout` redirects to IdP SLO when supported)
+  - IdP-initiated logout flow (`/saml/slo` endpoint handles LogoutRequest/Response)
+  - Session clearing on successful logout
+  - Support for `NameIDFormat` and `SessionIndex` in sessions (required for SLO)
+- **Forced re-authentication** (`force_authn_paths` config option):
+  - Request fresh authentication from IdP for sensitive routes
+  - Configurable path patterns for routes requiring re-authentication
+  - `ForceAuthn` flag in SAML AuthnRequest
+- **Authentication context class requests** (`authn_context` config option):
+  - Request specific authentication methods from IdP (e.g., MFA, X.509)
+  - Configurable `RequestedAuthnContext` and `AuthnContextComparison` in AuthnRequest
+  - Support for SAML 2.0 authentication context classes
+- **Encrypted assertions support**:
+  - Automatic decryption of encrypted SAML assertions
+  - SP metadata includes encryption KeyDescriptor
+  - Property-based and fuzz tests for security invariants
+- **Certificate rotation handling**:
+  - Support for multiple signing certificates per IdP
+  - Automatic certificate updates on metadata refresh
+  - Property-based tests for certificate selection and expiry handling
+- **Multiple SP configurations per instance**:
+  - Hostname-based routing for multiple SP configs in single Caddy instance
+  - Complete isolation between SP configs (per-SP stores/services)
+  - Caddyfile syntax: nested `sp` blocks
+  - Backward compatible with single-SP mode
+- **Hexagonal architecture refactoring**:
+  - Core domain separated from adapters (`internal/core/domain/`, `internal/adapters/`)
+  - Improved testability and maintainability
+  - Clear separation of concerns
+- **Enhanced testing**:
+  - Property-based tests for `InMemoryRequestStore` (single-use enforcement, expiry validation)
+  - Integration tests for encrypted assertions and certificate rotation
+  - Expanded fuzz tests for parsing and validation functions
+  - SAML service configuration tests
+
+### Changed
+- Significant progress on Phase 6 (Advanced Features)
+- Internal architecture refactored to hexagonal pattern
+
 ## [0.12.2] - 2025-12-16
 
 ### Added
