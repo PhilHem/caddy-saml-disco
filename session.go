@@ -35,6 +35,12 @@ type Session struct {
 	// IdPEntityID identifies which IdP authenticated the user.
 	IdPEntityID string
 
+	// NameIDFormat is the format of the NameID (needed for LogoutRequest).
+	NameIDFormat string
+
+	// SessionIndex is the IdP session index (needed for LogoutRequest).
+	SessionIndex string
+
 	// IssuedAt is when the session was created.
 	IssuedAt time.Time
 
@@ -69,8 +75,10 @@ type CookieSessionStore struct {
 // sessionClaims defines the JWT claims structure for sessions.
 type sessionClaims struct {
 	jwt.RegisteredClaims
-	IdPEntityID string            `json:"idp"`
-	Attributes  map[string]string `json:"attrs,omitempty"`
+	IdPEntityID  string            `json:"idp"`
+	Attributes   map[string]string `json:"attrs,omitempty"`
+	NameIDFormat string            `json:"nameid_format,omitempty"`
+	SessionIndex string            `json:"session_index,omitempty"`
 }
 
 // NewCookieSessionStore creates a new JWT-based session store.
@@ -90,8 +98,10 @@ func (s *CookieSessionStore) Create(session *Session) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.duration)),
 		},
-		IdPEntityID: session.IdPEntityID,
-		Attributes:  session.Attributes,
+		IdPEntityID:  session.IdPEntityID,
+		Attributes:   session.Attributes,
+		NameIDFormat: session.NameIDFormat,
+		SessionIndex: session.SessionIndex,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -116,11 +126,13 @@ func (s *CookieSessionStore) Get(token string) (*Session, error) {
 	}
 
 	return &Session{
-		Subject:     claims.Subject,
-		Attributes:  claims.Attributes,
-		IdPEntityID: claims.IdPEntityID,
-		IssuedAt:    claims.IssuedAt.Time,
-		ExpiresAt:   claims.ExpiresAt.Time,
+		Subject:      claims.Subject,
+		Attributes:   claims.Attributes,
+		IdPEntityID:  claims.IdPEntityID,
+		NameIDFormat: claims.NameIDFormat,
+		SessionIndex: claims.SessionIndex,
+		IssuedAt:     claims.IssuedAt.Time,
+		ExpiresAt:    claims.ExpiresAt.Time,
 	}, nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/crewjam/saml"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -1712,6 +1713,54 @@ func TestLocalizeIdPInfo_ConfigurableDefault(t *testing.T) {
 				t.Errorf("Description = %q, want %q", localized.Description, tc.expectedDesc)
 			}
 		})
+	}
+}
+
+// TestIdPInfo_HasSLOFields verifies that IdPInfo can store SLO endpoint information.
+func TestIdPInfo_HasSLOFields(t *testing.T) {
+	idp := IdPInfo{
+		EntityID:   "https://idp.example.com",
+		SLOURL:     "https://idp.example.com/slo",
+		SLOBinding: saml.HTTPRedirectBinding,
+	}
+	if idp.SLOURL == "" {
+		t.Error("expected SLOURL field")
+	}
+	if idp.SLOBinding == "" {
+		t.Error("expected SLOBinding field")
+	}
+	if idp.SLOURL != "https://idp.example.com/slo" {
+		t.Errorf("SLOURL = %q, want %q", idp.SLOURL, "https://idp.example.com/slo")
+	}
+	if idp.SLOBinding != saml.HTTPRedirectBinding {
+		t.Errorf("SLOBinding = %q, want %q", idp.SLOBinding, saml.HTTPRedirectBinding)
+	}
+}
+
+// TestExtractIdPInfo_ParsesSLOEndpoint verifies that SLO endpoints are extracted from metadata.
+func TestExtractIdPInfo_ParsesSLOEndpoint(t *testing.T) {
+	store := NewFileMetadataStore("testdata/idp-metadata-with-slo.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	if len(idps) != 1 {
+		t.Fatalf("expected 1 IdP, got %d", len(idps))
+	}
+
+	idp := idps[0]
+
+	if idp.SLOURL != "https://idp.example.com/saml/slo" {
+		t.Errorf("SLOURL = %q, want %q", idp.SLOURL, "https://idp.example.com/saml/slo")
+	}
+
+	if idp.SLOBinding != saml.HTTPRedirectBinding {
+		t.Errorf("SLOBinding = %q, want %q", idp.SLOBinding, saml.HTTPRedirectBinding)
 	}
 }
 

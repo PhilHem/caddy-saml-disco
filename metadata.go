@@ -57,6 +57,12 @@ type IdPInfo struct {
 	// SSOBinding is the SAML binding for the SSO endpoint.
 	SSOBinding string `json:"sso_binding"`
 
+	// SLOURL is the Single Logout endpoint URL (optional).
+	SLOURL string `json:"slo_url,omitempty"`
+
+	// SLOBinding is the SAML binding for the SLO endpoint.
+	SLOBinding string `json:"slo_binding,omitempty"`
+
 	// Certificates are the IdP's signing certificates (PEM encoded).
 	Certificates []string `json:"-"` // Excluded from JSON API for security
 
@@ -753,6 +759,20 @@ func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*UII
 		}
 	}
 
+	// Find SLO endpoint - prefer HTTP-Redirect, fall back to HTTP-POST
+	var sloURL, sloBinding string
+	for _, slo := range idpDesc.SingleLogoutServices {
+		if slo.Binding == saml.HTTPRedirectBinding {
+			sloURL = slo.Location
+			sloBinding = slo.Binding
+			break
+		}
+		if slo.Binding == saml.HTTPPostBinding && sloURL == "" {
+			sloURL = slo.Location
+			sloBinding = slo.Binding
+		}
+	}
+
 	// Get UIInfo from pre-parsed map
 	uiInfo := uiInfoMap[ed.EntityID]
 
@@ -825,6 +845,8 @@ func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*UII
 		InformationURLs:       informationURLs,
 		SSOURL:                ssoURL,
 		SSOBinding:            ssoBinding,
+		SLOURL:                sloURL,
+		SLOBinding:            sloBinding,
 		Certificates:          certs,
 		RegistrationAuthority: registrationAuthority,
 		RegistrationInstant:   registrationInstant,

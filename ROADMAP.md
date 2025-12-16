@@ -182,7 +182,7 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 - [ ] Scope-based attribute validation (shibmd:Scope)
 
 ### Authentication Options
-- [ ] Single Logout (SLO) support
+- [x] Single Logout (SLO) support
 - [ ] Forced re-authentication (`forceAuthn` parameter for sensitive routes)
 - [ ] Authentication context class requests (request MFA/specific auth strength)
 

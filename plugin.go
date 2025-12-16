@@ -260,6 +260,10 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		if r.Method == http.MethodGet {
 			return s.handleLogout(w, r)
 		}
+	case "/saml/slo":
+		if r.Method == http.MethodGet || r.Method == http.MethodPost {
+			return s.handleSLO(w, r)
+		}
 	case "/saml/api/idps":
 		if r.Method == http.MethodGet {
 			return s.handleListIdPs(w, r)
@@ -417,11 +421,13 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 
 	// Create session
 	session := &Session{
-		Subject:     result.Subject,
-		Attributes:  result.Attributes,
-		IdPEntityID: result.IdPEntityID,
-		IssuedAt:    time.Now(),
-		ExpiresAt:   time.Now().Add(s.sessionDuration),
+		Subject:      result.Subject,
+		Attributes:   result.Attributes,
+		IdPEntityID:  result.IdPEntityID,
+		NameIDFormat: result.NameIDFormat,
+		SessionIndex: result.SessionIndex,
+		IssuedAt:     time.Now(),
+		ExpiresAt:    time.Now().Add(s.sessionDuration),
 	}
 
 	token, err := s.sessionStore.Create(session)
@@ -879,8 +885,45 @@ func (s *SAMLDisco) separatePinnedIdPs(idps []IdPInfo) ([]IdPInfo, []IdPInfo) {
 
 // handleLogout handles the logout endpoint by clearing the session cookie
 // and redirecting to the return_to URL or root.
+// If the IdP supports SLO, it redirects to IdP SLO instead of just clearing the cookie.
 func (s *SAMLDisco) handleLogout(w http.ResponseWriter, r *http.Request) error {
-	// Clear the session cookie
+	if s.samlService == nil {
+		// Fall back to local-only logout
+		s.clearSessionCookies(w, r)
+		returnTo := validateRelayState(r.URL.Query().Get("return_to"))
+		http.Redirect(w, r, returnTo, http.StatusFound)
+		return nil
+	}
+
+	session := GetSession(r)
+	returnTo := validateRelayState(r.URL.Query().Get("return_to"))
+
+	// If we have a session, try SP-initiated SLO
+	if session != nil {
+		idp, err := s.metadataStore.GetIdP(session.IdPEntityID)
+		if err == nil && idp != nil && idp.SLOURL != "" {
+			// IdP supports SLO - redirect to IdP SLO
+			sloURL := s.resolveSLOURL(r)
+			logoutURL, err := s.samlService.CreateLogoutRequest(session, idp, sloURL, returnTo)
+			if err == nil {
+				http.Redirect(w, r, logoutURL.String(), http.StatusFound)
+				return nil
+			}
+			// If SLO fails, fall through to local-only logout
+			s.getLogger().Warn("failed to create logout request, falling back to local logout",
+				zap.Error(err),
+			)
+		}
+	}
+
+	// Fall back to local-only logout (no SLO or SLO failed)
+	s.clearSessionCookies(w, r)
+	http.Redirect(w, r, returnTo, http.StatusFound)
+	return nil
+}
+
+// clearSessionCookies clears both session and remember IdP cookies.
+func (s *SAMLDisco) clearSessionCookies(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.SessionCookieName,
 		Value:    "",
@@ -890,14 +933,132 @@ func (s *SAMLDisco) handleLogout(w http.ResponseWriter, r *http.Request) error {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1, // Delete cookie
 	})
-
-	// Clear the remember IdP cookie
 	s.clearRememberIdPCookie(w, r)
+}
 
-	// Redirect to return_to or root (validate to prevent open redirect)
-	returnTo := validateRelayState(r.URL.Query().Get("return_to"))
-	http.Redirect(w, r, returnTo, http.StatusFound)
+// handleSLO handles the Single Logout endpoint.
+// It processes both SP-initiated (SAMLResponse) and IdP-initiated (SAMLRequest) logout flows.
+func (s *SAMLDisco) handleSLO(w http.ResponseWriter, r *http.Request) error {
+	if s.samlService == nil {
+		s.renderAppError(w, r, ConfigError("SAML service is not configured"))
+		return nil
+	}
+
+	sloURL := s.resolveSLOURL(r)
+
+	// Check if this is a LogoutResponse (SP-initiated return) or LogoutRequest (IdP-initiated)
+	samlResponse := r.URL.Query().Get("SAMLResponse")
+	samlRequest := r.URL.Query().Get("SAMLRequest")
+
+	if samlResponse != "" {
+		// SP-initiated: IdP is redirecting back with LogoutResponse
+		// Get IdP from session or metadata
+		session := GetSession(r)
+		if session == nil {
+			// No session, just redirect
+			returnTo := validateRelayState(r.URL.Query().Get("RelayState"))
+			http.Redirect(w, r, returnTo, http.StatusFound)
+			return nil
+		}
+
+		idp, err := s.metadataStore.GetIdP(session.IdPEntityID)
+		if err != nil {
+			s.renderAppError(w, r, ServiceError("Failed to get IdP metadata"))
+			return nil
+		}
+
+		// Validate LogoutResponse
+		err = s.samlService.HandleLogoutResponse(r, sloURL, idp)
+		if err != nil {
+			s.getLogger().Warn("logout response validation failed",
+				zap.Error(err),
+				zap.String("remote_addr", r.RemoteAddr),
+			)
+			// Continue with logout anyway
+		}
+
+		// Clear session
+		http.SetCookie(w, &http.Cookie{
+			Name:     s.SessionCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		})
+		s.clearRememberIdPCookie(w, r)
+
+		// Redirect to return_to or root
+		returnTo := validateRelayState(r.URL.Query().Get("RelayState"))
+		http.Redirect(w, r, returnTo, http.StatusFound)
+		return nil
+	}
+
+	if samlRequest != "" {
+		// IdP-initiated: IdP is sending LogoutRequest
+		// Get IdP from request (would need to parse request to get entity ID)
+		// For now, try to get from first available IdP
+		idps, err := s.metadataStore.ListIdPs("")
+		if err != nil || len(idps) == 0 {
+			s.renderAppError(w, r, ConfigError("No identity provider is configured"))
+			return nil
+		}
+		idp := &idps[0]
+
+		// Parse LogoutRequest
+		result, err := s.samlService.HandleLogoutRequest(r, sloURL, idp)
+		if err != nil {
+			s.renderAppError(w, r, AuthError("Invalid logout request", err))
+			return nil
+		}
+
+		// Clear session for the user (would match by NameID from result)
+		http.SetCookie(w, &http.Cookie{
+			Name:     s.SessionCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		})
+		s.clearRememberIdPCookie(w, r)
+
+		// Send LogoutResponse back to IdP
+		responseURL, err := s.samlService.CreateLogoutResponse(result.RequestID, idp, sloURL, "")
+		if err != nil {
+			s.renderAppError(w, r, ServiceError("Failed to create logout response"))
+			return nil
+		}
+
+		http.Redirect(w, r, responseURL.String(), http.StatusFound)
+		return nil
+	}
+
+	// Neither SAMLRequest nor SAMLResponse present
+	s.renderAppError(w, r, AuthError("Missing SAMLRequest or SAMLResponse", nil))
 	return nil
+}
+
+// resolveSLOURL determines the SLO URL for the current request.
+func (s *SAMLDisco) resolveSLOURL(r *http.Request) *url.URL {
+	// Compute from request (similar to resolveAcsURL)
+	scheme := "https"
+	if r.TLS == nil {
+		// Check X-Forwarded-Proto header
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		} else {
+			scheme = "http"
+		}
+	}
+
+	return &url.URL{
+		Scheme: scheme,
+		Host:   r.Host,
+		Path:   "/saml/slo",
+	}
 }
 
 // parseDuration parses a duration string, supporting "d" suffix for days.

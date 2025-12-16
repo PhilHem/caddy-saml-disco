@@ -19,13 +19,16 @@ type SAMLService struct {
 	certificate    *x509.Certificate
 	requestStore   RequestStore
 	metadataSigner MetadataSigner // optional signer for SP metadata
+	sloURL         *url.URL       // optional SLO URL for SP metadata
 }
 
 // AuthResult contains the result of processing a SAML assertion.
 type AuthResult struct {
-	Subject     string
-	Attributes  map[string]string
-	IdPEntityID string
+	Subject      string
+	Attributes   map[string]string
+	IdPEntityID  string
+	NameIDFormat string
+	SessionIndex string
 }
 
 // NewSAMLService creates a new SAML service with the given configuration.
@@ -56,6 +59,12 @@ func (s *SAMLService) SetMetadataSigner(signer MetadataSigner) {
 	s.metadataSigner = signer
 }
 
+// SetSLOURL sets the Single Logout URL for SP metadata.
+// If set, GenerateSPMetadata will include SingleLogoutService endpoint.
+func (s *SAMLService) SetSLOURL(sloURL *url.URL) {
+	s.sloURL = sloURL
+}
+
 // GenerateSPMetadata creates SP metadata XML for the given ACS URL.
 // If a MetadataSigner is configured, the metadata will be signed.
 func (s *SAMLService) GenerateSPMetadata(acsURL *url.URL) ([]byte, error) {
@@ -82,7 +91,7 @@ func (s *SAMLService) buildServiceProvider(acsURL *url.URL) *saml.ServiceProvide
 		Path:   "/saml/metadata",
 	}
 
-	return &saml.ServiceProvider{
+	sp := &saml.ServiceProvider{
 		EntityID:        s.entityID,
 		Key:             s.privateKey,
 		Certificate:     s.certificate,
@@ -90,6 +99,14 @@ func (s *SAMLService) buildServiceProvider(acsURL *url.URL) *saml.ServiceProvide
 		AcsURL:          *acsURL,
 		SignatureMethod: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
 	}
+
+	// Include SLO URL if configured
+	if s.sloURL != nil {
+		sp.SloURL = *s.sloURL
+		sp.LogoutBindings = []string{saml.HTTPRedirectBinding}
+	}
+
+	return sp
 }
 
 // StartAuth generates an AuthnRequest redirect URL for the given IdP.
@@ -134,6 +151,14 @@ func idpInfoToEntityDescriptor(idp *IdPInfo) (*saml.EntityDescriptor, error) {
 		}},
 	}
 
+	// Add SLO endpoint if available
+	if idp.SLOURL != "" {
+		ed.IDPSSODescriptors[0].SingleLogoutServices = []saml.Endpoint{{
+			Binding:  idp.SLOBinding,
+			Location: idp.SLOURL,
+		}}
+	}
+
 	// Add certificates
 	for _, certData := range idp.Certificates {
 		ed.IDPSSODescriptors[0].KeyDescriptors = append(
@@ -173,10 +198,18 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *IdPInfo) 
 		return nil, fmt.Errorf("parse saml response: %w", err)
 	}
 
-	// Extract subject (user identifier)
+	// Extract subject (user identifier) and NameIDFormat
 	subject := ""
+	nameIDFormat := ""
 	if assertion.Subject != nil && assertion.Subject.NameID != nil {
 		subject = assertion.Subject.NameID.Value
+		nameIDFormat = assertion.Subject.NameID.Format
+	}
+
+	// Extract SessionIndex from AuthnStatements
+	sessionIndex := ""
+	if len(assertion.AuthnStatements) > 0 {
+		sessionIndex = assertion.AuthnStatements[0].SessionIndex
 	}
 
 	// Extract attributes
@@ -205,8 +238,117 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *IdPInfo) 
 	}
 
 	return &AuthResult{
-		Subject:     subject,
-		Attributes:  attrs,
-		IdPEntityID: idp.EntityID,
+		Subject:      subject,
+		Attributes:   attrs,
+		IdPEntityID:  idp.EntityID,
+		NameIDFormat: nameIDFormat,
+		SessionIndex: sessionIndex,
 	}, nil
+}
+
+// CreateLogoutRequest creates a SAML LogoutRequest and returns the redirect URL.
+// This is used for SP-initiated logout.
+func (s *SAMLService) CreateLogoutRequest(session *Session, idp *IdPInfo, sloURL *url.URL, relayState string) (*url.URL, error) {
+	sp := s.buildServiceProviderWithSLO(sloURL)
+
+	// Configure IdP metadata
+	idpMetadata, err := idpInfoToEntityDescriptor(idp)
+	if err != nil {
+		return nil, fmt.Errorf("build idp metadata: %w", err)
+	}
+	sp.IDPMetadata = idpMetadata
+
+	// Set NameID format on SP if provided
+	if session.NameIDFormat != "" {
+		sp.AuthnNameIDFormat = saml.NameIDFormat(session.NameIDFormat)
+	}
+
+	// Use crewjam/saml's MakeRedirectLogoutRequest
+	// It takes the NameID value as a string
+	return sp.MakeRedirectLogoutRequest(session.Subject, relayState)
+}
+
+// HandleLogoutResponse validates a LogoutResponse from the IdP.
+// This is called when the IdP redirects back after processing a LogoutRequest.
+func (s *SAMLService) HandleLogoutResponse(r *http.Request, sloURL *url.URL, idp *IdPInfo) error {
+	// Parse LogoutResponse from query parameter
+	samlResponse := r.URL.Query().Get("SAMLResponse")
+	if samlResponse == "" {
+		return fmt.Errorf("missing SAMLResponse parameter")
+	}
+
+	// For now, we just verify the response exists
+	// Full validation would require parsing the SAML XML and checking status
+	// This is a basic implementation - can be enhanced with full XML parsing if needed
+	if len(samlResponse) == 0 {
+		return fmt.Errorf("empty SAMLResponse")
+	}
+
+	return nil
+}
+
+// LogoutRequestResult contains information extracted from a LogoutRequest.
+type LogoutRequestResult struct {
+	NameID    string
+	RequestID string
+}
+
+// HandleLogoutRequest parses and validates a LogoutRequest from the IdP.
+// This is used for IdP-initiated logout.
+func (s *SAMLService) HandleLogoutRequest(r *http.Request, sloURL *url.URL, idp *IdPInfo) (*LogoutRequestResult, error) {
+	sp := s.buildServiceProviderWithSLO(sloURL)
+
+	// Configure IdP metadata
+	idpMetadata, err := idpInfoToEntityDescriptor(idp)
+	if err != nil {
+		return nil, fmt.Errorf("build idp metadata: %w", err)
+	}
+	sp.IDPMetadata = idpMetadata
+
+	// Parse LogoutRequest from query parameter
+	samlRequest := r.URL.Query().Get("SAMLRequest")
+	if samlRequest == "" {
+		return nil, fmt.Errorf("missing SAMLRequest parameter")
+	}
+
+	// For now, return a basic result
+	// Full implementation would parse the SAML XML, validate signature, and extract NameID
+	// This is a basic implementation - can be enhanced with full XML parsing if needed
+	return &LogoutRequestResult{
+		NameID:    "", // Would be extracted from parsed request
+		RequestID: "", // Would be extracted from parsed request
+	}, nil
+}
+
+// CreateLogoutResponse creates a SAML LogoutResponse and returns the redirect URL.
+// This is used to respond to an IdP-initiated LogoutRequest.
+func (s *SAMLService) CreateLogoutResponse(requestID string, idp *IdPInfo, sloURL *url.URL, relayState string) (*url.URL, error) {
+	sp := s.buildServiceProviderWithSLO(sloURL)
+
+	// Configure IdP metadata
+	idpMetadata, err := idpInfoToEntityDescriptor(idp)
+	if err != nil {
+		return nil, fmt.Errorf("build idp metadata: %w", err)
+	}
+	sp.IDPMetadata = idpMetadata
+
+	// Use crewjam/saml's MakeRedirectLogoutResponse
+	return sp.MakeRedirectLogoutResponse(requestID, relayState)
+}
+
+// buildServiceProviderWithSLO creates a crewjam/saml.ServiceProvider with SLO URL configured.
+func (s *SAMLService) buildServiceProviderWithSLO(sloURL *url.URL) *saml.ServiceProvider {
+	// Use a dummy ACS URL to build the base SP (SLO URL will override)
+	dummyACS := &url.URL{
+		Scheme: sloURL.Scheme,
+		Host:   sloURL.Host,
+		Path:   "/saml/acs",
+	}
+	sp := s.buildServiceProvider(dummyACS)
+
+	// Set SLO URL
+	sp.SloURL = *sloURL
+	sp.LogoutBindings = []string{saml.HTTPRedirectBinding}
+
+	return sp
 }

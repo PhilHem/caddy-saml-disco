@@ -114,6 +114,7 @@ Core interfaces: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `
 - **Cookie Secure flag**: Uses `r.TLS != nil` (does not trust header)
 - **Metadata signature verification**: Enabled via `verify_metadata_signature` + `metadata_signing_cert` config
 - **Metadata validUntil**: Automatically validated; expired metadata is rejected with structured logging
+- **SLO session requirements**: Single Logout requires `NameIDFormat` and `SessionIndex` stored in session (automatically extracted from SAML assertions during authentication)
 
 ## Development Workflow (TDD)
 
@@ -208,6 +209,8 @@ Install hooks: `pre-commit install`
 GET  /saml/metadata          # SP metadata XML
 POST /saml/acs               # Assertion Consumer Service
 GET  /saml/disco             # Default discovery UI (HTML)
+GET  /saml/logout            # Logout (redirects to IdP SLO if supported, else local-only)
+GET  /saml/slo               # Single Logout endpoint (handles LogoutRequest/Response)
 GET  /saml/api/idps          # List IdPs (JSON)
 GET  /saml/api/idps?q=term   # Search IdPs (JSON)
 POST /saml/api/select        # Select IdP, start SAML flow
@@ -230,4 +233,3 @@ GET  /saml/api/logo/{id}     # Proxied/cached IdP logo
 - Not a full SAML IdP implementation
 - Not a replacement for dedicated identity platforms
 - No distributed session storage (initially)
-- No Single Logout (SLO) in v1

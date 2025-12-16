@@ -41,6 +41,27 @@ func TestSession_Fields(t *testing.T) {
 	}
 }
 
+// TestSession_StoresNameIDFormatAndSessionIndex verifies that Session can store NameIDFormat and SessionIndex.
+func TestSession_StoresNameIDFormatAndSessionIndex(t *testing.T) {
+	session := Session{
+		Subject:      "user@example.com",
+		NameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+		SessionIndex: "session-123",
+	}
+	if session.NameIDFormat == "" {
+		t.Error("expected NameIDFormat field")
+	}
+	if session.SessionIndex == "" {
+		t.Error("expected SessionIndex field")
+	}
+	if session.NameIDFormat != "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress" {
+		t.Errorf("NameIDFormat = %q, want %q", session.NameIDFormat, "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress")
+	}
+	if session.SessionIndex != "session-123" {
+		t.Errorf("SessionIndex = %q, want %q", session.SessionIndex, "session-123")
+	}
+}
+
 // TestErrSessionNotFound verifies the sentinel error exists and is usable.
 func TestErrSessionNotFound(t *testing.T) {
 	if ErrSessionNotFound == nil {
