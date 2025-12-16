@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2025-12-16
+
 ### Added
-- **Fuzz test for RelayState validation** (`FuzzValidateRelayState`):
-  - Tests open redirect prevention with 50+ seed corpus entries
-  - Covers URL encoding bypasses, protocol-relative URLs, header injection
-  - Verifies invariants: safe path output, no scheme/host leakage
+- **Fuzz testing suite** for security-critical parsing:
+  - `FuzzValidateRelayState`: Open redirect prevention with 50+ seed corpus entries (URL encoding bypasses, protocol-relative URLs, header injection)
+  - `FuzzCookieSessionGet`: JWT session token parsing (malformed base64, truncated tokens, signature bypass attempts)
+  - `FuzzParseMetadata`: SAML metadata XML parsing (malformed XML, nested structures, edge cases)
+  - Deterministic time-based tests using synchronization hooks instead of sleeps
+- **Performance benchmarks** for large metadata files:
+  - Benchmark tests for parsing, search, and lookup operations with 1000+ IdPs
+  - Fixture generator for synthetic metadata (100-5000 IdPs)
+  - Memory usage estimation tests
+- **Registration authority filter** (`registration_authority_filter` config):
+  - Filter IdPs by MDRPI registration authority
+  - Useful for limiting discovery to specific federations within aggregates
 - **Prometheus metrics exposure** (`metrics enabled` config):
   - `MetricsRecorder` port with `PrometheusMetricsRecorder` and `NoopMetricsRecorder` adapters
   - `saml_disco_auth_attempts_total` counter with `idp_entity_id` and `status` labels
