@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2025-12-16
+
+### Added
+- **Optional header prefix** (`header_prefix` config option):
+  - Prepend a prefix to all attribute header names (e.g., `header_prefix "X-Saml-"`)
+  - When prefix is set, individual header names don't need the X- prefix
+  - Final combined header name (prefix + configured name) must be valid
+  - Header stripping logic updated to use prefixed names
+  - Comprehensive test coverage (unit + integration)
+
 ## [0.12.1] - 2025-12-16
 
 ### Added
