@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2025-12-16
+
+### Added
+- **SP metadata signing** (`sign_metadata` config option):
+  - Sign SP metadata XML output using the SP private key and certificate
+  - Enables federations and IdPs to verify SP metadata authenticity
+  - New `MetadataSigner` port interface with `XMLDsigSigner` adapter
+  - Uses goxmldsig enveloped signatures
+- **Additional fuzz testing** for security-critical XML parsing:
+  - `FuzzExtractIdPInfo`: IdP info extraction from metadata XML
+  - `FuzzValidateTimestamps`: Timestamp and expiry validation
+  - `FuzzVerifySignature`: XML signature verification
+
 ## [0.11.0] - 2025-12-16
 
 ### Added

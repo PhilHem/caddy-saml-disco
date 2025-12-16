@@ -127,7 +127,7 @@ Development phases for caddy-saml-disco.
 - [x] Instrument metadata refresh with metrics (call `RecordMetadataRefresh` from MetadataStore)
 
 ### Federation Features
-- [ ] Sign SP metadata with SP private key (`sign_metadata` config option)
+- [x] Sign SP metadata with SP private key (`sign_metadata` config option)
 - [x] Filter IdPs by registration authority (`registration_authority_filter` config option)
 - [x] Performance testing with large metadata files (1000+ IdPs)
   - Benchmark tests for parsing, search, and lookup operations
