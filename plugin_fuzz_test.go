@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"math/big"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -206,6 +207,82 @@ func checkSessionGetInvariants(t *testing.T, input string, session *Session, err
 	if (session == nil) == (err == nil) {
 		t.Errorf("Get(%q) violated XOR: session=%v, err=%v", input, session, err)
 	}
+}
+
+// FuzzApplyAttributeHeaders validates that spoofed headers are stripped when enabled and
+// legitimate attribute values are forwarded correctly.
+func FuzzApplyAttributeHeaders(f *testing.F) {
+	seeds := []struct {
+		attr      string
+		value     string
+		existing  string
+		separator string
+		strip     bool
+		dropAttr  bool
+	}{
+		{"urn:test:attr", "value", "spoof", ";", true, false},
+		{"urn:test:attr", "value", "spoof", ",", false, false},
+		{"urn:test:attr", "", "spoof", "|", true, false},
+		{"urn:test:attr", "valid", "", ";", true, true},
+	}
+	for _, seed := range seeds {
+		f.Add(seed.attr, seed.value, seed.existing, seed.separator, seed.strip, seed.dropAttr)
+	}
+
+	f.Fuzz(func(t *testing.T, attr, value, existing, separator string, strip, dropAttr bool) {
+		if attr == "" {
+			attr = "urn:fuzz:attr"
+		}
+
+		mapping := AttributeMapping{
+			SAMLAttribute: attr,
+			HeaderName:    "X-Fuzz-Header",
+			Separator:     separator,
+		}
+
+		s := &SAMLDisco{
+			Config: Config{
+				AttributeHeaders:      []AttributeMapping{mapping},
+				StripAttributeHeaders: boolPtr(strip),
+			},
+		}
+
+		req := &http.Request{Header: make(http.Header)}
+		if existing != "" {
+			req.Header.Set("X-Fuzz-Header", existing)
+		}
+
+		session := &Session{
+			Attributes: make(map[string]string),
+		}
+		if !dropAttr {
+			session.Attributes[attr] = value
+		}
+
+		s.applyAttributeHeaders(req, session)
+
+		got := req.Header.Get("X-Fuzz-Header")
+		sanitized := sanitizeHeaderValue(value)
+		hasAttrValue := !dropAttr && sanitized != "" && value != ""
+
+		if strip {
+			if hasAttrValue {
+				if got != sanitized {
+					t.Fatalf("strip enabled: header = %q, want sanitized %q", got, sanitized)
+				}
+			} else if got != "" {
+				t.Fatalf("strip enabled: header should be removed, got %q", got)
+			}
+		} else {
+			if hasAttrValue {
+				if got != sanitized {
+					t.Fatalf("strip disabled: header = %q, want sanitized %q", got, sanitized)
+				}
+			} else if got != existing {
+				t.Fatalf("strip disabled: header should remain %q, got %q", existing, got)
+			}
+		}
+	})
 }
 
 // FuzzCookieSessionGet tests that CookieSessionStore.Get handles arbitrary input safely.
