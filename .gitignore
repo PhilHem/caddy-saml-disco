@@ -7,7 +7,10 @@
 *.dll
 *.so
 *.dylib
-caddy
+# Ignore caddy binary in root directory only
+/caddy
+# But allow the caddy adapter package directory
+!/internal/adapters/driving/caddy/
 
 # Test binary, built with `go test -c`
 *.test
