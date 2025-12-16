@@ -563,3 +563,96 @@ func FuzzExtractAndValidateExpiry(f *testing.F) {
 		checkExtractAndValidateExpiryInvariants(t, input, result, err)
 	})
 }
+
+// fuzzExtractIdPInfoSeeds returns seed corpus entries for IdP info extraction fuzzing.
+// Minimal set covers key edge cases for UIInfo and RegistrationInfo parsing.
+func fuzzExtractIdPInfoSeeds() []string {
+	return []string{
+		// Valid EntityDescriptor with UIInfo
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdui="urn:oasis:names:tc:SAML:metadata:ui" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><Extensions><mdui:UIInfo><mdui:DisplayName xml:lang="en">Example IdP</mdui:DisplayName><mdui:Description xml:lang="en">An example identity provider</mdui:Description></mdui:UIInfo></Extensions><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// Missing entityID
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// No IDPSSODescriptor (SP only)
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://sp.example.com"><SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://sp.example.com/acs" index="0"/></SPSSODescriptor></EntityDescriptor>`,
+
+		// Empty UIInfo elements
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdui="urn:oasis:names:tc:SAML:metadata:ui" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><Extensions><mdui:UIInfo><mdui:DisplayName xml:lang="en"></mdui:DisplayName></mdui:UIInfo></Extensions><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// Whitespace-only display name
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdui="urn:oasis:names:tc:SAML:metadata:ui" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><Extensions><mdui:UIInfo><mdui:DisplayName xml:lang="en">   </mdui:DisplayName></mdui:UIInfo></Extensions><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// Logo with zero dimensions
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdui="urn:oasis:names:tc:SAML:metadata:ui" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><Extensions><mdui:UIInfo><mdui:Logo height="0" width="0">https://idp.example.com/logo.png</mdui:Logo></mdui:UIInfo></Extensions><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// Invalid RegistrationInstant
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdrpi="urn:oasis:names:tc:SAML:metadata:rpi" entityID="https://idp.example.com"><Extensions><mdrpi:RegistrationInfo registrationAuthority="https://fed.example.com" registrationInstant="not-a-timestamp"/></Extensions><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// Unicode in display name
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdui="urn:oasis:names:tc:SAML:metadata:ui" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><Extensions><mdui:UIInfo><mdui:DisplayName xml:lang="ja">日本語IdP</mdui:DisplayName><mdui:DisplayName xml:lang="en">Japanese IdP</mdui:DisplayName></mdui:UIInfo></Extensions><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// Multiple languages with empty lang attribute
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdui="urn:oasis:names:tc:SAML:metadata:ui" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><Extensions><mdui:UIInfo><mdui:DisplayName xml:lang="">No Language</mdui:DisplayName><mdui:DisplayName xml:lang="en">English</mdui:DisplayName></mdui:UIInfo></Extensions><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+
+		// Very long display name
+		`<?xml version="1.0"?><EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:mdui="urn:oasis:names:tc:SAML:metadata:ui" entityID="https://idp.example.com"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><Extensions><mdui:UIInfo><mdui:DisplayName xml:lang="en">` + strings.Repeat("A", 10000) + `</mdui:DisplayName></mdui:UIInfo></Extensions><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></IDPSSODescriptor></EntityDescriptor>`,
+	}
+}
+
+// checkExtractIdPInfoInvariants validates security invariants for IdP info extraction.
+func checkExtractIdPInfoInvariants(t *testing.T, input []byte, idps []IdPInfo, err error) {
+	t.Helper()
+
+	// Invariant 1: Each returned IdP has non-empty EntityID
+	for i, idp := range idps {
+		if idp.EntityID == "" {
+			t.Errorf("IdP[%d] has empty EntityID for input: %s", i, truncate(string(input)))
+		}
+	}
+
+	// Invariant 2: DisplayNames map values are trimmed (no leading/trailing whitespace)
+	for i, idp := range idps {
+		for lang, name := range idp.DisplayNames {
+			if strings.TrimSpace(name) != name {
+				t.Errorf("IdP[%d] DisplayNames[%q] has untrimmed value %q", i, lang, name)
+			}
+		}
+	}
+
+	// Invariant 3: Descriptions map values are trimmed
+	for i, idp := range idps {
+		for lang, desc := range idp.Descriptions {
+			if strings.TrimSpace(desc) != desc {
+				t.Errorf("IdP[%d] Descriptions[%q] has untrimmed value %q", i, lang, desc)
+			}
+		}
+	}
+
+	// Invariant 4: InformationURLs map values are trimmed
+	for i, idp := range idps {
+		for lang, url := range idp.InformationURLs {
+			if strings.TrimSpace(url) != url {
+				t.Errorf("IdP[%d] InformationURLs[%q] has untrimmed value %q", i, lang, url)
+			}
+		}
+	}
+
+	// Invariant 5: No panic occurred (implicit - test completes)
+}
+
+// FuzzExtractIdPInfo tests that IdP info extraction handles arbitrary XML input safely.
+// Uses minimal seed corpus for fast local development runs.
+// Run with: go test -fuzz=FuzzExtractIdPInfo -fuzztime=5s .
+func FuzzExtractIdPInfo(f *testing.F) {
+	for _, seed := range fuzzExtractIdPInfoSeeds() {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		idps, _, err := parseMetadata([]byte(input))
+		checkExtractIdPInfoInvariants(t, []byte(input), idps, err)
+		// Discard err - we only care about invariants on successful parses
+		_ = err
+	})
+}
