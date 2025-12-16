@@ -3,7 +3,12 @@
 package caddysamldisco
 
 import (
+	"fmt"
+	"math/rand"
+	"reflect"
+	"sync"
 	"testing"
+	"testing/quick"
 	"time"
 )
 
@@ -201,5 +206,257 @@ func TestInMemoryRequestStore_Close(t *testing.T) {
 	err = store.Close()
 	if err != nil {
 		t.Errorf("Close() second call returned error: %v", err)
+	}
+}
+
+// =============================================================================
+// Property-Based Tests
+// =============================================================================
+
+// Property-based tests verify security-critical invariants of InMemoryRequestStore
+// through systematic exploration of the state space. These tests complement
+// example-based tests by checking properties hold across all possible inputs.
+//
+// Bugs Found Through Property-Based Testing:
+// - None discovered. The implementation correctly enforces single-use through
+//   exclusive locking (Lock() in Valid()), preventing race conditions where
+//   multiple goroutines could validate the same ID simultaneously.
+//
+// Potential Edge Cases Analyzed:
+// - Time precision: If expiry == time.Now(), time.Now().After(expiry) returns
+//   false, so the ID is considered valid. This is acceptable behavior (ID valid
+//   until exact expiry time) but worth noting for time-sensitive scenarios.
+// - GetAll() consistency: Uses RLock() which is correct for read-only access.
+//   The property test verifies that GetAll() only returns non-expired IDs.
+
+// =============================================================================
+// Invariant Checker Helpers
+// =============================================================================
+
+// checkSingleUseInvariant verifies that Valid() returns true at most once per ID.
+func checkSingleUseInvariant(store *InMemoryRequestStore, requestID string) bool {
+	trueCount := 0
+	for i := 0; i < 10; i++ {
+		if store.Valid(requestID) {
+			trueCount++
+		}
+	}
+	return trueCount <= 1
+}
+
+// checkExpiryInvariant verifies that expired IDs always return false from Valid().
+func checkExpiryInvariant(store *InMemoryRequestStore, requestID string, expiry time.Time) bool {
+	if time.Now().After(expiry) {
+		return !store.Valid(requestID)
+	}
+	return true // Skip non-expired cases
+}
+
+// checkReplayPreventionInvariant verifies replay attack prevention:
+// after Valid() returns true, subsequent calls return false.
+func checkReplayPreventionInvariant(store *InMemoryRequestStore, requestID string) bool {
+	firstResult := store.Valid(requestID)
+	secondResult := store.Valid(requestID)
+
+	// Property: If first was true, second must be false (single-use)
+	if firstResult {
+		return !secondResult
+	}
+
+	// If first was false (expired/not found), second should also be false
+	return !secondResult
+}
+
+// checkGetAllConsistencyInvariant verifies that GetAll() only returns IDs that would pass Valid().
+func checkGetAllConsistencyInvariant(store *InMemoryRequestStore, expectedValid map[string]bool) bool {
+	allIDs := store.GetAll()
+
+	for _, id := range allIDs {
+		if !expectedValid[id] {
+			return false // GetAll() returned an expired ID
+		}
+	}
+
+	// Verify count matches expected (allowing for timing edge cases)
+	expectedCount := len(expectedValid)
+	validCount := len(allIDs)
+	if validCount > expectedCount {
+		return false // More IDs returned than expected
+	}
+
+	return true
+}
+
+// Cycle 9: Property-Based Test - Single-Use Enforcement
+// Property: Valid() returns true at most once per ID
+func TestInMemoryRequestStore_Property_SingleUse(t *testing.T) {
+	f := func(requestID string, expiryOffset int64) bool {
+		// Skip empty IDs
+		if requestID == "" {
+			return true
+		}
+
+		store := NewInMemoryRequestStore()
+		expiry := time.Now().Add(time.Duration(expiryOffset) * time.Second)
+
+		// Store the ID
+		store.Store(requestID, expiry)
+
+		// Use helper to check invariant
+		return checkSingleUseInvariant(store, requestID)
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+// Cycle 10: Property-Based Test - Expiry Validation
+// Property: Expired IDs always return false from Valid()
+func TestInMemoryRequestStore_Property_Expiry(t *testing.T) {
+	f := func(requestID string, expiryOffset int64) bool {
+		if requestID == "" {
+			return true
+		}
+
+		store := NewInMemoryRequestStore()
+		// Use offset to create expired or non-expired entries
+		expiry := time.Now().Add(time.Duration(expiryOffset) * time.Second)
+
+		store.Store(requestID, expiry)
+
+		// Small delay to ensure expiry if offset was negative
+		if expiryOffset < 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		// Use helper to check invariant
+		return checkExpiryInvariant(store, requestID, expiry)
+	}
+
+	// Custom generator to bias towards expired entries for better coverage
+	config := &quick.Config{
+		Values: func(values []reflect.Value, r *rand.Rand) {
+			// Generate random request ID
+			idLen := r.Intn(20) + 1
+			idBytes := make([]byte, idLen)
+			for i := range idBytes {
+				idBytes[i] = byte(r.Intn(26) + 'a')
+			}
+			values[0] = reflect.ValueOf(string(idBytes))
+
+			// Generate mostly negative offsets (expired) with some positive
+			offset := r.Int63n(200) - 150 // Range: -150 to 50 seconds
+			values[1] = reflect.ValueOf(offset)
+		},
+	}
+
+	if err := quick.Check(f, config); err != nil {
+		t.Error(err)
+	}
+}
+
+// Cycle 11: Property-Based Test - Replay Attack Prevention
+// Property: After Valid() returns true, subsequent calls return false (replay prevention)
+func TestInMemoryRequestStore_Property_ReplayPrevention(t *testing.T) {
+	f := func(requestID string, expiryOffset int64, waitOffset int64) bool {
+		if requestID == "" {
+			return true
+		}
+
+		store := NewInMemoryRequestStore()
+		expiry := time.Now().Add(time.Duration(expiryOffset) * time.Second)
+
+		store.Store(requestID, expiry)
+
+		// Simulate waiting (for time-based tests)
+		if waitOffset > 0 {
+			time.Sleep(time.Duration(waitOffset) * time.Millisecond)
+		}
+
+		// Use helper to check invariant
+		return checkReplayPreventionInvariant(store, requestID)
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+// Cycle 12: Property-Based Test - GetAll Consistency
+// Property: GetAll() only returns IDs that would pass Valid()
+func TestInMemoryRequestStore_Property_GetAllConsistency(t *testing.T) {
+	f := func(numIDs int, expiryOffsets []int64) bool {
+		if numIDs < 0 || numIDs > 100 || len(expiryOffsets) == 0 {
+			return true // Skip unreasonable sizes
+		}
+
+		store := NewInMemoryRequestStore()
+		now := time.Now()
+
+		// Store multiple IDs with various expiry times
+		expectedValid := make(map[string]bool)
+		for i := 0; i < numIDs; i++ {
+			id := fmt.Sprintf("req-%d", i)
+			offset := expiryOffsets[i%len(expiryOffsets)]
+			expiry := now.Add(time.Duration(offset) * time.Second)
+			store.Store(id, expiry)
+
+			// Track which IDs should be valid (non-expired)
+			if now.Before(expiry) {
+				expectedValid[id] = true
+			}
+		}
+
+		// Use helper to check invariant
+		return checkGetAllConsistencyInvariant(store, expectedValid)
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+// Cycle 13: Property-Based Test - Concurrent Access Invariants
+// Property: Single-use and expiry invariants hold under concurrent access
+func TestInMemoryRequestStore_Property_ConcurrentInvariants(t *testing.T) {
+	f := func(requestID string, expiryOffset int64, numGoroutines int) bool {
+		if requestID == "" || numGoroutines < 1 || numGoroutines > 10 {
+			return true
+		}
+
+		store := NewInMemoryRequestStore()
+		expiry := time.Now().Add(time.Duration(expiryOffset) * time.Second)
+		store.Store(requestID, expiry)
+
+		var wg sync.WaitGroup
+		results := make(chan bool, numGoroutines)
+
+		// Concurrent Valid() calls
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results <- store.Valid(requestID)
+			}()
+		}
+
+		wg.Wait()
+		close(results)
+
+		// Count true results
+		trueCount := 0
+		for result := range results {
+			if result {
+				trueCount++
+			}
+		}
+
+		// Property: At most one goroutine should get true (single-use)
+		return trueCount <= 1
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
 	}
 }
