@@ -83,11 +83,12 @@ func (s *SAMLService) buildServiceProvider(acsURL *url.URL) *saml.ServiceProvide
 	}
 
 	return &saml.ServiceProvider{
-		EntityID:    s.entityID,
-		Key:         s.privateKey,
-		Certificate: s.certificate,
-		MetadataURL: metadataURL,
-		AcsURL:      *acsURL,
+		EntityID:        s.entityID,
+		Key:             s.privateKey,
+		Certificate:     s.certificate,
+		MetadataURL:     metadataURL,
+		AcsURL:          *acsURL,
+		SignatureMethod: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
 	}
 }
 

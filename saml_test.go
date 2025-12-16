@@ -212,6 +212,46 @@ func TestGenerateSPMetadata_IncludesACS(t *testing.T) {
 	}
 }
 
+// TestGenerateSPMetadata_IncludesSigningKeyDescriptor verifies signing KeyDescriptor is present.
+func TestGenerateSPMetadata_IncludesSigningKeyDescriptor(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	metadataBytes, err := service.GenerateSPMetadata(acsURL)
+	if err != nil {
+		t.Fatalf("GenerateSPMetadata() failed: %v", err)
+	}
+
+	var ed saml.EntityDescriptor
+	xml.Unmarshal(metadataBytes, &ed)
+
+	if len(ed.SPSSODescriptors) == 0 {
+		t.Fatal("no SPSSODescriptor in metadata")
+	}
+
+	spDesc := ed.SPSSODescriptors[0]
+
+	// Verify we have both encryption and signing KeyDescriptors
+	var hasEncryption, hasSigning bool
+	for _, kd := range spDesc.KeyDescriptors {
+		switch kd.Use {
+		case "encryption":
+			hasEncryption = true
+		case "signing":
+			hasSigning = true
+		}
+	}
+
+	if !hasEncryption {
+		t.Error("metadata should contain encryption KeyDescriptor")
+	}
+	if !hasSigning {
+		t.Error("metadata should contain signing KeyDescriptor")
+	}
+}
+
 // TestGenerateSPMetadata_IncludesCertificate verifies certificate is present.
 func TestGenerateSPMetadata_IncludesCertificate(t *testing.T) {
 	key, _ := LoadPrivateKey("testdata/sp-key.pem")
