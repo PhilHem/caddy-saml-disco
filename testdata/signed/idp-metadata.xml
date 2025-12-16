@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com/saml">
+    <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+        <KeyDescriptor use="signing">
+            <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                <X509Data>
+                    <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7
+o5e7irD6PTW6DMnlTs/rkwDL5Ss7RLJHHaIwj3sig4Crr8eMxnZWzjmQxhCdLwvb
+bDhbYYDUvOBPABI+GHdfgh6B8rkRkwQXphQBj5BGANNLhjRpAOHvvPCnF1IeKWTK
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu6OXu4qw+j01ugzJ5U7P
+65MAy+UrO0SyRx2iMI97IoOAq6/HjMZ2Vs45kMYQnS8L22w4W2GA1LzgTwASPhh3
+X4IegfK5EZMEF6YUAYeQRgDTS4Y0aQDh77zwpxdSHilkyjCCAQoCggEBALujl7uK
+sPo9NboMyeVOz+uTAMvlKztEskcdojCPeyKDgKuvx4zGdlbOOZDGEJ0vC9tsOFth
+gNS84E8AEj4Yd1+CHoHyuRGTBBemFAGPkEYA00uGNGkA4e+88KcXUh4pZMowDAYD
+VR0TBAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAXX0v+YME6qWBMsajKzlOI/Np
+P27RwIJ6xl4pCEsT8DO7QFP1a3h4kjPd7XAx2jKKIq1xmOn+KmuFzoC5LoAwNly8
+888examplecertificatedata888LoAwNly8P27RwIJ6xl4pCEsT8DO7QFP1a3h4k</X509Certificate>
+                </X509Data>
+            </KeyInfo>
+        </KeyDescriptor>
+        <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/saml/sso"/>
+        <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://idp.example.com/saml/sso/post"/>
+    </IDPSSODescriptor>
+    <Organization>
+        <OrganizationName xml:lang="en">Example Identity Provider</OrganizationName>
+        <OrganizationDisplayName xml:lang="en">Example IdP</OrganizationDisplayName>
+        <OrganizationURL xml:lang="en">https://example.com</OrganizationURL>
+    </Organization>
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>wHhyT+9L2iu+mqS5j3Q2jaGJwOuo8olNJujYiZaC/Nw=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>rA5jNMF21ra/1WvYbzg+/H14jQ5SGpN94aXu80jnrNnPKHpKEPgU3s44Tb/3WBtpvVsh/zJgKFtS6t8Np6c8lkaI/vYV7B5CAs9yM4LW903tsRA2cjLib7el4odQucY4xEcsdlFIwH/AduHAjFLsMdSbkHsVwG+iz94fRn59UJho9szAaErNx+dZruq0OQulHnspawKoDWDerAY4k/NqjAca9lue/9lsUxi7R1R8DsiMPHxyxZNZNGEohZEtoux4lWFPV/WaL5VlWu4m6kvSnfNgagC6SGZOtvYri+GKiMiEBIudhzmg4D3+/wjmaO4oMQUtFjifFfrl8z3pJxb2Yg==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIDBTCCAe2gAwIBAgIUGjV/1ZO8IqZkyMEDuVgo54GjtVEwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHdGVzdC1zcDAeFw0yNTEyMTIxMDU2MjZaFw0yNjEyMTIxMDU2MjZaMBIxEDAOBgNVBAMMB3Rlc3Qtc3AwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCyDQNmS4BEeEP3JV5dVVRXMleAISQytJjjhM/JvHXtcf2FhNlANB/KOQ94NCwfGPrS5FFS1muxYi1WMwA1c2Z8eUdoqmiGu6EHbpjm7lNfHTp4ur8F/ocHkqOKX0wurPVCxa7qurrnVghqhhUFayJoK21Mb1/DkrtPBXRtb4KzP4BIwTuZZNv5cKmBUGhBCltUETmvllfaq1o0t5c/3CTnOWjncrqrlexaHsm/WShgI/Wz9QzLI5B+UPo5BSot039Fw2yRmPiMDzlWO+mnIA+H44IHiFPmiGFPsgB0E3uuBlj3O3kMCU/fYfYBT84cIhQAdchEa7giLLgLwQ5S1+RLAgMBAAGjUzBRMB0GA1UdDgQWBBQdIh26vdLvtHIpuMrGTbLpEYOxnjAfBgNVHSMEGDAWgBQdIh26vdLvtHIpuMrGTbLpEYOxnjAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQB5Frp2oeE9NcZe/A5APYI45vvXy/6p/JK8X+uiDEZ48sapIzEvlQ/PcFGFKkLtwF1DfyilrLClS8KK1r7NM6Cs65IGbtkfATS5vt5Q/K4vLj5wFfNR+6gB73tBMmTwolxnKesNJIX0VgeaaHQ7MGJmruIHb3zcuV5Dwg2/8msoQXb6m1v6ZYTwIa7nAIYfEIGzcOwT/zUHj15GMF/bGeKfkwK7JgxLbTpODLrbhWfwrT1ZqI7tKxfxEQdN1AaVr2EWp2R9/xpmKndcZs2C2u8YXLKe0M/RsyQz9DVofLtnm/ZRZnO+Bsu9r2nE1dwWs3+p4tK6Jxh/cYXbEkJ1ljfi</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature></EntityDescriptor>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" Name="https://federation.example.org">
+    <EntityDescriptor entityID="https://idp1.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7
+o5e7irD6PTW6DMnlTs/rkwDL5Ss7RLJHHaIwj3sig4Crr8eMxnZWzjmQxhCdLwvb
+bDhbYYDUvOBPABI+GHdfgh6B8rkRkwQXphQBj5BGANNLhjRpAOHvvPCnF1IeKWTK</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp1.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">State University</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://idp2.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7
+o5e7irD6PTW6DMnlTs/rkwDL5Ss7RLJHHaIwj3sig4Crr8eMxnZWzjmQxhCdLwvb
+bDhbYYDUvOBPABI+GHdfgh6B8rkRkwQXphQBj5BGANNLhjRpAOHvvPCnF1IeKWTK</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp2.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Tech University</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    <EntityDescriptor entityID="https://idp3.example.com/saml">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+                    <X509Data>
+                        <X509Certificate>MIICpDCCAYwCCQDU+pQ4P2dP3jANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls
+b2NhbGhvc3QwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjAUMRIwEAYD
+VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7
+o5e7irD6PTW6DMnlTs/rkwDL5Ss7RLJHHaIwj3sig4Crr8eMxnZWzjmQxhCdLwvb
+bDhbYYDUvOBPABI+GHdfgh6B8rkRkwQXphQBj5BGANNLhjRpAOHvvPCnF1IeKWTK</X509Certificate>
+                    </X509Data>
+                </KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp3.example.com/saml/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Corporate Provider</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>F4qdrIQ4fdQuJYhc8AEMiqaRgsoDNgmA+97StrmLliY=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>HFWES6Wbgz9XeK0DQYpMlQ7hJlLrshzOuFgRBd/oR+iMF0uX0ZclCgtbJFYD4Lz9aHOIr8x762LxiW7ia6c3+7yilYw0dF5L5V/TZfkA8bQkwZt8zCLuRrHReaFZG3SwyHuViv72FU7zhEniALKWuglvuEw27mMGDFfNrX3OFyicMGEdP2JkVSrdzsE6Pr8CRLR/CEwCq+7aggjti9PG8MpesRsy3bu14LvCHN+JHUkaxoBTt4U9mKREEzUVQK79gfOKNsEhJPnjnzCLXaSJBENdQkxHZUhKAForETc52TNrTwsuqTAAafA73VX/of7JlGAcmJRP5kVTGtNKnBdfmA==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIDBTCCAe2gAwIBAgIUGjV/1ZO8IqZkyMEDuVgo54GjtVEwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHdGVzdC1zcDAeFw0yNTEyMTIxMDU2MjZaFw0yNjEyMTIxMDU2MjZaMBIxEDAOBgNVBAMMB3Rlc3Qtc3AwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCyDQNmS4BEeEP3JV5dVVRXMleAISQytJjjhM/JvHXtcf2FhNlANB/KOQ94NCwfGPrS5FFS1muxYi1WMwA1c2Z8eUdoqmiGu6EHbpjm7lNfHTp4ur8F/ocHkqOKX0wurPVCxa7qurrnVghqhhUFayJoK21Mb1/DkrtPBXRtb4KzP4BIwTuZZNv5cKmBUGhBCltUETmvllfaq1o0t5c/3CTnOWjncrqrlexaHsm/WShgI/Wz9QzLI5B+UPo5BSot039Fw2yRmPiMDzlWO+mnIA+H44IHiFPmiGFPsgB0E3uuBlj3O3kMCU/fYfYBT84cIhQAdchEa7giLLgLwQ5S1+RLAgMBAAGjUzBRMB0GA1UdDgQWBBQdIh26vdLvtHIpuMrGTbLpEYOxnjAfBgNVHSMEGDAWgBQdIh26vdLvtHIpuMrGTbLpEYOxnjAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQB5Frp2oeE9NcZe/A5APYI45vvXy/6p/JK8X+uiDEZ48sapIzEvlQ/PcFGFKkLtwF1DfyilrLClS8KK1r7NM6Cs65IGbtkfATS5vt5Q/K4vLj5wFfNR+6gB73tBMmTwolxnKesNJIX0VgeaaHQ7MGJmruIHb3zcuV5Dwg2/8msoQXb6m1v6ZYTwIa7nAIYfEIGzcOwT/zUHj15GMF/bGeKfkwK7JgxLbTpODLrbhWfwrT1ZqI7tKxfxEQdN1AaVr2EWp2R9/xpmKndcZs2C2u8YXLKe0M/RsyQz9DVofLtnm/ZRZnO+Bsu9r2nE1dwWs3+p4tK6Jxh/cYXbEkJ1ljfi</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature></EntitiesDescriptor>

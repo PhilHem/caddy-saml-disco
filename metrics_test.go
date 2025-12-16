@@ -9,47 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// TestMetricsRecorder_Interface verifies the MetricsRecorder interface is defined correctly.
-// This test will fail to compile if the interface is missing or has wrong signatures.
-func TestMetricsRecorder_Interface(t *testing.T) {
-	var _ MetricsRecorder = (*mockMetricsRecorder)(nil)
-}
-
-// mockMetricsRecorder is a test double that implements MetricsRecorder.
-type mockMetricsRecorder struct {
-	authAttempts       []authAttemptCall
-	sessionsCreated    int
-	sessionValidations []bool
-	metadataRefreshes  []metadataRefreshCall
-}
-
-type authAttemptCall struct {
-	idpEntityID string
-	success     bool
-}
-
-type metadataRefreshCall struct {
-	source   string
-	success  bool
-	idpCount int
-}
-
-func (m *mockMetricsRecorder) RecordAuthAttempt(idpEntityID string, success bool) {
-	m.authAttempts = append(m.authAttempts, authAttemptCall{idpEntityID, success})
-}
-
-func (m *mockMetricsRecorder) RecordSessionCreated() {
-	m.sessionsCreated++
-}
-
-func (m *mockMetricsRecorder) RecordSessionValidation(valid bool) {
-	m.sessionValidations = append(m.sessionValidations, valid)
-}
-
-func (m *mockMetricsRecorder) RecordMetadataRefresh(source string, success bool, idpCount int) {
-	m.metadataRefreshes = append(m.metadataRefreshes, metadataRefreshCall{source, success, idpCount})
-}
-
 // TestNoopMetricsRecorder_Implements verifies NoopMetricsRecorder implements MetricsRecorder.
 func TestNoopMetricsRecorder_Implements(t *testing.T) {
 	var _ MetricsRecorder = (*NoopMetricsRecorder)(nil)

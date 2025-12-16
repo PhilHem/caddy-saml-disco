@@ -231,6 +231,61 @@ func TestLoadSigningCertificates_NoCerts(t *testing.T) {
 	}
 }
 
+// Cycle 2.9: Verify pre-signed metadata fixtures
+func TestXMLDsigVerifier_Verify_PreSignedIdPMetadata(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	signed, err := os.ReadFile("testdata/signed/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read pre-signed file: %v", err)
+	}
+
+	validated, err := verifier.Verify(signed)
+	if err != nil {
+		t.Errorf("Verify() failed: %v", err)
+	}
+	if len(validated) == 0 {
+		t.Error("Verify() returned empty validated bytes")
+	}
+}
+
+func TestXMLDsigVerifier_Verify_PreSignedAggregateMetadata(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	signed, err := os.ReadFile("testdata/signed/aggregate-metadata.xml")
+	if err != nil {
+		t.Fatalf("read pre-signed file: %v", err)
+	}
+
+	validated, err := verifier.Verify(signed)
+	if err != nil {
+		t.Errorf("Verify() failed: %v", err)
+	}
+	if len(validated) == 0 {
+		t.Error("Verify() returned empty validated bytes")
+	}
+}
+
+func TestXMLDsigVerifier_Verify_PreSignedNestedMetadata(t *testing.T) {
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	verifier := NewXMLDsigVerifier(cert)
+
+	signed, err := os.ReadFile("testdata/signed/nested-metadata.xml")
+	if err != nil {
+		t.Fatalf("read pre-signed file: %v", err)
+	}
+
+	validated, err := verifier.Verify(signed)
+	if err != nil {
+		t.Errorf("Verify() failed: %v", err)
+	}
+	if len(validated) == 0 {
+		t.Error("Verify() returned empty validated bytes")
+	}
+}
+
 // =============================================================================
 // Phase 3: Integration with Metadata Stores
 // =============================================================================

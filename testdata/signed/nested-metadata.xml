@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nested federation metadata structure.
+  Some federations group entities by region or category using nested EntitiesDescriptor.
+-->
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" Name="https://federation.example.org">
+
+    
+    <EntityDescriptor entityID="https://idp.federation.example.org">
+        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+            <KeyDescriptor use="signing">
+                <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                    <ds:X509Data>
+                        <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                    </ds:X509Data>
+                </ds:KeyInfo>
+            </KeyDescriptor>
+            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.federation.example.org/sso"/>
+        </IDPSSODescriptor>
+        <Organization>
+            <OrganizationDisplayName xml:lang="en">Federation Central IdP</OrganizationDisplayName>
+        </Organization>
+    </EntityDescriptor>
+
+    
+    <EntitiesDescriptor Name="Universities">
+        <EntityDescriptor entityID="https://idp.university-north.edu">
+            <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <KeyDescriptor use="signing">
+                    <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                        <ds:X509Data>
+                            <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                        </ds:X509Data>
+                    </ds:KeyInfo>
+                </KeyDescriptor>
+                <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.university-north.edu/sso"/>
+            </IDPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">University of the North</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+
+        <EntityDescriptor entityID="https://idp.university-south.edu">
+            <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <KeyDescriptor use="signing">
+                    <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                        <ds:X509Data>
+                            <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                        </ds:X509Data>
+                    </ds:KeyInfo>
+                </KeyDescriptor>
+                <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.university-south.edu/sso"/>
+            </IDPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">University of the South</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+
+        
+        <EntityDescriptor entityID="https://sp.library.edu">
+            <SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://sp.library.edu/acs" index="0"/>
+            </SPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">University Library</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+    </EntitiesDescriptor>
+
+    
+    <EntitiesDescriptor Name="Research Institutes">
+        <EntityDescriptor entityID="https://idp.research-center.org">
+            <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <KeyDescriptor use="signing">
+                    <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                        <ds:X509Data>
+                            <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                        </ds:X509Data>
+                    </ds:KeyInfo>
+                </KeyDescriptor>
+                <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.research-center.org/sso"/>
+            </IDPSSODescriptor>
+            <Organization>
+                <OrganizationDisplayName xml:lang="en">National Research Center</OrganizationDisplayName>
+            </Organization>
+        </EntityDescriptor>
+
+        
+        <EntitiesDescriptor Name="Labs">
+            <EntityDescriptor entityID="https://idp.physics-lab.org">
+                <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                    <KeyDescriptor use="signing">
+                        <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                            <ds:X509Data>
+                                <ds:X509Certificate>MIIDXTCCAexamplecert</ds:X509Certificate>
+                            </ds:X509Data>
+                        </ds:KeyInfo>
+                    </KeyDescriptor>
+                    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.physics-lab.org/sso"/>
+                </IDPSSODescriptor>
+                <Organization>
+                    <OrganizationDisplayName xml:lang="en">Physics Laboratory</OrganizationDisplayName>
+                </Organization>
+            </EntityDescriptor>
+        </EntitiesDescriptor>
+    </EntitiesDescriptor>
+
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>s7oNE5av6y1wcXrvEDgPjG174E6Se91ZyOIRYahCimY=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>GH1IUOkbmYG/dAsHh9euiBpJtS2lidlKLdytnDTpPHb6Lt12C99LPKgdfbqd/If7nQCfZVbrbW3OkkLLVMJX0e6NG1ZBxmTMkfrXmn18XZeoPyMovXbQWzocGZbYNyqNOYRpiqYjQLg4IMhhYigD10+7seTaQtH3upoi1/n1rzwy2fvISci6nVt6PjlX022p2g1antRFjzM1VAt8FUSlPnjQhoj6IxZRliyPzAiDhfqafy1AiJasjAnAPXFSKB8mEZa6nD2wMPdoxwb7lkNp6PyRYyMznihBnmmxqhVFGBd1y54mVSv47z+4OTpDqTMMS0exbMLpfUoy3zSZyeZ9rw==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIDBTCCAe2gAwIBAgIUGjV/1ZO8IqZkyMEDuVgo54GjtVEwDQYJKoZIhvcNAQELBQAwEjEQMA4GA1UEAwwHdGVzdC1zcDAeFw0yNTEyMTIxMDU2MjZaFw0yNjEyMTIxMDU2MjZaMBIxEDAOBgNVBAMMB3Rlc3Qtc3AwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCyDQNmS4BEeEP3JV5dVVRXMleAISQytJjjhM/JvHXtcf2FhNlANB/KOQ94NCwfGPrS5FFS1muxYi1WMwA1c2Z8eUdoqmiGu6EHbpjm7lNfHTp4ur8F/ocHkqOKX0wurPVCxa7qurrnVghqhhUFayJoK21Mb1/DkrtPBXRtb4KzP4BIwTuZZNv5cKmBUGhBCltUETmvllfaq1o0t5c/3CTnOWjncrqrlexaHsm/WShgI/Wz9QzLI5B+UPo5BSot039Fw2yRmPiMDzlWO+mnIA+H44IHiFPmiGFPsgB0E3uuBlj3O3kMCU/fYfYBT84cIhQAdchEa7giLLgLwQ5S1+RLAgMBAAGjUzBRMB0GA1UdDgQWBBQdIh26vdLvtHIpuMrGTbLpEYOxnjAfBgNVHSMEGDAWgBQdIh26vdLvtHIpuMrGTbLpEYOxnjAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQB5Frp2oeE9NcZe/A5APYI45vvXy/6p/JK8X+uiDEZ48sapIzEvlQ/PcFGFKkLtwF1DfyilrLClS8KK1r7NM6Cs65IGbtkfATS5vt5Q/K4vLj5wFfNR+6gB73tBMmTwolxnKesNJIX0VgeaaHQ7MGJmruIHb3zcuV5Dwg2/8msoQXb6m1v6ZYTwIa7nAIYfEIGzcOwT/zUHj15GMF/bGeKfkwK7JgxLbTpODLrbhWfwrT1ZqI7tKxfxEQdN1AaVr2EWp2R9/xpmKndcZs2C2u8YXLKe0M/RsyQz9DVofLtnm/ZRZnO+Bsu9r2nE1dwWs3+p4tK6Jxh/cYXbEkJ1ljfi</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature></EntitiesDescriptor>
