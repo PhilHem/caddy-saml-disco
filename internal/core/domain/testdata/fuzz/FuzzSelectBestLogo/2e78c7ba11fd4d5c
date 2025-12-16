@@ -1,0 +1,7 @@
+go test fuzz v1
+int(9223372036854775787)
+int(-53)
+string("0")
+int(-87)
+int(1)
+string("")
