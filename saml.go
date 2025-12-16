@@ -14,10 +14,11 @@ import (
 
 // SAMLService provides SAML Service Provider operations.
 type SAMLService struct {
-	entityID     string
-	privateKey   *rsa.PrivateKey
-	certificate  *x509.Certificate
-	requestStore RequestStore
+	entityID       string
+	privateKey     *rsa.PrivateKey
+	certificate    *x509.Certificate
+	requestStore   RequestStore
+	metadataSigner MetadataSigner // optional signer for SP metadata
 }
 
 // AuthResult contains the result of processing a SAML assertion.
@@ -49,11 +50,28 @@ func NewSAMLServiceWithStore(entityID string, privateKey *rsa.PrivateKey, certif
 	}
 }
 
+// SetMetadataSigner sets the signer used for SP metadata.
+// If set, GenerateSPMetadata will return signed XML.
+func (s *SAMLService) SetMetadataSigner(signer MetadataSigner) {
+	s.metadataSigner = signer
+}
+
 // GenerateSPMetadata creates SP metadata XML for the given ACS URL.
+// If a MetadataSigner is configured, the metadata will be signed.
 func (s *SAMLService) GenerateSPMetadata(acsURL *url.URL) ([]byte, error) {
 	sp := s.buildServiceProvider(acsURL)
 	metadata := sp.Metadata()
-	return xml.MarshalIndent(metadata, "", "  ")
+	data, err := xml.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	// Sign metadata if signer is configured
+	if s.metadataSigner != nil {
+		return s.metadataSigner.Sign(data)
+	}
+
+	return data, nil
 }
 
 // buildServiceProvider creates a crewjam/saml.ServiceProvider for SP operations.

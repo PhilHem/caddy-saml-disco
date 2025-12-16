@@ -557,3 +557,200 @@ func TestNewXMLDsigVerifierWithCertsAndLogger(t *testing.T) {
 		t.Errorf("expected 2 certs, got %d", len(verifier.certs))
 	}
 }
+
+// =============================================================================
+// Phase 6: MetadataSigner Interface + NoopSigner
+// =============================================================================
+
+// Cycle 6.1: Verify MetadataSigner interface exists with required method
+func TestMetadataSigner_Interface(t *testing.T) {
+	var _ MetadataSigner = (*mockMetadataSigner)(nil)
+}
+
+// mockMetadataSigner is a minimal implementation for interface verification
+type mockMetadataSigner struct{}
+
+func (m *mockMetadataSigner) Sign(data []byte) ([]byte, error) {
+	return nil, nil
+}
+
+// Cycle 6.2: Verify NoopSigner implements interface
+func TestNoopSigner_Interface(t *testing.T) {
+	var _ MetadataSigner = (*NoopSigner)(nil)
+}
+
+// Cycle 6.3: NoopSigner returns input unchanged
+func TestNoopSigner_Sign_ReturnsInput(t *testing.T) {
+	signer := NewNoopSigner()
+	input := []byte("<metadata>test</metadata>")
+
+	result, err := signer.Sign(input)
+	if err != nil {
+		t.Fatalf("Sign() returned error: %v", err)
+	}
+
+	if string(result) != string(input) {
+		t.Errorf("Sign() = %q, want %q", result, input)
+	}
+}
+
+// Cycle 6.4: NoopSigner handles empty/nil input
+func TestNoopSigner_Sign_EmptyInput(t *testing.T) {
+	signer := NewNoopSigner()
+
+	result, err := signer.Sign([]byte{})
+	if err != nil {
+		t.Fatalf("Sign() returned error: %v", err)
+	}
+
+	if len(result) != 0 {
+		t.Errorf("Sign() returned %d bytes, want 0", len(result))
+	}
+}
+
+func TestNoopSigner_Sign_NilInput(t *testing.T) {
+	signer := NewNoopSigner()
+
+	result, err := signer.Sign(nil)
+	if err != nil {
+		t.Fatalf("Sign() returned error: %v", err)
+	}
+
+	if result != nil {
+		t.Errorf("Sign(nil) = %v, want nil", result)
+	}
+}
+
+// =============================================================================
+// Phase 7: XMLDsigSigner
+// =============================================================================
+
+// Cycle 7.1: Verify XMLDsigSigner implements interface
+func TestXMLDsigSigner_Interface(t *testing.T) {
+	var _ MetadataSigner = (*XMLDsigSigner)(nil)
+}
+
+// Cycle 7.2: Constructor accepts key and certificate
+func TestNewXMLDsigSigner(t *testing.T) {
+	key, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("LoadPrivateKey() failed: %v", err)
+	}
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+
+	signer := NewXMLDsigSigner(key, cert)
+	if signer == nil {
+		t.Fatal("NewXMLDsigSigner() returned nil")
+	}
+}
+
+// Cycle 7.3: Sign returns signed XML with Signature element
+func TestXMLDsigSigner_Sign_ReturnsSignedXML(t *testing.T) {
+	key, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("LoadPrivateKey() failed: %v", err)
+	}
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	signer := NewXMLDsigSigner(key, cert)
+
+	unsigned := []byte(`<?xml version="1.0"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://sp.example.com">
+  <SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"/>
+</EntityDescriptor>`)
+
+	signed, err := signer.Sign(unsigned)
+	if err != nil {
+		t.Fatalf("Sign() failed: %v", err)
+	}
+
+	// Should contain Signature element
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(signed); err != nil {
+		t.Fatalf("parse signed XML: %v", err)
+	}
+
+	root := doc.Root()
+	sig := root.FindElement("./Signature")
+	if sig == nil {
+		sig = root.FindElement(".//[local-name()='Signature']")
+	}
+	if sig == nil {
+		t.Error("signed XML should contain Signature element")
+	}
+}
+
+// Cycle 7.4: Sign then Verify round-trip succeeds
+func TestXMLDsigSigner_Sign_RoundTrip(t *testing.T) {
+	key, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("LoadPrivateKey() failed: %v", err)
+	}
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+
+	signer := NewXMLDsigSigner(key, cert)
+	verifier := NewXMLDsigVerifier(cert)
+
+	unsigned := []byte(`<?xml version="1.0"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://sp.example.com">
+  <SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"/>
+</EntityDescriptor>`)
+
+	signed, err := signer.Sign(unsigned)
+	if err != nil {
+		t.Fatalf("Sign() failed: %v", err)
+	}
+
+	validated, err := verifier.Verify(signed)
+	if err != nil {
+		t.Fatalf("Verify() failed after Sign(): %v", err)
+	}
+
+	if len(validated) == 0 {
+		t.Error("Verify() returned empty validated bytes")
+	}
+}
+
+// Cycle 7.5: Sign fails on empty input
+func TestXMLDsigSigner_Sign_FailsOnEmptyInput(t *testing.T) {
+	key, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("LoadPrivateKey() failed: %v", err)
+	}
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	signer := NewXMLDsigSigner(key, cert)
+
+	_, err = signer.Sign([]byte{})
+	if err == nil {
+		t.Error("Sign() should fail on empty input")
+	}
+}
+
+// Cycle 7.6: Sign fails on malformed XML
+func TestXMLDsigSigner_Sign_FailsOnMalformedXML(t *testing.T) {
+	key, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("LoadPrivateKey() failed: %v", err)
+	}
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	signer := NewXMLDsigSigner(key, cert)
+
+	_, err = signer.Sign([]byte("<not valid xml"))
+	if err == nil {
+		t.Error("Sign() should fail on malformed XML")
+	}
+}
+
+// Cycle 7.7: Sign fails on whitespace-only input (no root element)
+func TestXMLDsigSigner_Sign_FailsOnWhitespaceOnly(t *testing.T) {
+	key, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("LoadPrivateKey() failed: %v", err)
+	}
+	cert := loadTestCertFromFile(t, "testdata/sp-cert.pem")
+	signer := NewXMLDsigSigner(key, cert)
+
+	_, err = signer.Sign([]byte("   \n\t  "))
+	if err == nil {
+		t.Error("Sign() should fail on whitespace-only input")
+	}
+}

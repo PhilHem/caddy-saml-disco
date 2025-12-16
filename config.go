@@ -108,6 +108,11 @@ type Config struct {
 	// Metrics are exposed via Caddy's admin API /metrics endpoint.
 	// Defaults to false.
 	MetricsEnabled bool `json:"metrics_enabled,omitempty"`
+
+	// SignMetadata enables XML signature on SP metadata output.
+	// Uses the SP private key and certificate configured via key_file and cert_file.
+	// Defaults to false.
+	SignMetadata bool `json:"sign_metadata,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).

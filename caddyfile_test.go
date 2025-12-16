@@ -370,3 +370,43 @@ func TestCaddyfile_MetricsDefault(t *testing.T) {
 		t.Error("MetricsEnabled should default to false")
 	}
 }
+
+func TestCaddyfile_SignMetadata(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		cert_file /path/to/cert.pem
+		key_file /path/to/key.pem
+		sign_metadata
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if !s.SignMetadata {
+		t.Error("SignMetadata = false, want true")
+	}
+}
+
+func TestCaddyfile_SignMetadata_Default(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	// Default should be disabled
+	if s.SignMetadata {
+		t.Error("SignMetadata should default to false")
+	}
+}

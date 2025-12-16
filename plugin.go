@@ -165,6 +165,13 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("load SP certificate: %w", err)
 			}
 			s.samlService = NewSAMLService(s.EntityID, privateKey, certificate)
+
+			// Configure metadata signing if enabled
+			if s.SignMetadata {
+				signer := NewXMLDsigSigner(privateKey, certificate)
+				s.samlService.SetMetadataSigner(signer)
+				s.logger.Info("SP metadata signing enabled")
+			}
 		}
 	}
 

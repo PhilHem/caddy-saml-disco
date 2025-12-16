@@ -27,6 +27,7 @@ import (
 //	    registration_authority_filter <pattern>
 //	    verify_metadata_signature
 //	    metadata_signing_cert <path>
+//	    sign_metadata
 //	}
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var s SAMLDisco
@@ -172,6 +173,9 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			s.MetadataSigningCert = d.Val()
+
+		case "sign_metadata":
+			s.SignMetadata = true
 
 		case "metrics":
 			if !d.NextArg() {

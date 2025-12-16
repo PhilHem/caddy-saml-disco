@@ -332,3 +332,92 @@ func TestHandleACS_RejectsEmptyRequest(t *testing.T) {
 		t.Error("HandleACS() should fail with no SAMLResponse")
 	}
 }
+
+// =============================================================================
+// Metadata Signing Tests
+// =============================================================================
+
+// TestSetMetadataSigner sets the signer on SAMLService.
+func TestSetMetadataSigner(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	signer := NewNoopSigner()
+	service.SetMetadataSigner(signer)
+
+	// No panic means success - setter worked
+}
+
+// TestGenerateSPMetadata_WithSigner verifies metadata is signed when signer is set.
+func TestGenerateSPMetadata_WithSigner(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	signer := NewXMLDsigSigner(key, cert)
+	service.SetMetadataSigner(signer)
+
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	metadataBytes, err := service.GenerateSPMetadata(acsURL)
+	if err != nil {
+		t.Fatalf("GenerateSPMetadata() failed: %v", err)
+	}
+
+	// Verify metadata contains Signature element
+	metadataStr := string(metadataBytes)
+	if !strings.Contains(metadataStr, "Signature") {
+		t.Error("signed metadata should contain Signature element")
+	}
+	if !strings.Contains(metadataStr, "SignatureValue") {
+		t.Error("signed metadata should contain SignatureValue element")
+	}
+}
+
+// TestGenerateSPMetadata_WithSigner_RoundTrip verifies signed metadata can be verified.
+func TestGenerateSPMetadata_WithSigner_RoundTrip(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	signer := NewXMLDsigSigner(key, cert)
+	service.SetMetadataSigner(signer)
+
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	metadataBytes, err := service.GenerateSPMetadata(acsURL)
+	if err != nil {
+		t.Fatalf("GenerateSPMetadata() failed: %v", err)
+	}
+
+	// Verify with XMLDsigVerifier
+	verifier := NewXMLDsigVerifier(cert)
+	validated, err := verifier.Verify(metadataBytes)
+	if err != nil {
+		t.Fatalf("Verify() failed on signed metadata: %v", err)
+	}
+
+	if len(validated) == 0 {
+		t.Error("Verify() returned empty validated bytes")
+	}
+}
+
+// TestGenerateSPMetadata_WithoutSigner verifies metadata is unsigned by default.
+func TestGenerateSPMetadata_WithoutSigner(t *testing.T) {
+	key, _ := LoadPrivateKey("testdata/sp-key.pem")
+	cert, _ := LoadCertificate("testdata/sp-cert.pem")
+	service := NewSAMLService("https://sp.example.com", key, cert)
+
+	// No signer set
+
+	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
+	metadataBytes, err := service.GenerateSPMetadata(acsURL)
+	if err != nil {
+		t.Fatalf("GenerateSPMetadata() failed: %v", err)
+	}
+
+	// Verify metadata does NOT contain Signature element
+	metadataStr := string(metadataBytes)
+	if strings.Contains(metadataStr, "<Signature") {
+		t.Error("unsigned metadata should not contain Signature element")
+	}
+}

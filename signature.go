@@ -1,8 +1,11 @@
 package caddysamldisco
 
 import (
+	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -49,6 +52,89 @@ type SignatureVerifier interface {
 	// Verify validates the XML signature on metadata and returns the
 	// validated XML bytes. Returns error if signature is invalid or missing.
 	Verify(data []byte) ([]byte, error)
+}
+
+// MetadataSigner signs XML documents for SAML metadata.
+// This is a port interface - implementations are adapters.
+type MetadataSigner interface {
+	// Sign adds an enveloped XML signature to the metadata and returns
+	// the signed XML bytes.
+	Sign(data []byte) ([]byte, error)
+}
+
+// NoopSigner is a pass-through signer for development/testing.
+// It returns the input unchanged without signing.
+type NoopSigner struct{}
+
+// NewNoopSigner creates a new NoopSigner.
+func NewNoopSigner() *NoopSigner {
+	return &NoopSigner{}
+}
+
+// Sign returns the input unchanged without signing.
+func (s *NoopSigner) Sign(data []byte) ([]byte, error) {
+	return data, nil
+}
+
+// XMLDsigSigner signs XML documents using goxmldsig.
+// It creates enveloped signatures with the provided key pair.
+type XMLDsigSigner struct {
+	privateKey  *rsa.PrivateKey
+	certificate *x509.Certificate
+}
+
+// NewXMLDsigSigner creates a signer with the given key pair.
+func NewXMLDsigSigner(privateKey *rsa.PrivateKey, certificate *x509.Certificate) *XMLDsigSigner {
+	return &XMLDsigSigner{
+		privateKey:  privateKey,
+		certificate: certificate,
+	}
+}
+
+// Sign adds an enveloped XML signature to the metadata and returns signed bytes.
+func (s *XMLDsigSigner) Sign(metadata []byte) ([]byte, error) {
+	if len(metadata) == 0 {
+		return nil, errors.New("empty metadata")
+	}
+
+	// Parse the XML document
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(metadata); err != nil {
+		return nil, fmt.Errorf("parse XML: %w", err)
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return nil, errors.New("empty XML document")
+	}
+
+	// Create key store from tls.Certificate
+	tlsCert := tls.Certificate{
+		Certificate: [][]byte{s.certificate.Raw},
+		PrivateKey:  s.privateKey,
+	}
+	keyStore := dsig.TLSCertKeyStore(tlsCert)
+
+	// Create signing context
+	signingContext := dsig.NewDefaultSigningContext(keyStore)
+	signingContext.Canonicalizer = dsig.MakeC14N10ExclusiveCanonicalizerWithPrefixList("")
+
+	// Sign the root element
+	signedRoot, err := signingContext.SignEnveloped(root)
+	if err != nil {
+		return nil, fmt.Errorf("sign XML: %w", err)
+	}
+
+	// Replace root with signed version
+	doc.SetRoot(signedRoot)
+
+	// Serialize back to bytes
+	signedBytes, err := doc.WriteToBytes()
+	if err != nil {
+		return nil, fmt.Errorf("serialize signed XML: %w", err)
+	}
+
+	return signedBytes, nil
 }
 
 // NoopVerifier is a pass-through verifier for development/testing.
