@@ -28,6 +28,9 @@ import (
 //	    verify_metadata_signature
 //	    metadata_signing_cert <path>
 //	    sign_metadata
+//	    attribute_headers {
+//	        <saml_attribute> <header_name> [<separator>]
+//	    }
 //	}
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	var s SAMLDisco
@@ -188,6 +191,36 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				s.MetricsEnabled = false
 			default:
 				return d.Errf("metrics must be 'enabled' or 'off', got %q", d.Val())
+			}
+
+		case "attribute_headers":
+			// Parse the attribute_headers block
+			// Syntax:
+			//   attribute_headers {
+			//       <saml_attribute> <header_name> [<separator>]
+			//   }
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				args := []string{d.Val()}
+				args = append(args, d.RemainingArgs()...)
+
+				if len(args) < 2 || len(args) > 3 {
+					return d.Errf("attribute_headers: expected 2-3 arguments (saml_attribute header_name [separator]), got %d", len(args))
+				}
+
+				mapping := AttributeMapping{
+					SAMLAttribute: args[0],
+					HeaderName:    args[1],
+				}
+				if len(args) == 3 {
+					mapping.Separator = args[2]
+				}
+
+				// Validate header name at parse time
+				if !IsValidHeaderName(mapping.HeaderName) {
+					return d.Errf("attribute_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
+				}
+
+				s.AttributeHeaders = append(s.AttributeHeaders, mapping)
 			}
 
 		default:

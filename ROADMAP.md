@@ -166,7 +166,7 @@ Development phases for caddy-saml-disco.
 
 Propagate SAML attributes to backend applications via HTTP headers, following the pattern established by Shibboleth SP.
 
-- [ ] Attribute-to-header mapping configuration
+- [x] Attribute-to-header mapping configuration
   ```caddyfile
   attribute_headers {
       urn:oid:1.3.6.1.4.1.5923.1.1.1.6  X-Remote-User      # eduPersonPrincipalName
@@ -175,7 +175,8 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
   }
   ```
 - [ ] Built-in OID → friendly name mapping for common attributes (eduPerson, SCHAC)
-- [ ] Multi-valued attribute handling (`multi_value_separator` config, default `;`)
+- [x] Multi-valued attribute handling (per-mapping `separator` config, default `;`)
+- [ ] Integration test for attribute-to-header flow (verify headers reach downstream handlers)
 - [ ] Optional header prefix (`header_prefix "X-Saml-"`)
 - [ ] Strip incoming headers with mapped names before injection (prevent spoofing, default enabled)
 - [ ] Scope-based attribute validation (shibmd:Scope)
@@ -241,14 +242,14 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 
 ### Priority 5: Attribute Header Injection
 
-- [ ] `FuzzAttributeHeaderInjection` - Header name/value sanitization
+- [x] `FuzzAttributeHeaderInjection` - Header name/value sanitization
   - Newline injection in header values (HTTP response splitting)
   - Invalid characters in header names
   - Oversized attribute values
 - [ ] Property-based test for header stripping
   - Incoming spoofed headers always removed before injection
   - Case-insensitive header matching
-- [ ] Property-based test for multi-value handling
+- [x] Property-based test for multi-value handling
   - Separator injection attacks (`;` in attribute values)
   - Round-trip consistency (inject → parse → same values)
 

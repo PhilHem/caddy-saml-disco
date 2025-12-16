@@ -302,6 +302,11 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		// Store session in context for downstream handlers
 		ctx := context.WithValue(r.Context(), sessionContextKey{}, session)
 		r = r.WithContext(ctx)
+
+		// Apply attribute-to-header mapping if configured
+		if len(s.AttributeHeaders) > 0 {
+			s.applyAttributeHeaders(r, session)
+		}
 	}
 
 	// Pass through to next handler
@@ -560,6 +565,39 @@ func (s *SAMLDisco) getDefaultLanguage() string {
 		return s.DefaultLanguage
 	}
 	return "en"
+}
+
+// applyAttributeHeaders maps SAML session attributes to HTTP headers on the request.
+// This enables downstream handlers to access user attributes via headers like X-Remote-User.
+// Only headers with X- prefix are allowed for security.
+func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *Session) {
+	if session == nil || len(session.Attributes) == 0 {
+		return
+	}
+
+	// Convert single-valued session attributes to multi-valued format
+	// (Session stores map[string]string for backward compatibility,
+	// but MapAttributesToHeaders accepts map[string][]string)
+	multiAttrs := make(map[string][]string, len(session.Attributes))
+	for k, v := range session.Attributes {
+		multiAttrs[k] = []string{v}
+	}
+
+	// Map attributes to headers
+	headers, err := MapAttributesToHeaders(multiAttrs, s.AttributeHeaders)
+	if err != nil {
+		// Configuration error - should have been caught at startup
+		s.getLogger().Error("failed to map attributes to headers",
+			zap.Error(err),
+			zap.String("subject", session.Subject),
+		)
+		return
+	}
+
+	// Set headers on the request
+	for header, value := range headers {
+		r.Header.Set(header, value)
+	}
 }
 
 // getLogger returns the logger, or a no-op logger if not set.

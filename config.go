@@ -113,6 +113,11 @@ type Config struct {
 	// Uses the SP private key and certificate configured via key_file and cert_file.
 	// Defaults to false.
 	SignMetadata bool `json:"sign_metadata,omitempty"`
+
+	// AttributeHeaders maps SAML attributes to HTTP headers for downstream handlers.
+	// Header names must start with "X-" to prevent overwriting standard headers.
+	// Example: map eduPersonPrincipalName to X-Remote-User.
+	AttributeHeaders []AttributeMapping `json:"attribute_headers,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).
@@ -152,6 +157,19 @@ func (c *Config) Validate() error {
 	// Validate signature verification config
 	if c.VerifyMetadataSignature && c.MetadataSigningCert == "" {
 		return fmt.Errorf("metadata_signing_cert is required when verify_metadata_signature is enabled")
+	}
+
+	// Validate attribute header mappings
+	for i, m := range c.AttributeHeaders {
+		if m.SAMLAttribute == "" {
+			return fmt.Errorf("attribute_headers[%d]: saml_attribute is required", i)
+		}
+		if m.HeaderName == "" {
+			return fmt.Errorf("attribute_headers[%d]: header_name is required", i)
+		}
+		if !IsValidHeaderName(m.HeaderName) {
+			return fmt.Errorf("attribute_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
+		}
 	}
 
 	return nil
