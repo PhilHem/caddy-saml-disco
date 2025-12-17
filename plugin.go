@@ -23,6 +23,7 @@ type HealthResponse = caddyadapter.HealthResponse
 
 var (
 	MapAttributesToHeadersWithPrefix = caddyadapter.MapAttributesToHeadersWithPrefix
+	ValidateDenyRedirect             = caddyadapter.ValidateDenyRedirect
 )
 
 func init() {

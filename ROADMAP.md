@@ -199,8 +199,19 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 - [ ] Filter IdPs by entity category or assurance level
 
 ### Quality
-- [ ] Comprehensive test suite (unit, integration, e2e)
+- [ ] Complete remaining test updates after hexagonal architecture refactoring
 - [testing] [blocking] Test files need updates after hexagonal architecture refactoring (Cycle 11 complete)
+  - **Description**: Test files reference functions moved to adapter during hexagonal architecture refactoring, causing build failures
+  - **Root cause**: Cycle 11 moved `plugin.go`, `caddyfile.go`, `config.go`, `templates.go`, `saml.go`, and attribute mapping functions to `internal/adapters/driving/caddy/`, but test files still reference old package locations
+  - **Remediation**: 
+    - Update `attributes_test.go` and `attributes_fuzz_test.go` to import and use `caddy.MapAttributesToHeaders`, `caddy.sanitizeHeaderValue`, `caddy.MaxHeaderValueLength` from adapter
+    - Verify all test files using moved functions are updated (check for references to `parseDuration`, `validateRelayState`, `parseAcceptLanguage`, `localizeIdPList`)
+    - Run `go test -tags=unit ./...` to verify all tests compile and pass
+  - **Progress**: 
+    - ✓ Exported `ParseDuration` and `ValidateRelayState` in `internal/adapters/driving/caddy/plugin.go` (Phase 7)
+    - ✓ Updated `plugin_fuzz_test.go` and `plugin_fuzz_ci_test.go` to use exported functions
+    - ⚠️ Still remaining: `boolPtr`, `sanitizeHeaderValue`, `parseMetadata`, `extractAndValidateExpiry` need export/update
+  - **Impact**: Blocking - unit tests cannot run until fixed
 - [testing] [quality] Multi-SP handler isolation incomplete (Phase 6)
   - **Description**: Some ForSP handler methods (`handleACSForSP`, `handleLogoutForSP`, `handleSLOForSP`, `handleSelectIdPForSP`, `handleSessionInfoForSP`, `handleDiscoveryUIForSP`) delegate to instance-level handlers instead of using SP config stores
   - **Root cause**: Incremental implementation prioritized core routing and critical handlers; remaining handlers were left as TODOs to maintain compilation
@@ -227,17 +238,6 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
     - Test multiple SP configs with different hostnames routing to correct IdPs
     - Verify session isolation between SP configs in real HTTP scenarios
   - **Impact**: Quality - feature works but lacks end-to-end validation
-  - **Description**: Test files reference functions moved to adapter during hexagonal architecture refactoring, causing build failures
-  - **Root cause**: Cycle 11 moved `plugin.go`, `caddyfile.go`, `config.go`, `templates.go`, `saml.go`, and attribute mapping functions to `internal/adapters/driving/caddy/`, but test files still reference old package locations
-  - **Remediation**: 
-    - Update `attributes_test.go` and `attributes_fuzz_test.go` to import and use `caddy.MapAttributesToHeaders`, `caddy.sanitizeHeaderValue`, `caddy.MaxHeaderValueLength` from adapter
-    - Verify all test files using moved functions are updated (check for references to `parseDuration`, `validateRelayState`, `parseAcceptLanguage`, `localizeIdPList`)
-    - Run `go test -tags=unit ./...` to verify all tests compile and pass
-  - **Progress**: 
-    - ✓ Exported `ParseDuration` and `ValidateRelayState` in `internal/adapters/driving/caddy/plugin.go` (Phase 7)
-    - ✓ Updated `plugin_fuzz_test.go` and `plugin_fuzz_ci_test.go` to use exported functions
-    - ⚠️ Still remaining: `boolPtr`, `sanitizeHeaderValue`, `parseMetadata`, `extractAndValidateExpiry` need export/update
-  - **Impact**: Blocking - unit tests cannot run until fixed
 
 **Outcome:** Full-featured SAML SP plugin for Caddy.
 
@@ -298,11 +298,15 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 - [x] Property-based test for multi-value handling
   - Separator injection attacks (`;` in attribute values)
   - Round-trip consistency (inject → parse → same values)
-
-#### Remaining:
-- [ ] Property-based test for header stripping
+- [x] Property-based test for header stripping
   - Incoming spoofed headers always removed before injection
   - Case-insensitive header matching
+  - Multiple header values removed
+  - Prefix handling verified
+  - Entitlement headers stripped
+  - Non-ASCII character handling (Unicode, emoji, normalization forms)
+  - Concurrency testing (race condition verification)
+  - Default behavior consistency (single-SP vs multi-SP)
 
 ### Infrastructure
 
@@ -322,31 +326,31 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 
 ### Core Features
 
-- [ ] File-based entitlements store (JSON/YAML)
-- [ ] User lookup by SAML subject (exact match)
-- [ ] Pattern/scope matching (`*@example.edu`, `staff@*`)
-- [ ] Hot-reload on file change (like metadata refresh)
-- [ ] Inject local entitlements as HTTP header
+- [x] File-based entitlements store (JSON/YAML)
+- [x] User lookup by SAML subject (exact match)
+- [x] Pattern/scope matching (`*@example.edu`, `staff@*`)
+- [x] Hot-reload on file change (like metadata refresh)
+- [x] Inject local entitlements as HTTP header
 
 ### Access Control
 
-- [ ] `default_action deny` - reject users not in entitlements file (allowlist mode)
-- [ ] `default_action allow` - permit all authenticated users (blocklist mode)
-- [ ] Custom deny page/redirect for unauthorized users
-- [ ] Require specific entitlement for route access (`require_entitlement admin`)
+- [x] `default_action deny` - reject users not in entitlements file (allowlist mode)
+- [x] `default_action allow` - permit all authenticated users (blocklist mode)
+- [x] Custom deny page/redirect for unauthorized users
+- [x] Require specific entitlement for route access (`require_entitlement admin`)
 
 ### Integration
 
-- [ ] Combine with SAML attributes (local entitlements supplement IdP-provided ones)
-- [ ] Example: `examples/local-entitlements/` with Caddyfile and sample JSON
+- [x] Combine with SAML attributes (local entitlements supplement IdP-provided ones)
+- [x] Example: `examples/local-entitlements/` with Caddyfile and sample JSON
 - [ ] Documentation: when to use local entitlements vs external authz
 
 ### Testing
 
-- [ ] Unit tests for pattern matching
-- [ ] Integration tests for file reload
-- [ ] Fuzz test for pattern matching (ReDoS prevention)
-- [ ] Property-based test for allowlist/blocklist consistency
+- [x] Unit tests for pattern matching
+- [x] Integration tests for file reload
+- [x] Fuzz test for pattern matching (ReDoS prevention)
+- [x] Property-based test for allowlist/blocklist consistency
 
 **Outcome:** Small deployments can manage access control without external authorization infrastructure.
 

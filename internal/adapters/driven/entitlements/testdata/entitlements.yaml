@@ -1,0 +1,11 @@
+default_action: deny
+entries:
+  - subject: admin@example.edu
+    roles: [admin, staff]
+    metadata:
+      department: IT
+      access_level: full
+  - pattern: "*@example.edu"
+    roles: [user]
+  - pattern: "staff@*"
+    roles: [staff]

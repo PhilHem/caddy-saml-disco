@@ -283,6 +283,60 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			s.AuthnContextComparison = d.Val()
 
+		case "entitlements_file":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.EntitlementsFile = d.Val()
+
+		case "entitlements_refresh_interval":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.EntitlementsRefreshInterval = d.Val()
+
+		case "entitlement_headers":
+			// Parse the entitlement_headers block
+			// Syntax:
+			//   entitlement_headers {
+			//       <field> <header_name> [<separator>]
+			//   }
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				args := []string{d.Val()}
+				args = append(args, d.RemainingArgs()...)
+
+				if len(args) < 2 || len(args) > 3 {
+					return d.Errf("entitlement_headers: expected 2-3 arguments (field header_name [separator]), got %d", len(args))
+				}
+
+				mapping := EntitlementHeaderMapping{
+					Field:     args[0],
+					HeaderName: args[1],
+				}
+				if len(args) == 3 {
+					mapping.Separator = args[2]
+				}
+
+				// Validate header name at parse time
+				if !IsValidHeaderName(mapping.HeaderName) {
+					return d.Errf("entitlement_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
+				}
+
+				s.EntitlementHeaders = append(s.EntitlementHeaders, mapping)
+			}
+
+		case "require_entitlement":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.RequireEntitlement = d.Val()
+
+		case "entitlement_deny_redirect":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.EntitlementDenyRedirect = d.Val()
+
 		default:
 			return d.Errf("unrecognized subdirective: %s", d.Val())
 		}

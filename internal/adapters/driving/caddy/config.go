@@ -152,6 +152,26 @@ type Config struct {
 	// Valid values: "exact", "minimum", "maximum", "better", or "" (defaults to "exact").
 	// See SAML 2.0 Core specification section 3.3.2.2.1 for details.
 	AuthnContextComparison string `json:"authn_context_comparison,omitempty"`
+
+	// EntitlementsFile is the path to a local entitlements file (JSON/YAML).
+	// When set, enables file-based authorization.
+	EntitlementsFile string `json:"entitlements_file,omitempty"`
+
+	// EntitlementsRefreshInterval is how often to reload the entitlements file.
+	// Defaults to "5m" if not specified.
+	EntitlementsRefreshInterval string `json:"entitlements_refresh_interval,omitempty"`
+
+	// EntitlementHeaders maps entitlement fields to HTTP headers.
+	// Similar to AttributeHeaders but for local entitlements.
+	EntitlementHeaders []EntitlementHeaderMapping `json:"entitlement_headers,omitempty"`
+
+	// RequireEntitlement specifies an entitlement role required for access.
+	// Returns 403 if authenticated user lacks this role.
+	RequireEntitlement string `json:"require_entitlement,omitempty"`
+
+	// EntitlementDenyRedirect is the URL to redirect unauthorized users to.
+	// If empty, returns a 403 Forbidden response.
+	EntitlementDenyRedirect string `json:"entitlement_deny_redirect,omitempty"`
 }
 
 // AltLoginConfig represents an alternative login method (non-SAML).
@@ -173,6 +193,19 @@ type AttributeMapping struct {
 	// Separator is the string used to join multiple attribute values.
 	// Defaults to ";" if empty (Shibboleth convention).
 	// Common alternatives: "," (HTTP convention), "|"
+	Separator string `json:"separator,omitempty"`
+}
+
+// EntitlementHeaderMapping maps an entitlement field to an HTTP header.
+type EntitlementHeaderMapping struct {
+	// Field is the entitlement field to map (e.g., "roles", "department").
+	Field string `json:"field"`
+
+	// HeaderName is the HTTP header name to set. Must start with "X-".
+	HeaderName string `json:"header_name"`
+
+	// Separator is the string used to join multiple values (for roles).
+	// Defaults to ";" if empty.
 	Separator string `json:"separator,omitempty"`
 }
 
@@ -236,6 +269,25 @@ func (c *Config) Validate() error {
 			if !IsValidHeaderName(m.HeaderName) {
 				return fmt.Errorf("attribute_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
 			}
+		}
+	}
+
+	// Validate entitlements config
+	if c.RequireEntitlement != "" && c.EntitlementsFile == "" {
+		return fmt.Errorf("entitlements_file is required when require_entitlement is set")
+	}
+
+	// Validate entitlement header mappings
+	for i, m := range c.EntitlementHeaders {
+		if m.Field == "" {
+			return fmt.Errorf("entitlement_headers[%d]: field is required", i)
+		}
+		if m.HeaderName == "" {
+			return fmt.Errorf("entitlement_headers[%d]: header_name is required", i)
+		}
+
+		if !IsValidHeaderName(m.HeaderName) {
+			return fmt.Errorf("entitlement_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
 		}
 	}
 

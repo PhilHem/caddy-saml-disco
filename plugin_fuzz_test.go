@@ -147,6 +147,39 @@ func checkRelayStateInvariants(t *testing.T, input, result string) {
 	}
 }
 
+// FuzzValidateDenyRedirect tests that ValidateDenyRedirect always returns safe output.
+// Cycle 9: Fuzz Test for Deny Redirect
+func FuzzValidateDenyRedirect(f *testing.F) {
+	seeds := []string{
+		"/denied",
+		"//evil.com/path",
+		"javascript:alert(1)",
+		"https://good.com/denied",
+		"\r\nSet-Cookie: evil=1",
+		"http://insecure.com",
+		"/path?redirect=//evil.com",
+		"%2f%2fevil.com",
+		"data:text/html,evil",
+		"vbscript:msgbox(1)",
+		"",
+		"https://sso.example.com/denied",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		result := caddyadapter.ValidateDenyRedirect(input)
+		// Must never panic
+		// Must never return dangerous schemes
+		if result != "" {
+			parsed, err := url.Parse(result)
+			if err == nil && parsed.Scheme != "" && parsed.Scheme != "https" {
+				t.Errorf("unsafe scheme %q in result %q", parsed.Scheme, result)
+			}
+		}
+	})
+}
+
 // FuzzValidateRelayState tests that validateRelayState always returns safe output.
 // Uses minimal seed corpus for fast local development runs.
 // Run with -fuzztime=5s for quick checks.

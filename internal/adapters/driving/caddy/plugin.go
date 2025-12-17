@@ -3,6 +3,7 @@ package caddy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/entitlements"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/logo"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metrics"
@@ -61,6 +63,7 @@ type SAMLDisco struct {
 	metadataStore       ports.MetadataStore
 	sessionStore        ports.SessionStore
 	logoStore           ports.LogoStore
+	entitlementStore    ports.EntitlementStore
 	samlService         *SAMLService
 	sessionDuration     time.Duration
 	rememberIdPDuration time.Duration
@@ -260,6 +263,17 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		s.rememberIdPDuration = rememberDur
 	}
 
+	// Initialize entitlement store if configured
+	if s.EntitlementsFile != "" {
+		entitlementStore := entitlements.NewFileEntitlementStore(s.EntitlementsFile, s.logger)
+		if err := entitlementStore.Refresh(ctx); err != nil {
+			return fmt.Errorf("load entitlements file: %w", err)
+		}
+		s.entitlementStore = entitlementStore
+		s.logger.Info("entitlements file loaded",
+			zap.String("file", s.EntitlementsFile))
+	}
+
 	// Initialize template renderer
 	if s.TemplatesDir != "" {
 		renderer, err := NewTemplateRendererWithDir(s.TemplatesDir)
@@ -402,6 +416,18 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 		}
 	}
 
+	// Initialize entitlement store if configured
+	if spCfg.EntitlementsFile != "" {
+		entitlementStore := entitlements.NewFileEntitlementStore(spCfg.EntitlementsFile, s.logger)
+		if err := entitlementStore.Refresh(ctx); err != nil {
+			return fmt.Errorf("load entitlements file: %w", err)
+		}
+		spCfg.entitlementStore = entitlementStore
+		s.logger.Info("entitlements file loaded",
+			zap.String("hostname", spCfg.Hostname),
+			zap.String("file", spCfg.EntitlementsFile))
+	}
+
 	// Initialize template renderer (shared across all SPs for now)
 	// TODO: Consider per-SP template renderers if needed
 	if spCfg.TemplatesDir != "" {
@@ -445,6 +471,7 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			// Copy instance-level stores/services
 			metadataStore:    s.metadataStore,
 			sessionStore:     s.sessionStore,
+			entitlementStore: s.entitlementStore,
 			logoStore:        s.logoStore,
 			samlService:      s.samlService,
 			sessionDuration:  s.sessionDuration,
@@ -536,7 +563,8 @@ func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next 
 		r = r.WithContext(ctx)
 
 		// Apply attribute-to-header mapping if configured
-		if len(spConfig.AttributeHeaders) > 0 {
+		// Check both AttributeHeaders and EntitlementHeaders
+		if len(spConfig.AttributeHeaders) > 0 || len(spConfig.EntitlementHeaders) > 0 {
 			s.applyAttributeHeadersForSP(r, session, spConfig)
 		}
 	}
@@ -673,8 +701,41 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	// Set session cookie
 	s.setSessionCookie(w, r, token)
 
+	// Check entitlements if configured
+	if s.entitlementStore != nil {
+		entitlementResult, err := s.entitlementStore.Lookup(session.Subject)
+		if err != nil {
+			// ErrEntitlementNotFound means user is not authorized
+			if errors.Is(err, domain.ErrEntitlementNotFound) {
+				s.handleDenied(w, r, session.Subject)
+				return nil
+			}
+			// Other errors are unexpected
+			s.getLogger().Error("entitlement lookup failed",
+				zap.Error(err),
+				zap.String("subject", session.Subject))
+			s.renderAppError(w, r, domain.ServiceError("Failed to check entitlements"))
+			return err
+		}
+
+		// Check require_entitlement if configured
+		if s.RequireEntitlement != "" {
+			hasRole := false
+			for _, role := range entitlementResult.Roles {
+				if role == s.RequireEntitlement {
+					hasRole = true
+					break
+				}
+			}
+			if !hasRole {
+				s.handleDenied(w, r, session.Subject)
+				return nil
+			}
+		}
+	}
+
 	// Redirect to relay state or default page
-		relayState := ValidateRelayState(r.FormValue("RelayState"))
+	relayState := ValidateRelayState(r.FormValue("RelayState"))
 	http.Redirect(w, r, relayState, http.StatusFound)
 	return nil
 }
@@ -820,45 +881,99 @@ func (s *SAMLDisco) getDefaultLanguage() string {
 // applyAttributeHeaders maps SAML session attributes to HTTP headers on the request.
 // This enables downstream handlers to access user attributes via headers like X-Remote-User.
 // Only headers with X- prefix are allowed for security.
+// If entitlements are configured, local entitlements supplement IdP-provided SAML attributes.
 func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Session) {
-	if len(s.AttributeHeaders) == 0 {
+	if len(s.AttributeHeaders) == 0 && len(s.EntitlementHeaders) == 0 {
 		return
 	}
 
+	// Strip incoming headers if configured (for both SAML and entitlement headers)
 	if s.shouldStripAttributeHeaders() {
 		for _, mapping := range s.AttributeHeaders {
 			// Strip using prefixed header name if prefix is configured
 			headerToStrip := ApplyHeaderPrefix(s.HeaderPrefix, mapping.HeaderName)
+			headerToStrip = http.CanonicalHeaderKey(headerToStrip)
+			r.Header.Del(headerToStrip)
+		}
+		for _, mapping := range s.EntitlementHeaders {
+			headerToStrip := ApplyHeaderPrefix(s.HeaderPrefix, mapping.HeaderName)
+			headerToStrip = http.CanonicalHeaderKey(headerToStrip)
 			r.Header.Del(headerToStrip)
 		}
 	}
 
-	if session == nil || len(session.Attributes) == 0 {
+	if session == nil {
 		return
 	}
 
 	// Convert single-valued session attributes to multi-valued format
 	// (Session stores map[string]string for backward compatibility,
 	// but MapAttributesToHeaders accepts map[string][]string)
-	multiAttrs := make(map[string][]string, len(session.Attributes))
-	for k, v := range session.Attributes {
-		multiAttrs[k] = []string{v}
+	var multiAttrs map[string][]string
+	if len(session.Attributes) > 0 {
+		multiAttrs = make(map[string][]string, len(session.Attributes))
+		for k, v := range session.Attributes {
+			multiAttrs[k] = []string{v}
+		}
 	}
 
-	// Map attributes to headers (with prefix if configured)
-	headers, err := MapAttributesToHeadersWithPrefix(multiAttrs, s.AttributeHeaders, s.HeaderPrefix)
-	if err != nil {
-		// Configuration error - should have been caught at startup
-		s.getLogger().Error("failed to map attributes to headers",
-			zap.Error(err),
-			zap.String("subject", session.Subject),
-		)
-		return
+	// Look up entitlements if configured
+	var entitlementResult *domain.EntitlementResult
+	if s.entitlementStore != nil {
+		result, err := s.entitlementStore.Lookup(session.Subject)
+		if err != nil {
+			// Log error but continue - entitlements are supplementary
+			// ErrEntitlementNotFound is expected for users not in entitlements file
+			if !errors.Is(err, domain.ErrEntitlementNotFound) {
+				s.getLogger().Warn("entitlement lookup failed during header mapping",
+					zap.Error(err),
+					zap.String("subject", session.Subject),
+				)
+			}
+		} else {
+			entitlementResult = result
+		}
 	}
 
-	// Set headers on the request
-	for header, value := range headers {
-		r.Header.Set(header, value)
+	// Combine SAML attributes with local entitlements
+	combined := domain.CombineAttributes(multiAttrs, entitlementResult)
+
+		// Map SAML attributes to headers (if AttributeHeaders configured)
+		if len(s.AttributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
+			headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, s.AttributeHeaders, s.HeaderPrefix)
+			if err != nil {
+				// Configuration error - should have been caught at startup
+				s.getLogger().Error("failed to map attributes to headers",
+					zap.Error(err),
+					zap.String("subject", session.Subject),
+				)
+				return
+			}
+
+			// Set headers on the request
+			for header, value := range headers {
+				canonicalHeader := http.CanonicalHeaderKey(header)
+				r.Header.Set(canonicalHeader, value)
+			}
+		}
+
+	// Map entitlements to headers (if EntitlementHeaders configured)
+	if len(s.EntitlementHeaders) > 0 && entitlementResult != nil {
+		entitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, s.EntitlementHeaders)
+		if err != nil {
+			s.getLogger().Error("failed to map entitlements to headers",
+				zap.Error(err),
+				zap.String("subject", session.Subject),
+			)
+			return
+		}
+
+		// Apply prefix to entitlement headers
+		for header, value := range entitlementHeaders {
+			finalHeader := ApplyHeaderPrefix(s.HeaderPrefix, header)
+			finalHeader = http.CanonicalHeaderKey(finalHeader)
+			r.Header.Set(finalHeader, value)
+		}
 	}
 }
 
@@ -867,6 +982,15 @@ func (s *SAMLDisco) shouldStripAttributeHeaders() bool {
 		return true
 	}
 	return *s.StripAttributeHeaders
+}
+
+// shouldStripAttributeHeadersForSP returns whether headers should be stripped for an SP config.
+// Defaults to true when StripAttributeHeaders is nil (consistent with single-SP behavior).
+func shouldStripAttributeHeadersForSP(spConfig *SPConfig) bool {
+	if spConfig == nil || spConfig.StripAttributeHeaders == nil {
+		return true
+	}
+	return *spConfig.StripAttributeHeaders
 }
 
 // getLogger returns the logger, or a no-op logger if not set.
@@ -946,6 +1070,33 @@ func (s *SAMLDisco) renderHTTPError(w http.ResponseWriter, statusCode int, title
 
 // renderAppError renders an AppError as JSON for API endpoints or HTML for others.
 // API endpoints are detected by the /saml/api/ path prefix.
+// handleDenied handles access denied responses.
+// If EntitlementDenyRedirect is configured and valid, redirects to that URL.
+// Otherwise, returns 403 Forbidden with error page.
+func (s *SAMLDisco) handleDenied(w http.ResponseWriter, r *http.Request, subject string) {
+	redirect := ValidateDenyRedirect(s.EntitlementDenyRedirect)
+	if redirect != "" {
+		http.Redirect(w, r, redirect, http.StatusFound)
+		return
+	}
+	// Default 403 with error page
+	// Create a custom AppError with 403 status (Forbidden)
+	accessDeniedError := &domain.AppError{
+		Code:    domain.ErrCodeBadRequest, // Use BadRequest as base, but override status
+		Message: "Access denied by entitlements policy",
+		Cause:   domain.ErrAccessDenied,
+	}
+	// Override HTTP status to 403
+	statusCode := http.StatusForbidden
+	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		json.NewEncoder(w).Encode(domain.NewJSONErrorResponse(accessDeniedError))
+		return
+	}
+	s.renderHTTPError(w, statusCode, "Access Denied", accessDeniedError.Message)
+}
+
 func (s *SAMLDisco) renderAppError(w http.ResponseWriter, r *http.Request, err *domain.AppError) {
 	statusCode := err.Code.HTTPStatus()
 
@@ -1378,6 +1529,67 @@ func ValidateRelayState(relayState string) string {
 	return relayState
 }
 
+// ValidateDenyRedirect validates a deny redirect URL.
+// Returns the URL if valid, empty string if invalid.
+// Allows relative paths or absolute HTTPS URLs.
+// Empty string is valid (means use 403, not redirect).
+// This prevents open redirect vulnerabilities.
+// Exported for testing purposes.
+func ValidateDenyRedirect(redirectURL string) string {
+	// Empty string is valid (means use 403, not redirect)
+	redirectURL = strings.TrimSpace(redirectURL)
+	if redirectURL == "" {
+		return ""
+	}
+
+	// Parse to detect schemes and other tricks
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		return ""
+	}
+
+	// If it has a scheme, must be https
+	if parsed.Scheme != "" {
+		if parsed.Scheme != "https" {
+			return ""
+		}
+		// Must have a host for absolute URLs
+		if parsed.Host == "" {
+			return ""
+		}
+		return redirectURL
+	}
+
+	// No scheme means relative path - validate like RelayState
+	// Must start with single forward slash (relative path)
+	// Reject protocol-relative URLs (//evil.com)
+	if !strings.HasPrefix(redirectURL, "/") || strings.HasPrefix(redirectURL, "//") {
+		return ""
+	}
+
+	// Reject if parsed URL has a host (shouldn't happen with leading / but be safe)
+	if parsed.Host != "" {
+		return ""
+	}
+
+	// Reject paths with newlines (header injection)
+	if strings.ContainsAny(redirectURL, "\r\n") {
+		return ""
+	}
+
+	// Check for encoded characters that could bypass validation
+	// Decode and re-check for protocol-relative URLs
+	decoded, err := url.QueryUnescape(redirectURL)
+	if err != nil {
+		return ""
+	}
+	if strings.HasPrefix(decoded, "//") {
+		return ""
+	}
+
+	return redirectURL
+}
+
 // setSessionCookie sets the session cookie on the response.
 func (s *SAMLDisco) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
@@ -1517,6 +1729,11 @@ func (s *SAMLDisco) SetSAMLService(service *SAMLService) {
 // SetSessionStore sets the session store for testing.
 func (s *SAMLDisco) SetSessionStore(store ports.SessionStore) {
 	s.sessionStore = store
+}
+
+// SetEntitlementStore sets the entitlement store for testing.
+func (s *SAMLDisco) SetEntitlementStore(store ports.EntitlementStore) {
+	s.entitlementStore = store
 }
 
 // SetTemplateRenderer sets the template renderer for testing.
@@ -1831,26 +2048,88 @@ func (s *SAMLDisco) resolveAcsURLForSP(r *http.Request, spConfig *SPConfig) *url
 }
 
 func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.Session, spConfig *SPConfig) {
-	// Strip incoming headers if configured
-	if spConfig.StripAttributeHeaders != nil && *spConfig.StripAttributeHeaders {
+	// Strip incoming headers if configured (for both SAML and entitlement headers)
+	if shouldStripAttributeHeadersForSP(spConfig) {
 		for _, mapping := range spConfig.AttributeHeaders {
 			headerName := ApplyHeaderPrefix(spConfig.HeaderPrefix, mapping.HeaderName)
+			headerName = http.CanonicalHeaderKey(headerName)
+			r.Header.Del(headerName)
+		}
+		for _, mapping := range spConfig.EntitlementHeaders {
+			headerName := ApplyHeaderPrefix(spConfig.HeaderPrefix, mapping.HeaderName)
+			headerName = http.CanonicalHeaderKey(headerName)
 			r.Header.Del(headerName)
 		}
 	}
 
-	// Apply attribute mappings
-	for _, mapping := range spConfig.AttributeHeaders {
-		headerName := ApplyHeaderPrefix(spConfig.HeaderPrefix, mapping.HeaderName)
-		values := session.Attributes[mapping.SAMLAttribute]
-		if values != "" {
-			// Use separator if configured, otherwise default to ";"
-			separator := mapping.Separator
-			if separator == "" {
-				separator = ";"
+	if session == nil {
+		return
+	}
+
+	// Convert single-valued session attributes to multi-valued format
+	var multiAttrs map[string][]string
+	if len(session.Attributes) > 0 {
+		multiAttrs = make(map[string][]string, len(session.Attributes))
+		for k, v := range session.Attributes {
+			multiAttrs[k] = []string{v}
+		}
+	}
+
+	// Look up entitlements if configured
+	var entitlementResult *domain.EntitlementResult
+	if spConfig.entitlementStore != nil {
+		result, err := spConfig.entitlementStore.Lookup(session.Subject)
+		if err != nil {
+			// Log error but continue - entitlements are supplementary
+			// ErrEntitlementNotFound is expected for users not in entitlements file
+			if !errors.Is(err, domain.ErrEntitlementNotFound) {
+				s.getLogger().Warn("entitlement lookup failed during header mapping",
+					zap.Error(err),
+					zap.String("subject", session.Subject),
+				)
 			}
-			// For now, single value (multi-value support can be added later)
-			r.Header.Set(headerName, values)
+		} else {
+			entitlementResult = result
+		}
+	}
+
+	// Combine SAML attributes with local entitlements
+	combined := domain.CombineAttributes(multiAttrs, entitlementResult)
+
+	// Map SAML attributes to headers (if AttributeHeaders configured)
+	if len(spConfig.AttributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
+		headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, spConfig.AttributeHeaders, spConfig.HeaderPrefix)
+		if err != nil {
+			s.getLogger().Error("failed to map attributes to headers",
+				zap.Error(err),
+				zap.String("subject", session.Subject),
+			)
+			return
+		}
+
+		// Set headers on the request
+		for header, value := range headers {
+			canonicalHeader := http.CanonicalHeaderKey(header)
+			r.Header.Set(canonicalHeader, value)
+		}
+	}
+
+	// Map entitlements to headers (if EntitlementHeaders configured)
+	if len(spConfig.EntitlementHeaders) > 0 && entitlementResult != nil {
+		entitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, spConfig.EntitlementHeaders)
+		if err != nil {
+			s.getLogger().Error("failed to map entitlements to headers",
+				zap.Error(err),
+				zap.String("subject", session.Subject),
+			)
+			return
+		}
+
+		// Apply prefix to entitlement headers
+		for header, value := range entitlementHeaders {
+			finalHeader := ApplyHeaderPrefix(spConfig.HeaderPrefix, header)
+			finalHeader = http.CanonicalHeaderKey(finalHeader)
+			r.Header.Set(finalHeader, value)
 		}
 	}
 }

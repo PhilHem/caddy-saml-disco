@@ -1,0 +1,99 @@
+# Local Entitlements Example
+#
+# This example demonstrates file-based authorization using local entitlements.
+# Users are authenticated via SAML, then authorized based on entries in
+# entitlements.json.
+#
+# Key features demonstrated:
+# - Allowlist mode (default_action: deny) - only listed users can access
+# - Pattern matching (*@example.edu, staff@*)
+# - Entitlement header injection (roles, metadata)
+# - Route protection (require_entitlement admin)
+# - Custom deny redirect for unauthorized users
+
+myapp.example.com {
+    saml_disco {
+        # Required: SP Entity ID (must match IdP configuration)
+        entity_id https://myapp.example.com/saml
+
+        # Required: IdP metadata source
+        metadata_file /etc/caddy/saml/idp-metadata.xml
+        # Alternative: Use URL for federation aggregates
+        # metadata_url https://federation.example.edu/metadata/idps.xml
+
+        # Required: SP credentials for signing AuthnRequests
+        cert_file /etc/caddy/saml/sp-cert.pem
+        key_file /etc/caddy/saml/sp-key.pem
+
+        # Enable local entitlements
+        entitlements_file ./entitlements.json
+        entitlements_refresh_interval 5m
+
+        # Map entitlement fields to HTTP headers
+        # These headers will be available to downstream handlers
+        entitlement_headers {
+            roles X-Entitlement-Roles ;
+            department X-Department
+        }
+
+        # Require 'admin' role for all routes (can be overridden per-route)
+        require_entitlement admin
+
+        # Custom redirect for unauthorized users (defaults to 403)
+        entitlement_deny_redirect /unauthorized
+
+        # Session configuration
+        session_duration 8h
+        session_cookie_name saml_auth
+    }
+
+    # Admin-only route (requires 'admin' role from entitlements)
+    handle /admin/* {
+        reverse_proxy localhost:8080
+    }
+
+    # Public route (any authenticated user with any role)
+    # Note: require_entitlement applies globally, but you can override
+    # by removing it and checking headers in your application
+    handle /* {
+        reverse_proxy localhost:8080
+    }
+
+    # Unauthorized page
+    handle /unauthorized {
+        respond "Access Denied: You do not have the required permissions." 403
+    }
+}
+
+# -------------------------------------------------------------------
+# Alternative: Blocklist mode (default_action: allow)
+# -------------------------------------------------------------------
+#
+# To use blocklist mode, change entitlements.json:
+# {
+#   "default_action": "allow",
+#   "entries": [
+#     {
+#       "pattern": "contractor@*",
+#       "roles": ["contractor"]
+#     }
+#   ]
+# }
+#
+# This allows all authenticated users EXCEPT those matching patterns.
+# Users matching patterns get their roles but are still allowed access
+# (unless require_entitlement is set).
+
+# -------------------------------------------------------------------
+# Alternative: Per-route entitlement checking
+# -------------------------------------------------------------------
+#
+# Instead of global require_entitlement, check headers in your app:
+#
+# handle /admin/* {
+#     reverse_proxy localhost:8080 {
+#         header_up X-Entitlement-Roles {http.request.header.X-Entitlement-Roles}
+#     }
+# }
+#
+# Your application can then check X-Entitlement-Roles header for "admin".

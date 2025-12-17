@@ -19,11 +19,12 @@ type SPConfig struct {
 
 	// Per-SP runtime state (initialized in Provision)
 	// These fields are populated during provisioning and are not serialized.
-	metadataStore   ports.MetadataStore
-	sessionStore    ports.SessionStore
-	logoStore       ports.LogoStore
-	samlService     *SAMLService
-	sessionDuration time.Duration
+	metadataStore    ports.MetadataStore
+	sessionStore     ports.SessionStore
+	entitlementStore ports.EntitlementStore
+	logoStore        ports.LogoStore
+	samlService      *SAMLService
+	sessionDuration  time.Duration
 	templateRenderer *TemplateRenderer
 }
 

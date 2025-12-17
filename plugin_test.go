@@ -867,6 +867,58 @@ func TestValidateRelayState(t *testing.T) {
 	}
 }
 
+// TestValidateDenyRedirect verifies that deny redirect URL validation prevents open redirects.
+// Cycle 1: RED - Write failing test for ValidateDenyRedirect function
+func TestValidateDenyRedirect(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string // empty string means invalid/rejected
+	}{
+		// Valid relative paths - should be allowed
+		{"relative path", "/access-denied", "/access-denied"},
+		{"root path", "/", "/"},
+		{"path with query", "/denied?reason=unauthorized", "/denied?reason=unauthorized"},
+		{"nested path", "/app/access-denied", "/app/access-denied"},
+
+		// Valid absolute HTTPS URLs - should be allowed
+		{"absolute https", "https://sso.example.com/denied", "https://sso.example.com/denied"},
+		{"absolute https with path", "https://sso.example.com/app/denied", "https://sso.example.com/app/denied"},
+		{"absolute https with port", "https://sso.example.com:8443/denied", "https://sso.example.com:8443/denied"},
+
+		// Empty string is valid (means use 403, not redirect)
+		{"empty string", "", ""},
+
+		// Protocol-relative URLs - should be rejected
+		{"protocol-relative", "//evil.com", ""},
+		{"protocol-relative with path", "//evil.com/path", ""},
+
+		// Absolute HTTP URLs - should be rejected (insecure)
+		{"absolute http", "http://evil.com", ""},
+		{"absolute http with path", "http://evil.com/denied", ""},
+
+		// Dangerous schemes - should be rejected
+		{"javascript scheme", "javascript:alert(1)", ""},
+		{"data scheme", "data:text/html,evil", ""},
+		{"vbscript scheme", "vbscript:msgbox(1)", ""},
+		{"file scheme", "file:///etc/passwd", ""},
+
+		// Edge cases
+		{"encoded slashes", "%2f%2fevil.com", ""},
+		{"newline in path", "/path\nHeader: injection", ""}, // header injection blocked
+		{"whitespace only", "   ", ""},                      // trimmed to empty, valid
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValidateDenyRedirect(tc.input)
+			if got != tc.expected {
+				t.Errorf("ValidateDenyRedirect(%q) = %q, want %q", tc.input, got, tc.expected)
+			}
+		})
+	}
+}
+
 // TestServeHTTP_LogoutEndpoint_ClearsCookie verifies that GET /saml/logout
 // clears the session cookie by setting MaxAge to -1.
 func TestServeHTTP_LogoutEndpoint_ClearsCookie(t *testing.T) {
