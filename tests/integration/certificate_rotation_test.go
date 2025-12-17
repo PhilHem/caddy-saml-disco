@@ -230,3 +230,6 @@ func TestCertificateRotation_Integration_EmptyCertificates(t *testing.T) {
 		t.Logf("StartAuth error (may be acceptable): %v", authErr)
 	}
 }
+
+
+

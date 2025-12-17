@@ -111,3 +111,6 @@ func TestEncryptedAssertion_ErrorHandling(t *testing.T) {
 
 	t.Log("Error handling verified: Invalid encrypted data returns error")
 }
+
+
+

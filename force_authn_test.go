@@ -68,3 +68,6 @@ func TestMatchesForceAuthnPath_NoMatch(t *testing.T) {
 		t.Error("non-matching path should not match")
 	}
 }
+
+
+

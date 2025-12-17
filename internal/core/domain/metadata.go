@@ -74,6 +74,14 @@ type IdPInfo struct {
 	// Extracted from shibmd:Scope elements in IdP metadata.
 	// Scoped attributes (like eduPersonPrincipalName) must have scopes matching these.
 	AllowedScopes []ScopeInfo `json:"allowed_scopes,omitempty"`
+
+	// EntityCategories contains entity category URIs (e.g., R&S, Code of Conduct).
+	// Extracted from mdattr:EntityAttributes with Name="http://macedir.org/entity-category".
+	EntityCategories []string `json:"entity_categories,omitempty"`
+
+	// AssuranceCertifications contains assurance certification URIs (e.g., SIRTFI).
+	// Extracted from mdattr:EntityAttributes with Name="urn:oasis:names:tc:SAML:attribute:assurance-certification".
+	AssuranceCertifications []string `json:"assurance_certifications,omitempty"`
 }
 
 // UIInfo represents the mdui:UIInfo element for IdP display metadata.
@@ -115,6 +123,13 @@ type ScopeInfo struct {
 	// Regexp indicates whether Value should be interpreted as a regular expression.
 	// If false, Value is matched exactly (case-sensitive).
 	Regexp bool `json:"regexp"`
+}
+
+// EntityAttributesInfo represents parsed mdattr:EntityAttributes.
+// Contains entity categories (e.g., R&S) and assurance certifications (e.g., SIRTFI).
+type EntityAttributesInfo struct {
+	EntityCategories        []string
+	AssuranceCertifications []string
 }
 
 // MetadataHealth reports the health status of a metadata store.
@@ -419,3 +434,6 @@ func validateScopeRegex(scope, pattern string) (bool, error) {
 	// Match with anchored pattern (^...$)
 	return re.MatchString(scope), nil
 }
+
+
+

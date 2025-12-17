@@ -25,6 +25,8 @@ func (RealClock) Now() time.Time { return time.Now() }
 type metadataOptions struct {
 	idpFilter                   string
 	registrationAuthorityFilter string
+	entityCategoryFilter        string
+	assuranceCertificationFilter string
 	signatureVerifier           ports.SignatureVerifier
 	logger                      *zap.Logger
 	metricsRecorder             ports.MetricsRecorder
@@ -48,6 +50,26 @@ func WithIdPFilter(pattern string) MetadataOption {
 func WithRegistrationAuthorityFilter(pattern string) MetadataOption {
 	return func(o *metadataOptions) {
 		o.registrationAuthorityFilter = pattern
+	}
+}
+
+// WithEntityCategoryFilter returns an option that filters IdPs by entity category.
+// Only IdPs that have at least one of the specified entity categories will be loaded.
+// Supports comma-separated categories (OR logic - IdP must have at least one).
+// Example: "http://refeds.org/category/research-and-scholarship,https://refeds.org/category/code-of-conduct/v2"
+func WithEntityCategoryFilter(categories string) MetadataOption {
+	return func(o *metadataOptions) {
+		o.entityCategoryFilter = categories
+	}
+}
+
+// WithAssuranceCertificationFilter returns an option that filters IdPs by assurance certification.
+// Only IdPs that have at least one of the specified assurance certifications will be loaded.
+// Supports comma-separated certifications (OR logic - IdP must have at least one).
+// Example: "https://refeds.org/sirtfi"
+func WithAssuranceCertificationFilter(certifications string) MetadataOption {
+	return func(o *metadataOptions) {
+		o.assuranceCertificationFilter = certifications
 	}
 }
 
@@ -90,3 +112,6 @@ func WithClock(clock Clock) MetadataOption {
 		o.clock = clock
 	}
 }
+
+
+

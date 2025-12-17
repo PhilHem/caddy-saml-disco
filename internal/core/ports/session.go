@@ -22,3 +22,6 @@ type SessionStore interface {
 
 // ErrSessionNotFound is returned when a session cannot be found or is invalid.
 var ErrSessionNotFound = errors.New("session not found")
+
+
+

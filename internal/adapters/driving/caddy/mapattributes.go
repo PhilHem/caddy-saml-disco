@@ -68,6 +68,10 @@ func MapAttributesToHeaders(attrs map[string][]string, mappings []AttributeMappi
 		}
 		// Sanitize separator too
 		sep = sanitizeHeaderValue(sep)
+		// Re-default if sanitization removed all characters
+		if sep == "" {
+			sep = ";"
+		}
 
 		// Join and sanitize
 		joined := strings.Join(nonEmpty, sep)
@@ -81,3 +85,6 @@ func MapAttributesToHeaders(attrs map[string][]string, mappings []AttributeMappi
 
 	return result, nil
 }
+
+
+

@@ -21,6 +21,8 @@ type FileMetadataStore struct {
 	path                        string
 	idpFilter                   string
 	registrationAuthorityFilter string
+	entityCategoryFilter        string
+	assuranceCertificationFilter string
 	signatureVerifier           ports.SignatureVerifier
 	logger                      *zap.Logger
 	metricsRecorder             ports.MetricsRecorder
@@ -40,6 +42,8 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		path:                        path,
 		idpFilter:                   options.idpFilter,
 		registrationAuthorityFilter: options.registrationAuthorityFilter,
+		entityCategoryFilter:        options.entityCategoryFilter,
+		assuranceCertificationFilter: options.assuranceCertificationFilter,
 		signatureVerifier:           options.signatureVerifier,
 		logger:                      options.logger,
 		metricsRecorder:             options.metricsRecorder,
@@ -146,6 +150,28 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		}
 	}
 
+	// Apply entity category filter if configured
+	if s.entityCategoryFilter != "" {
+		idps = FilterIdPsByEntityCategory(idps, s.entityCategoryFilter)
+		if len(idps) == 0 {
+			if s.metricsRecorder != nil {
+				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
+			}
+			return fmt.Errorf("no IdPs match entity category filter %q", s.entityCategoryFilter)
+		}
+	}
+
+	// Apply assurance certification filter if configured
+	if s.assuranceCertificationFilter != "" {
+		idps = FilterIdPsByAssuranceCertification(idps, s.assuranceCertificationFilter)
+		if len(idps) == 0 {
+			if s.metricsRecorder != nil {
+				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
+			}
+			return fmt.Errorf("no IdPs match assurance certification filter %q", s.assuranceCertificationFilter)
+		}
+	}
+
 	s.mu.Lock()
 	s.idps = idps
 	s.validUntil = validUntil
@@ -214,5 +240,88 @@ func filterIdPsByRegistrationAuthority(idps []domain.IdPInfo, pattern string) []
 	return filtered
 }
 
+// FilterIdPsByEntityCategory returns only IdPs that have at least one of the specified entity categories.
+// Supports comma-separated categories (OR logic - IdP must have at least one).
+// IdPs without any entity categories are excluded when a filter is active.
+func FilterIdPsByEntityCategory(idps []domain.IdPInfo, categories string) []domain.IdPInfo {
+	if categories == "" {
+		return idps
+	}
+
+	// Parse comma-separated categories
+	categoryList := strings.Split(categories, ",")
+	for i := range categoryList {
+		categoryList[i] = strings.TrimSpace(categoryList[i])
+	}
+
+	var filtered []domain.IdPInfo
+	for _, idp := range idps {
+		// Skip IdPs without any categories
+		if len(idp.EntityCategories) == 0 {
+			continue
+		}
+		// Check if IdP has at least one of the required categories
+		hasMatch := false
+		for _, requiredCat := range categoryList {
+			for _, idpCat := range idp.EntityCategories {
+				if idpCat == requiredCat {
+					hasMatch = true
+					break
+				}
+			}
+			if hasMatch {
+				break
+			}
+		}
+		if hasMatch {
+			filtered = append(filtered, idp)
+		}
+	}
+	return filtered
+}
+
+// FilterIdPsByAssuranceCertification returns only IdPs that have at least one of the specified assurance certifications.
+// Supports comma-separated certifications (OR logic - IdP must have at least one).
+// IdPs without any assurance certifications are excluded when a filter is active.
+func FilterIdPsByAssuranceCertification(idps []domain.IdPInfo, certifications string) []domain.IdPInfo {
+	if certifications == "" {
+		return idps
+	}
+
+	// Parse comma-separated certifications
+	certList := strings.Split(certifications, ",")
+	for i := range certList {
+		certList[i] = strings.TrimSpace(certList[i])
+	}
+
+	var filtered []domain.IdPInfo
+	for _, idp := range idps {
+		// Skip IdPs without any certifications
+		if len(idp.AssuranceCertifications) == 0 {
+			continue
+		}
+		// Check if IdP has at least one of the required certifications
+		hasMatch := false
+		for _, requiredCert := range certList {
+			for _, idpCert := range idp.AssuranceCertifications {
+				if idpCert == requiredCert {
+					hasMatch = true
+					break
+				}
+			}
+			if hasMatch {
+				break
+			}
+		}
+		if hasMatch {
+			filtered = append(filtered, idp)
+		}
+	}
+	return filtered
+}
+
 // Ensure FileMetadataStore implements ports.MetadataStore
 var _ ports.MetadataStore = (*FileMetadataStore)(nil)
+
+
+

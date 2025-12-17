@@ -75,3 +75,6 @@ func IsScopedAttribute(name string) bool {
 	}
 	return scopedAttributes[name]
 }
+
+
+

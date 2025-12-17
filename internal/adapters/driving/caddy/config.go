@@ -60,6 +60,18 @@ type Config struct {
 	// Each pattern supports glob-like patterns: "*substring*", "prefix*", "*suffix".
 	RegistrationAuthorityFilter string `json:"registration_authority_filter,omitempty"`
 
+	// EntityCategoryFilter filters IdPs by entity category.
+	// Only IdPs that have at least one of the specified entity categories will be loaded.
+	// Supports comma-separated categories (OR logic - IdP must have at least one).
+	// Example: "http://refeds.org/category/research-and-scholarship,https://refeds.org/category/code-of-conduct/v2"
+	EntityCategoryFilter string `json:"entity_category_filter,omitempty"`
+
+	// AssuranceCertificationFilter filters IdPs by assurance certification.
+	// Only IdPs that have at least one of the specified assurance certifications will be loaded.
+	// Supports comma-separated certifications (OR logic - IdP must have at least one).
+	// Example: "https://refeds.org/sirtfi"
+	AssuranceCertificationFilter string `json:"assurance_certification_filter,omitempty"`
+
 	// RememberIdPCookieName is the name of the cookie that stores the last-used IdP.
 	// Defaults to "saml_last_idp".
 	RememberIdPCookieName string `json:"remember_idp_cookie_name,omitempty"`
@@ -363,4 +375,7 @@ func ApplyHeaderPrefix(prefix, headerName string) string {
 	}
 	return prefix + headerName
 }
+
+
+
 

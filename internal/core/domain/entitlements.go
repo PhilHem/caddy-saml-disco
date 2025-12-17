@@ -74,3 +74,6 @@ type EntitlementResult struct {
 func MatchesSubjectPattern(subject, pattern string) bool {
 	return MatchesEntityIDPattern(subject, pattern)
 }
+
+
+

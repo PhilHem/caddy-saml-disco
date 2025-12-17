@@ -84,3 +84,6 @@ func TestCaddyfile_MultiSP_BackwardCompatibility(t *testing.T) {
 		t.Errorf("EntityID = %q, want https://sp.example.com/saml", s.EntityID)
 	}
 }
+
+
+

@@ -62,3 +62,32 @@ func TestMapEntitlementsToHeaders_Property_NoHeaderInjection(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestMapEntitlementsToHeaders_SeparatorSanitizesToEmpty_DefaultsToSemicolon(t *testing.T) {
+	// Test that separator containing only control characters sanitizes to empty
+	// and re-defaults to ";"
+	result := &domain.EntitlementResult{
+		Roles: []string{"admin", "user", "editor"},
+	}
+
+	mappings := []EntitlementHeaderMapping{
+		{
+			Field:      "roles",
+			HeaderName: "X-Entitlement-Roles",
+			Separator:  "\r\n", // Control characters that sanitize to empty
+		},
+	}
+
+	headers, err := MapEntitlementsToHeaders(result, mappings)
+	if err != nil {
+		t.Fatalf("MapEntitlementsToHeaders() error = %v", err)
+	}
+
+	expected := "admin;user;editor"
+	if headers["X-Entitlement-Roles"] != expected {
+		t.Errorf("X-Entitlement-Roles = %q, want %q", headers["X-Entitlement-Roles"], expected)
+	}
+}
+
+
+

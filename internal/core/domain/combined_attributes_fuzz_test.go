@@ -36,3 +36,6 @@ func FuzzCombineAttributes(f *testing.F) {
 		_ = CombineAttributes(saml, local)
 	})
 }
+
+
+

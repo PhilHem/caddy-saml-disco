@@ -139,3 +139,6 @@ func (s *CachingLogoStore) fetchLogo(logoURL string) (*ports.CachedLogo, error) 
 
 // Ensure CachingLogoStore implements ports.LogoStore
 var _ ports.LogoStore = (*CachingLogoStore)(nil)
+
+
+

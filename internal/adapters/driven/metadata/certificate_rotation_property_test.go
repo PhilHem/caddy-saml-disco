@@ -247,3 +247,6 @@ func TestCertificateRotation_Property_MetadataRefreshPreservesRotationWindow(t *
 		t.Error(err)
 	}
 }
+
+
+

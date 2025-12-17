@@ -16,3 +16,6 @@ type MetricsRecorder interface {
 	// RecordMetadataRefresh records a metadata refresh attempt.
 	RecordMetadataRefresh(source string, success bool, idpCount int)
 }
+
+
+

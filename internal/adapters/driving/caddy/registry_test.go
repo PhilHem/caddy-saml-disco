@@ -64,3 +64,6 @@ func TestSPConfigRegistry_GetByHostname_CaseSensitive(t *testing.T) {
 		t.Error("should not match different case")
 	}
 }
+
+
+

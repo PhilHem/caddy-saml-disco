@@ -16,3 +16,6 @@ type EntitlementStore interface {
 	// Refresh reloads entitlements from the source.
 	Refresh(ctx context.Context) error
 }
+
+
+

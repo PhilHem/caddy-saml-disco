@@ -444,3 +444,6 @@ func TestCertificateRotation_Property_InvalidCertificateFormat(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+
+

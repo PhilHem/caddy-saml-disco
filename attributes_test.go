@@ -349,6 +349,31 @@ func TestMapAttributesToHeaders_UnknownAttribute_PassesThrough(t *testing.T) {
 	}
 }
 
+func TestMapAttributesToHeaders_SeparatorSanitizesToEmpty_DefaultsToSemicolon(t *testing.T) {
+	// Test that separator containing only control characters sanitizes to empty
+	// and re-defaults to ";"
+	attrs := map[string][]string{
+		"urn:oid:1.3.6.1.4.1.5923.1.1.1.7": {"admin", "user", "editor"},
+	}
+	mappings := []AttributeMapping{
+		{
+			SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.7",
+			HeaderName:    "X-Entitlements",
+			Separator:     "\r\n", // Control characters that sanitize to empty
+		},
+	}
+
+	result, err := MapAttributesToHeaders(attrs, mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := "admin;user;editor"
+	if result["X-Entitlements"] != expected {
+		t.Errorf("expected %q, got %q", expected, result["X-Entitlements"])
+	}
+}
+
 // =============================================================================
 // Property-Based Tests
 // =============================================================================
@@ -520,6 +545,43 @@ func TestMapAttributesToHeaders_Property_XPrefixEnforced(t *testing.T) {
 
 		// Property: headers without X- prefix must error
 		return err != nil
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestMapAttributesToHeaders_Property_EmptySeparatorDefaults(t *testing.T) {
+	// Property: Empty separator always defaults to ";" regardless of input
+	f := func(attrKey string, val1, val2 string, headerName string) bool {
+		// Ensure valid header name
+		headerName = "X-" + sanitizeForHeaderName(headerName)
+		if headerName == "X-" {
+			headerName = "X-Test"
+		}
+
+		// Skip if we don't have at least 2 values to test separator
+		if val1 == "" || val2 == "" {
+			return true
+		}
+
+		attrs := map[string][]string{attrKey: {val1, val2}}
+		mappings := []AttributeMapping{
+			{SAMLAttribute: attrKey, HeaderName: headerName, Separator: ""}, // Empty separator
+		}
+
+		result, err := MapAttributesToHeaders(attrs, mappings)
+		if err != nil {
+			return true // Invalid mapping, skip
+		}
+
+		// Property: empty separator should always default to ";"
+		if headerVal, ok := result[headerName]; ok {
+			// Should contain semicolon separator
+			return strings.Contains(headerVal, ";")
+		}
+		return true // No header produced (values might have been filtered)
 	}
 
 	if err := quick.Check(f, nil); err != nil {

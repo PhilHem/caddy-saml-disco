@@ -322,3 +322,6 @@ sp user.example.com {
 - [Main README](../../README.md) - Full plugin documentation
 - [Custom UI Example](../custom-ui/README.md) - Custom discovery UI example
 - [Caddyfile Reference](../../docs/CADDYFILE.md) - Complete directive reference
+
+
+

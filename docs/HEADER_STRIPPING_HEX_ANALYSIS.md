@@ -154,3 +154,6 @@ Property-based testing is **essential** for header stripping in our hexagonal ar
 - ✅ Surfaces edge cases automatically
 
 While probabilistic concurrency testing is less critical (single goroutine per request), property-based testing provides confidence that security-critical header stripping works correctly for all inputs.
+
+
+

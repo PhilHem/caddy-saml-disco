@@ -47,6 +47,8 @@ type URLMetadataStore = metadata.URLMetadataStore
 var (
 	WithIdPFilter                   = metadata.WithIdPFilter
 	WithRegistrationAuthorityFilter = metadata.WithRegistrationAuthorityFilter
+	WithEntityCategoryFilter        = metadata.WithEntityCategoryFilter
+	WithAssuranceCertificationFilter = metadata.WithAssuranceCertificationFilter
 	WithSignatureVerifier           = metadata.WithSignatureVerifier
 	WithLogger                      = metadata.WithLogger
 	WithMetricsRecorder             = metadata.WithMetricsRecorder
@@ -57,4 +59,6 @@ var (
 	NewFileMetadataStore            = metadata.NewFileMetadataStore
 	NewURLMetadataStore             = metadata.NewURLMetadataStore
 	NewURLMetadataStoreWithRefresh = metadata.NewURLMetadataStoreWithRefresh
+	FilterIdPsByEntityCategory     = metadata.FilterIdPsByEntityCategory
+	FilterIdPsByAssuranceCertification = metadata.FilterIdPsByAssuranceCertification
 )

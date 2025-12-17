@@ -132,3 +132,6 @@ func TestParseMetadata_NoScope(t *testing.T) {
 		t.Errorf("IdP.AllowedScopes = %v, want nil or empty", idp.AllowedScopes)
 	}
 }
+
+
+

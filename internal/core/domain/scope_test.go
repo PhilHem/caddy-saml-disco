@@ -476,3 +476,6 @@ func TestIdPInfo_AllowedScopes_Empty(t *testing.T) {
 		t.Errorf("IdPInfo.AllowedScopes = %v, want nil or empty", idp.AllowedScopes)
 	}
 }
+
+
+

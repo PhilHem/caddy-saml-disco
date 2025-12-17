@@ -27,3 +27,6 @@ func (n *NoopMetricsRecorder) RecordMetadataRefresh(source string, success bool,
 
 // Ensure NoopMetricsRecorder implements ports.MetricsRecorder
 var _ ports.MetricsRecorder = (*NoopMetricsRecorder)(nil)
+
+
+

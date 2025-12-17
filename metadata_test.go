@@ -438,6 +438,113 @@ func TestFileMetadataStore_Load_DFNAAISample_FilterByUniversity(t *testing.T) {
 	}
 }
 
+func TestFileMetadataStore_Load_DFNAAISample_EntityAttributes(t *testing.T) {
+	// Test parsing of mdattr:EntityAttributes (entity categories and assurance certifications)
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// FU Berlin: Has R&S + SIRTFI
+	idp, err := store.GetIdP("https://identity.fu-berlin.de/idp-fub")
+	if err != nil {
+		t.Fatalf("GetIdP(FU Berlin) failed: %v", err)
+	}
+
+	// Check entity categories
+	hasRS := false
+	for _, cat := range idp.EntityCategories {
+		if cat == "http://refeds.org/category/research-and-scholarship" {
+			hasRS = true
+			break
+		}
+	}
+	if !hasRS {
+		t.Errorf("GetIdP(FU Berlin).EntityCategories should contain http://refeds.org/category/research-and-scholarship, got %v", idp.EntityCategories)
+	}
+
+	// Check assurance certifications
+	hasSIRTFI := false
+	for _, cert := range idp.AssuranceCertifications {
+		if cert == "https://refeds.org/sirtfi" {
+			hasSIRTFI = true
+			break
+		}
+	}
+	if !hasSIRTFI {
+		t.Errorf("GetIdP(FU Berlin).AssuranceCertifications should contain https://refeds.org/sirtfi, got %v", idp.AssuranceCertifications)
+	}
+
+	// TUM: Has R&S + Code of Conduct v2, but no SIRTFI
+	idp, err = store.GetIdP("https://tumidp.lrz.de/idp/shibboleth")
+	if err != nil {
+		t.Fatalf("GetIdP(TUM) failed: %v", err)
+	}
+
+	hasRS = false
+	hasCoC := false
+	for _, cat := range idp.EntityCategories {
+		if cat == "http://refeds.org/category/research-and-scholarship" {
+			hasRS = true
+		}
+		if cat == "https://refeds.org/category/code-of-conduct/v2" {
+			hasCoC = true
+		}
+	}
+	if !hasRS {
+		t.Errorf("GetIdP(TUM).EntityCategories should contain http://refeds.org/category/research-and-scholarship, got %v", idp.EntityCategories)
+	}
+	if !hasCoC {
+		t.Errorf("GetIdP(TUM).EntityCategories should contain https://refeds.org/category/code-of-conduct/v2, got %v", idp.EntityCategories)
+	}
+
+	// TUM should not have SIRTFI
+	if len(idp.AssuranceCertifications) > 0 {
+		t.Errorf("GetIdP(TUM).AssuranceCertifications should be empty, got %v", idp.AssuranceCertifications)
+	}
+
+	// RWTH Aachen: Has no EntityAttributes
+	idp, err = store.GetIdP("https://login.rz.rwth-aachen.de/shibboleth")
+	if err != nil {
+		t.Fatalf("GetIdP(RWTH) failed: %v", err)
+	}
+
+	if len(idp.EntityCategories) > 0 {
+		t.Errorf("GetIdP(RWTH).EntityCategories should be empty, got %v", idp.EntityCategories)
+	}
+	if len(idp.AssuranceCertifications) > 0 {
+		t.Errorf("GetIdP(RWTH).AssuranceCertifications should be empty, got %v", idp.AssuranceCertifications)
+	}
+
+	// Max Planck: Has R&S + SIRTFI
+	idp, err = store.GetIdP("https://idp.mpg.de/idp/shibboleth")
+	if err != nil {
+		t.Fatalf("GetIdP(Max Planck) failed: %v", err)
+	}
+
+	hasRS = false
+	for _, cat := range idp.EntityCategories {
+		if cat == "http://refeds.org/category/research-and-scholarship" {
+			hasRS = true
+			break
+		}
+	}
+	if !hasRS {
+		t.Errorf("GetIdP(Max Planck).EntityCategories should contain http://refeds.org/category/research-and-scholarship, got %v", idp.EntityCategories)
+	}
+
+	hasSIRTFI = false
+	for _, cert := range idp.AssuranceCertifications {
+		if cert == "https://refeds.org/sirtfi" {
+			hasSIRTFI = true
+			break
+		}
+	}
+	if !hasSIRTFI {
+		t.Errorf("GetIdP(Max Planck).AssuranceCertifications should contain https://refeds.org/sirtfi, got %v", idp.AssuranceCertifications)
+	}
+}
+
 func TestFileMetadataStore_Load_NestedEntitiesDescriptor(t *testing.T) {
 	// Tests nested EntitiesDescriptor structure (Universities > Labs hierarchy)
 	store := NewFileMetadataStore("testdata/nested-metadata.xml")
@@ -3156,6 +3263,231 @@ func TestFileMetadataStore_BothFilters(t *testing.T) {
 	}
 
 	// Only FU Berlin should match both filters
+	if len(idps) != 1 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 1", len(idps))
+	}
+
+	if len(idps) > 0 && idps[0].EntityID != "https://identity.fu-berlin.de/idp-fub" {
+		t.Errorf("Expected FU Berlin, got %s", idps[0].EntityID)
+	}
+}
+
+// TestFilterIdPsByEntityCategory tests the pure domain filter function
+func TestFilterIdPsByEntityCategory(t *testing.T) {
+	idps := []IdPInfo{
+		{EntityID: "https://idp1.example.com", EntityCategories: []string{"http://refeds.org/category/research-and-scholarship"}},
+		{EntityID: "https://idp2.example.com", EntityCategories: []string{"https://refeds.org/category/code-of-conduct/v2"}},
+		{EntityID: "https://idp3.example.com", EntityCategories: []string{
+			"http://refeds.org/category/research-and-scholarship",
+			"https://refeds.org/category/code-of-conduct/v2",
+		}},
+		{EntityID: "https://idp4.example.com", EntityCategories: nil}, // No categories
+	}
+
+	tests := []struct {
+		name           string
+		categories     string
+		expected       int
+		expectedEntity string
+	}{
+		// Empty filter should return all IdPs
+		{"empty filter", "", 4, ""},
+		// Single category - exact match
+		{"single category R&S", "http://refeds.org/category/research-and-scholarship", 2, ""},
+		{"single category CoC", "https://refeds.org/category/code-of-conduct/v2", 2, ""},
+		// Multiple categories (OR logic - IdP must have at least one)
+		{"multiple categories", "http://refeds.org/category/research-and-scholarship,https://refeds.org/category/code-of-conduct/v2", 3, ""},
+		{"multiple with spaces", "http://refeds.org/category/research-and-scholarship, https://refeds.org/category/code-of-conduct/v2", 3, ""},
+		// No match (IdPs without categories are excluded)
+		{"no match", "https://nonexistent.org/category", 0, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := FilterIdPsByEntityCategory(idps, tc.categories)
+			if len(result) != tc.expected {
+				t.Errorf("FilterIdPsByEntityCategory(%q) returned %d IdPs, want %d",
+					tc.categories, len(result), tc.expected)
+			}
+			// Verify IdPs without categories are excluded when filter is active
+			if tc.categories != "" {
+				for _, idp := range result {
+					if len(idp.EntityCategories) == 0 {
+						t.Errorf("FilterIdPsByEntityCategory(%q) included IdP %q without categories",
+							tc.categories, idp.EntityID)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestFilterIdPsByAssuranceCertification tests the pure domain filter function
+func TestFilterIdPsByAssuranceCertification(t *testing.T) {
+	idps := []IdPInfo{
+		{EntityID: "https://idp1.example.com", AssuranceCertifications: []string{"https://refeds.org/sirtfi"}},
+		{EntityID: "https://idp2.example.com", AssuranceCertifications: []string{"https://refeds.org/sirtfi", "https://example.org/other-cert"}},
+		{EntityID: "https://idp3.example.com", AssuranceCertifications: nil}, // No certifications
+		{EntityID: "https://idp4.example.com", AssuranceCertifications: []string{"https://example.org/other-cert"}},
+	}
+
+	tests := []struct {
+		name           string
+		certifications string
+		expected       int
+	}{
+		// Empty filter should return all IdPs
+		{"empty filter", "", 4},
+		// Single certification - exact match
+		{"single certification SIRTFI", "https://refeds.org/sirtfi", 2},
+		{"single certification other", "https://example.org/other-cert", 2},
+		// Multiple certifications (OR logic - IdP must have at least one)
+		{"multiple certifications", "https://refeds.org/sirtfi,https://example.org/other-cert", 3},
+		{"multiple with spaces", "https://refeds.org/sirtfi, https://example.org/other-cert", 3},
+		// No match (IdPs without certifications are excluded)
+		{"no match", "https://nonexistent.org/cert", 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := FilterIdPsByAssuranceCertification(idps, tc.certifications)
+			if len(result) != tc.expected {
+				t.Errorf("FilterIdPsByAssuranceCertification(%q) returned %d IdPs, want %d",
+					tc.certifications, len(result), tc.expected)
+			}
+			// Verify IdPs without certifications are excluded when filter is active
+			if tc.certifications != "" {
+				for _, idp := range result {
+					if len(idp.AssuranceCertifications) == 0 {
+						t.Errorf("FilterIdPsByAssuranceCertification(%q) included IdP %q without certifications",
+							tc.certifications, idp.EntityID)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestFileMetadataStore_WithEntityCategoryFilter tests filtering via FileMetadataStore
+func TestFileMetadataStore_WithEntityCategoryFilter(t *testing.T) {
+	// dfn-aai-sample.xml contains:
+	// - FU Berlin: R&S + SIRTFI
+	// - TUM: R&S + Code of Conduct v2
+	// - RWTH Aachen: No entity categories
+	// - Max Planck: R&S + SIRTFI
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithEntityCategoryFilter("http://refeds.org/category/research-and-scholarship"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Should return FU Berlin, TUM, and Max Planck (3 IdPs with R&S)
+	if len(idps) != 3 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 3", len(idps))
+	}
+
+	// Verify all returned IdPs have R&S category
+	for _, idp := range idps {
+		hasRS := false
+		for _, cat := range idp.EntityCategories {
+			if cat == "http://refeds.org/category/research-and-scholarship" {
+				hasRS = true
+				break
+			}
+		}
+		if !hasRS {
+			t.Errorf("IdP %q does not have R&S category", idp.EntityID)
+		}
+	}
+}
+
+// TestFileMetadataStore_WithEntityCategoryFilter_NoMatch tests error when no IdPs match
+func TestFileMetadataStore_WithEntityCategoryFilter_NoMatch(t *testing.T) {
+	// Filter for a category that doesn't exist in the test data
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithEntityCategoryFilter("https://nonexistent.org/category"))
+	err := store.Load()
+
+	// Should fail because no IdPs match
+	if err == nil {
+		t.Error("Expected error when no IdPs match entity category filter")
+	}
+}
+
+// TestFileMetadataStore_WithAssuranceCertificationFilter tests filtering via FileMetadataStore
+func TestFileMetadataStore_WithAssuranceCertificationFilter(t *testing.T) {
+	// dfn-aai-sample.xml contains:
+	// - FU Berlin: R&S + SIRTFI
+	// - TUM: R&S + Code of Conduct v2 (no SIRTFI)
+	// - RWTH Aachen: No entity categories
+	// - Max Planck: R&S + SIRTFI
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithAssuranceCertificationFilter("https://refeds.org/sirtfi"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Should return FU Berlin and Max Planck (2 IdPs with SIRTFI)
+	if len(idps) != 2 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 2", len(idps))
+	}
+
+	// Verify all returned IdPs have SIRTFI certification
+	for _, idp := range idps {
+		hasSIRTFI := false
+		for _, cert := range idp.AssuranceCertifications {
+			if cert == "https://refeds.org/sirtfi" {
+				hasSIRTFI = true
+				break
+			}
+		}
+		if !hasSIRTFI {
+			t.Errorf("IdP %q does not have SIRTFI certification", idp.EntityID)
+		}
+	}
+}
+
+// TestFileMetadataStore_WithAssuranceCertificationFilter_NoMatch tests error when no IdPs match
+func TestFileMetadataStore_WithAssuranceCertificationFilter_NoMatch(t *testing.T) {
+	// Filter for a certification that doesn't exist in the test data
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithAssuranceCertificationFilter("https://nonexistent.org/cert"))
+	err := store.Load()
+
+	// Should fail because no IdPs match
+	if err == nil {
+		t.Error("Expected error when no IdPs match assurance certification filter")
+	}
+}
+
+// TestFileMetadataStore_AllFilters tests combining all filters
+func TestFileMetadataStore_AllFilters(t *testing.T) {
+	// Filter by entity ID pattern, registration authority, entity category, and assurance certification
+	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml",
+		WithIdPFilter("*berlin*"),
+		WithRegistrationAuthorityFilter("https://www.aai.dfn.de"),
+		WithEntityCategoryFilter("http://refeds.org/category/research-and-scholarship"),
+		WithAssuranceCertificationFilter("https://refeds.org/sirtfi"))
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Only FU Berlin should match all filters
 	if len(idps) != 1 {
 		t.Errorf("ListIdPs() returned %d IdPs, want 1", len(idps))
 	}

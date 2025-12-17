@@ -91,3 +91,6 @@ func (s *InMemoryEntitlementStore) Refresh(ctx context.Context) error {
 
 // Ensure InMemoryEntitlementStore implements ports.EntitlementStore
 var _ ports.EntitlementStore = (*InMemoryEntitlementStore)(nil)
+
+
+

@@ -143,6 +143,18 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			s.RegistrationAuthorityFilter = d.Val()
 
+		case "entity_category_filter":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.EntityCategoryFilter = d.Val()
+
+		case "assurance_certification_filter":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.AssuranceCertificationFilter = d.Val()
+
 		case "discovery_template":
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -430,6 +442,18 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 		}
 		spCfg.RegistrationAuthorityFilter = d.Val()
 
+	case "entity_category_filter":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.EntityCategoryFilter = d.Val()
+
+	case "assurance_certification_filter":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.AssuranceCertificationFilter = d.Val()
+
 	case "discovery_template":
 		if !d.NextArg() {
 			return d.ArgErr()
@@ -571,3 +595,6 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 	}
 	return nil
 }
+
+
+

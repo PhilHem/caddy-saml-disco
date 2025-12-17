@@ -61,6 +61,29 @@ type rawEntitiesDescriptorForRegInfo struct {
 	EntitiesDescriptors []rawEntitiesDescriptorForRegInfo `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
 }
 
+// rawEntityAttributes represents the EntityAttributes XML structure.
+type rawEntityAttributes struct {
+	Attributes []struct {
+		Name   string   `xml:"Name,attr"`
+		Values []string `xml:"urn:oasis:names:tc:SAML:2.0:assertion AttributeValue"`
+	} `xml:"urn:oasis:names:tc:SAML:2.0:assertion Attribute"`
+}
+
+// rawEntityDescriptorForEntityAttrs is used to parse EntityAttributes from raw XML.
+// EntityAttributes is at EntityDescriptor/Extensions level (not IDPSSODescriptor).
+type rawEntityDescriptorForEntityAttrs struct {
+	EntityID   string `xml:"entityID,attr"`
+	Extensions struct {
+		EntityAttributes rawEntityAttributes `xml:"urn:oasis:names:tc:SAML:metadata:attribute EntityAttributes"`
+	} `xml:"urn:oasis:names:tc:SAML:2.0:metadata Extensions"`
+}
+
+// rawEntitiesDescriptorForEntityAttrs is used to parse EntityAttributes from aggregate metadata.
+type rawEntitiesDescriptorForEntityAttrsAggregate struct {
+	EntityDescriptors   []rawEntityDescriptorForEntityAttrs   `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
+	EntitiesDescriptors []rawEntitiesDescriptorForEntityAttrsAggregate `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
+}
+
 // rawMetadataValidity is used to extract validUntil from metadata.
 // Works for both EntitiesDescriptor and EntityDescriptor.
 type rawMetadataValidity struct {
@@ -78,20 +101,21 @@ func ParseMetadata(data []byte) ([]domain.IdPInfo, *time.Time, error) {
 		return nil, nil, err
 	}
 
-	// Parse UIInfo, RegistrationInfo, and Scopes separately since crewjam/saml doesn't expose them
+	// Parse UIInfo, RegistrationInfo, Scopes, and EntityAttributes separately since crewjam/saml doesn't expose them
 	uiInfoMap := parseAllUIInfo(data)
 	regInfoMap := parseAllRegistrationInfo(data)
 	scopeMap := parseAllScopes(data)
+	entityAttrsMap := parseAllEntityAttributes(data)
 
 	// Try EntitiesDescriptor first (aggregate metadata)
 	var entities saml.EntitiesDescriptor
 	if err := xml.Unmarshal(data, &entities); err == nil && len(entities.EntityDescriptors) > 0 {
-		idps, err := parseEntitiesDescriptorWithMaps(&entities, uiInfoMap, regInfoMap, scopeMap)
+		idps, err := parseEntitiesDescriptorWithMaps(&entities, uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
 		return idps, validUntil, err
 	}
 
 	// Fall back to single EntityDescriptor
-	idp, err := parseEntityDescriptorWithMaps(data, uiInfoMap, regInfoMap, scopeMap)
+	idp, err := parseEntityDescriptorWithMaps(data, uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -245,14 +269,83 @@ func extractScopesFromEntities(entities *rawEntitiesDescriptorForScope, result m
 	}
 }
 
+// parseAllEntityAttributes extracts EntityAttributes for all entities from raw XML.
+func parseAllEntityAttributes(data []byte) map[string]*domain.EntityAttributesInfo {
+	result := make(map[string]*domain.EntityAttributesInfo)
+
+	// Try parsing as EntitiesDescriptor (aggregate)
+	var entities rawEntitiesDescriptorForEntityAttrsAggregate
+	if err := xml.Unmarshal(data, &entities); err == nil {
+		extractEntityAttrsFromEntities(&entities, result)
+		if len(result) > 0 {
+			return result
+		}
+	}
+
+	// Try parsing as single EntityDescriptor
+	var entity rawEntityDescriptorForEntityAttrs
+	if err := xml.Unmarshal(data, &entity); err == nil {
+		attrs := parseEntityAttributes(&entity.Extensions.EntityAttributes)
+		if attrs != nil {
+			result[entity.EntityID] = attrs
+		}
+	}
+
+	return result
+}
+
+// extractEntityAttrsFromEntities recursively extracts EntityAttributes from EntitiesDescriptor.
+func extractEntityAttrsFromEntities(entities *rawEntitiesDescriptorForEntityAttrsAggregate, result map[string]*domain.EntityAttributesInfo) {
+	for _, ed := range entities.EntityDescriptors {
+		attrs := parseEntityAttributes(&ed.Extensions.EntityAttributes)
+		if attrs != nil {
+			result[ed.EntityID] = attrs
+		}
+	}
+	for i := range entities.EntitiesDescriptors {
+		extractEntityAttrsFromEntities(&entities.EntitiesDescriptors[i], result)
+	}
+}
+
+// parseEntityAttributes parses EntityAttributes XML into domain.EntityAttributesInfo.
+// Extracts entity categories and assurance certifications based on Attribute Name.
+func parseEntityAttributes(xmlAttrs *rawEntityAttributes) *domain.EntityAttributesInfo {
+	if xmlAttrs == nil || len(xmlAttrs.Attributes) == 0 {
+		return nil
+	}
+
+	var entityCategories []string
+	var assuranceCerts []string
+
+	entityCategoryName := "http://macedir.org/entity-category"
+	assuranceCertName := "urn:oasis:names:tc:SAML:attribute:assurance-certification"
+
+	for _, attr := range xmlAttrs.Attributes {
+		if attr.Name == entityCategoryName {
+			entityCategories = append(entityCategories, attr.Values...)
+		} else if attr.Name == assuranceCertName {
+			assuranceCerts = append(assuranceCerts, attr.Values...)
+		}
+	}
+
+	if len(entityCategories) == 0 && len(assuranceCerts) == 0 {
+		return nil
+	}
+
+	return &domain.EntityAttributesInfo{
+		EntityCategories:        entityCategories,
+		AssuranceCertifications: assuranceCerts,
+	}
+}
+
 // parseEntitiesDescriptorWithMaps extracts all IdPs from an aggregate metadata document.
 // It skips entities without IDPSSODescriptor (e.g., SP metadata).
-func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo) ([]domain.IdPInfo, error) {
+func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo, entityAttrsMap map[string]*domain.EntityAttributesInfo) ([]domain.IdPInfo, error) {
 	var idps []domain.IdPInfo
 
 	// Process direct EntityDescriptor children
 	for i := range entities.EntityDescriptors {
-		idp, err := extractIdPInfoWithMaps(&entities.EntityDescriptors[i], uiInfoMap, regInfoMap, scopeMap)
+		idp, err := extractIdPInfoWithMaps(&entities.EntityDescriptors[i], uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
 		if err != nil {
 			// Skip entities without IDPSSODescriptor (SPs, etc.)
 			continue
@@ -262,7 +355,7 @@ func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMa
 
 	// Process nested EntitiesDescriptor elements (recursive)
 	for i := range entities.EntitiesDescriptors {
-		nestedIdps, err := parseEntitiesDescriptorWithMaps(&entities.EntitiesDescriptors[i], uiInfoMap, regInfoMap, scopeMap)
+		nestedIdps, err := parseEntitiesDescriptorWithMaps(&entities.EntitiesDescriptors[i], uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
 		if err != nil {
 			continue
 		}
@@ -277,18 +370,18 @@ func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMa
 }
 
 // parseEntityDescriptorWithMaps extracts IdPInfo from a single EntityDescriptor XML.
-func parseEntityDescriptorWithMaps(data []byte, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo) (*domain.IdPInfo, error) {
+func parseEntityDescriptorWithMaps(data []byte, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo, entityAttrsMap map[string]*domain.EntityAttributesInfo) (*domain.IdPInfo, error) {
 	var ed saml.EntityDescriptor
 	if err := xml.Unmarshal(data, &ed); err != nil {
 		return nil, fmt.Errorf("unmarshal xml: %w", err)
 	}
 
-	return extractIdPInfoWithMaps(&ed, uiInfoMap, regInfoMap, scopeMap)
+	return extractIdPInfoWithMaps(&ed, uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
 }
 
 // extractIdPInfoWithMaps extracts IdPInfo from a single EntityDescriptor,
-// using pre-parsed UIInfo, RegistrationInfo, and Scopes from the maps.
-func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo) (*domain.IdPInfo, error) {
+// using pre-parsed UIInfo, RegistrationInfo, Scopes, and EntityAttributes from the maps.
+func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo, entityAttrsMap map[string]*domain.EntityAttributesInfo) (*domain.IdPInfo, error) {
 	if ed.EntityID == "" {
 		return nil, fmt.Errorf("missing entityID attribute")
 	}
@@ -393,23 +486,36 @@ func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*dom
 		allowedScopes = scopes
 	}
 
+	// Extract EntityAttributes from pre-parsed map
+	var entityCategories []string
+	var assuranceCertifications []string
+	if attrs := entityAttrsMap[ed.EntityID]; attrs != nil {
+		entityCategories = attrs.EntityCategories
+		assuranceCertifications = attrs.AssuranceCertifications
+	}
+
 	return &domain.IdPInfo{
-		EntityID:              ed.EntityID,
-		DisplayName:           displayName,
-		DisplayNames:          displayNames,
-		Description:           description,
-		Descriptions:          descriptions,
-		LogoURL:               logoURL,
-		InformationURL:        informationURL,
-		InformationURLs:       informationURLs,
-		SSOURL:                ssoURL,
-		SSOBinding:            ssoBinding,
-		SLOURL:                sloURL,
-		SLOBinding:            sloBinding,
-		Certificates:          certs,
-		RegistrationAuthority: registrationAuthority,
-		RegistrationInstant:   registrationInstant,
-		RegistrationPolicies:  registrationPolicies,
-		AllowedScopes:         allowedScopes,
+		EntityID:               ed.EntityID,
+		DisplayName:            displayName,
+		DisplayNames:           displayNames,
+		Description:            description,
+		Descriptions:           descriptions,
+		LogoURL:                logoURL,
+		InformationURL:         informationURL,
+		InformationURLs:        informationURLs,
+		SSOURL:                 ssoURL,
+		SSOBinding:             ssoBinding,
+		SLOURL:                 sloURL,
+		SLOBinding:             sloBinding,
+		Certificates:           certs,
+		RegistrationAuthority:  registrationAuthority,
+		RegistrationInstant:    registrationInstant,
+		RegistrationPolicies:   registrationPolicies,
+		AllowedScopes:          allowedScopes,
+		EntityCategories:       entityCategories,
+		AssuranceCertifications: assuranceCertifications,
 	}, nil
 }
+
+
+

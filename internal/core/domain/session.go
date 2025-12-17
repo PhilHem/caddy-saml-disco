@@ -66,3 +66,6 @@ func ValidateAuthnContextComparison(c string) error {
 	}
 	return nil
 }
+
+
+

@@ -10,3 +10,6 @@ type CachedLogo struct {
 type LogoStore interface {
 	Get(entityID string) (*CachedLogo, error)
 }
+
+
+

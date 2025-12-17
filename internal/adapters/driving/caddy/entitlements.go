@@ -28,6 +28,10 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 					sep = ";"
 				}
 				sep = sanitizeHeaderValue(sep)
+				// Re-default if sanitization removed all characters
+				if sep == "" {
+					sep = ";"
+				}
 				values := make([]string, 0, len(result.Roles))
 				for _, role := range result.Roles {
 					sanitized := sanitizeHeaderValue(role)
@@ -56,3 +60,6 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 
 	return headers, nil
 }
+
+
+

@@ -20,3 +20,6 @@ type MetadataStore interface {
 	// Health returns the health status of the metadata store.
 	Health() domain.MetadataHealth
 }
+
+
+

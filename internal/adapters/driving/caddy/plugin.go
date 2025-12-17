@@ -70,6 +70,12 @@ type SAMLDisco struct {
 	templateRenderer    *TemplateRenderer
 	logger              *zap.Logger
 	metricsRecorder     ports.MetricsRecorder
+
+	// Config snapshots (immutable copies taken during Provision to prevent mutation)
+	// These are used in applyAttributeHeaders() to ensure header names match validation-time expectations.
+	headerPrefixSnapshot     string
+	attributeHeadersSnapshot []AttributeMapping
+	entitlementHeadersSnapshot []EntitlementHeaderMapping
 }
 
 // SetLogoStore sets the logo store. For testing purposes.
@@ -158,6 +164,14 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	// Single-SP mode: use existing logic (backward compatibility)
 	s.Config.SetDefaults()
 
+	// Snapshot config values to prevent mutation between validation and runtime
+	// This ensures header names computed at validation time match those used at runtime.
+	s.headerPrefixSnapshot = s.HeaderPrefix
+	s.attributeHeadersSnapshot = make([]AttributeMapping, len(s.AttributeHeaders))
+	copy(s.attributeHeadersSnapshot, s.AttributeHeaders)
+	s.entitlementHeadersSnapshot = make([]EntitlementHeaderMapping, len(s.EntitlementHeaders))
+	copy(s.entitlementHeadersSnapshot, s.EntitlementHeaders)
+
 	// Initialize metrics recorder
 	s.initMetricsRecorder()
 
@@ -174,6 +188,12 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	}
 	if s.RegistrationAuthorityFilter != "" {
 		metadataOpts = append(metadataOpts, metadata.WithRegistrationAuthorityFilter(s.RegistrationAuthorityFilter))
+	}
+	if s.EntityCategoryFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithEntityCategoryFilter(s.EntityCategoryFilter))
+	}
+	if s.AssuranceCertificationFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithAssuranceCertificationFilter(s.AssuranceCertificationFilter))
 	}
 
 	// Configure signature verification if enabled
@@ -315,6 +335,14 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 
 // provisionSPConfig provisions a single SP config with its metadata store, session store, and SAML service.
 func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error {
+	// Snapshot config values to prevent mutation between validation and runtime
+	// This ensures header names computed at validation time match those used at runtime.
+	spCfg.headerPrefixSnapshot = spCfg.HeaderPrefix
+	spCfg.attributeHeadersSnapshot = make([]AttributeMapping, len(spCfg.AttributeHeaders))
+	copy(spCfg.attributeHeadersSnapshot, spCfg.AttributeHeaders)
+	spCfg.entitlementHeadersSnapshot = make([]EntitlementHeaderMapping, len(spCfg.EntitlementHeaders))
+	copy(spCfg.entitlementHeadersSnapshot, spCfg.EntitlementHeaders)
+
 	// Initialize metrics recorder if not already initialized
 	if s.metricsRecorder == nil {
 		s.initMetricsRecorder()
@@ -333,6 +361,12 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 	}
 	if spCfg.RegistrationAuthorityFilter != "" {
 		metadataOpts = append(metadataOpts, metadata.WithRegistrationAuthorityFilter(spCfg.RegistrationAuthorityFilter))
+	}
+	if spCfg.EntityCategoryFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithEntityCategoryFilter(spCfg.EntityCategoryFilter))
+	}
+	if spCfg.AssuranceCertificationFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithAssuranceCertificationFilter(spCfg.AssuranceCertificationFilter))
 	}
 
 	// Configure signature verification if enabled
@@ -883,21 +917,45 @@ func (s *SAMLDisco) getDefaultLanguage() string {
 // Only headers with X- prefix are allowed for security.
 // If entitlements are configured, local entitlements supplement IdP-provided SAML attributes.
 func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Session) {
-	if len(s.AttributeHeaders) == 0 && len(s.EntitlementHeaders) == 0 {
+	// Use snapshots if available (taken during Provision to prevent mutation),
+	// otherwise fall back to live config (for backward compatibility or tests that don't call Provision)
+	attributeHeaders := s.attributeHeadersSnapshot
+	if len(attributeHeaders) == 0 {
+		attributeHeaders = s.AttributeHeaders
+	}
+	entitlementHeaders := s.entitlementHeadersSnapshot
+	if len(entitlementHeaders) == 0 {
+		entitlementHeaders = s.EntitlementHeaders
+	}
+	headerPrefix := s.headerPrefixSnapshot
+	// Check if snapshot is empty (zero value) - if so, use live config
+	if headerPrefix == "" && s.HeaderPrefix != "" {
+		headerPrefix = s.HeaderPrefix
+	}
+
+	if len(attributeHeaders) == 0 && len(entitlementHeaders) == 0 {
 		return
 	}
 
-	// Strip incoming headers if configured (for both SAML and entitlement headers)
+	// Store original header values before stripping (for rollback on error)
+	var originalHeaders map[string][]string
 	if s.shouldStripAttributeHeaders() {
-		for _, mapping := range s.AttributeHeaders {
-			// Strip using prefixed header name if prefix is configured
-			headerToStrip := ApplyHeaderPrefix(s.HeaderPrefix, mapping.HeaderName)
+		// Save state before stripping
+		originalHeaders = make(map[string][]string)
+		for _, mapping := range attributeHeaders {
+			headerToStrip := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			headerToStrip = http.CanonicalHeaderKey(headerToStrip)
+			if values := r.Header[headerToStrip]; len(values) > 0 {
+				originalHeaders[headerToStrip] = values
+			}
 			r.Header.Del(headerToStrip)
 		}
-		for _, mapping := range s.EntitlementHeaders {
-			headerToStrip := ApplyHeaderPrefix(s.HeaderPrefix, mapping.HeaderName)
+		for _, mapping := range entitlementHeaders {
+			headerToStrip := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			headerToStrip = http.CanonicalHeaderKey(headerToStrip)
+			if values := r.Header[headerToStrip]; len(values) > 0 {
+				originalHeaders[headerToStrip] = values
+			}
 			r.Header.Del(headerToStrip)
 		}
 	}
@@ -929,6 +987,9 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 					zap.Error(err),
 					zap.String("subject", session.Subject),
 				)
+				// Continue to apply SAML attributes even when entitlement lookup fails
+				// (HEADER-015: Entitlements are supplementary, not blocking)
+				// entitlementResult remains nil, so entitlement headers won't be set
 			}
 		} else {
 			entitlementResult = result
@@ -939,10 +1000,14 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 	combined := domain.CombineAttributes(multiAttrs, entitlementResult)
 
 		// Map SAML attributes to headers (if AttributeHeaders configured)
-		if len(s.AttributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
-			headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, s.AttributeHeaders, s.HeaderPrefix)
+		if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
+			headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, attributeHeaders, headerPrefix)
 			if err != nil {
 				// Configuration error - should have been caught at startup
+				// Restore original headers before returning
+				if originalHeaders != nil {
+					restoreHeaderState(r, originalHeaders)
+				}
 				s.getLogger().Error("failed to map attributes to headers",
 					zap.Error(err),
 					zap.String("subject", session.Subject),
@@ -958,9 +1023,13 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 		}
 
 	// Map entitlements to headers (if EntitlementHeaders configured)
-	if len(s.EntitlementHeaders) > 0 && entitlementResult != nil {
-		entitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, s.EntitlementHeaders)
+	if len(entitlementHeaders) > 0 && entitlementResult != nil {
+		mappedEntitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, entitlementHeaders)
 		if err != nil {
+			// Restore original headers before returning
+			if originalHeaders != nil {
+				restoreHeaderState(r, originalHeaders)
+			}
 			s.getLogger().Error("failed to map entitlements to headers",
 				zap.Error(err),
 				zap.String("subject", session.Subject),
@@ -969,10 +1038,39 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 		}
 
 		// Apply prefix to entitlement headers
-		for header, value := range entitlementHeaders {
-			finalHeader := ApplyHeaderPrefix(s.HeaderPrefix, header)
+		for header, value := range mappedEntitlementHeaders {
+			finalHeader := ApplyHeaderPrefix(headerPrefix, header)
 			finalHeader = http.CanonicalHeaderKey(finalHeader)
 			r.Header.Set(finalHeader, value)
+		}
+	}
+}
+
+// saveHeaderState stores original header values before stripping for rollback on error.
+// Returns a map of canonical header names to their original values (preserving multiple values).
+func saveHeaderState(r *http.Request, mappings []AttributeMapping, prefix string) map[string][]string {
+	originalHeaders := make(map[string][]string)
+	for _, mapping := range mappings {
+		headerName := ApplyHeaderPrefix(prefix, mapping.HeaderName)
+		headerName = http.CanonicalHeaderKey(headerName)
+		if values := r.Header[headerName]; len(values) > 0 {
+			originalHeaders[headerName] = values
+		}
+	}
+	return originalHeaders
+}
+
+// restoreHeaderState restores original header values from the saved state.
+// Deletes existing values first to prevent accumulation (HEADER-016).
+func restoreHeaderState(r *http.Request, originalHeaders map[string][]string) {
+	// Delete current values before restoring to prevent accumulation
+	for name := range originalHeaders {
+		r.Header.Del(name)
+	}
+	// Restore original values
+	for name, values := range originalHeaders {
+		for _, value := range values {
+			r.Header.Add(name, value)
 		}
 	}
 }
@@ -1751,6 +1849,16 @@ func (s *SAMLDisco) SetMetricsRecorder(recorder ports.MetricsRecorder) {
 	s.metricsRecorder = recorder
 }
 
+// SetRegistry sets the SP config registry for testing.
+func (s *SAMLDisco) SetRegistry(registry *SPConfigRegistry) {
+	s.registry = registry
+}
+
+// GetRegistry returns the SP config registry for testing.
+func (s *SAMLDisco) GetRegistry() *SPConfigRegistry {
+	return s.registry
+}
+
 // initMetricsRecorder initializes the metrics recorder based on configuration.
 func (s *SAMLDisco) initMetricsRecorder() {
 	if s.MetricsEnabled {
@@ -1892,15 +2000,252 @@ func (s *SAMLDisco) handleMetadataForSP(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleACS(w, r) // TODO: Use spConfig stores
+	if spConfig.samlService == nil {
+		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
+		return nil
+	}
+
+	// For Phase 1 with single IdP, get the first IdP from metadata store
+	if spConfig.metadataStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
+		return nil
+	}
+	idps, err := spConfig.metadataStore.ListIdPs("")
+	if err != nil || len(idps) == 0 {
+		s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
+		return err
+	}
+	idp := &idps[0]
+
+	acsURL := s.resolveAcsURLForSP(r, spConfig)
+	result, err := spConfig.samlService.HandleACS(r, acsURL, idp)
+	if err != nil {
+		s.getLogger().Warn("saml authentication failed",
+			zap.Error(err),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+		s.getMetricsRecorder().RecordAuthAttempt(idp.EntityID, false)
+		s.renderAppError(w, r, domain.AuthError("SAML authentication failed", err))
+		return nil
+	}
+
+	s.getLogger().Info("saml authentication successful",
+		zap.String("subject", result.Subject),
+		zap.String("idp_entity_id", result.IdPEntityID),
+	)
+	s.getMetricsRecorder().RecordAuthAttempt(result.IdPEntityID, true)
+
+	// Create session
+	session := &domain.Session{
+		Subject:      result.Subject,
+		Attributes:   result.Attributes,
+		IdPEntityID:  result.IdPEntityID,
+		NameIDFormat: result.NameIDFormat,
+		SessionIndex: result.SessionIndex,
+		IssuedAt:     time.Now(),
+		ExpiresAt:    time.Now().Add(spConfig.sessionDuration),
+	}
+
+	if spConfig.sessionStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("Session store is not configured"))
+		return nil
+	}
+	token, err := spConfig.sessionStore.Create(session)
+	if err != nil {
+		s.renderAppError(w, r, domain.ServiceError("Failed to create session"))
+		return err
+	}
+	s.getMetricsRecorder().RecordSessionCreated()
+
+	// Set session cookie
+	s.setSessionCookieForSP(w, r, spConfig, token)
+
+	// Check entitlements if configured
+	if spConfig.entitlementStore != nil {
+		entitlementResult, err := spConfig.entitlementStore.Lookup(session.Subject)
+		if err != nil {
+			// ErrEntitlementNotFound means user is not authorized
+			if errors.Is(err, domain.ErrEntitlementNotFound) {
+				s.handleDeniedForSP(w, r, spConfig, session.Subject)
+				return nil
+			}
+			// Other errors are unexpected
+			s.getLogger().Error("entitlement lookup failed",
+				zap.Error(err),
+				zap.String("subject", session.Subject))
+			s.renderAppError(w, r, domain.ServiceError("Failed to check entitlements"))
+			return err
+		}
+
+		// Check require_entitlement if configured
+		if spConfig.RequireEntitlement != "" {
+			hasRole := false
+			for _, role := range entitlementResult.Roles {
+				if role == spConfig.RequireEntitlement {
+					hasRole = true
+					break
+				}
+			}
+			if !hasRole {
+				s.handleDeniedForSP(w, r, spConfig, session.Subject)
+				return nil
+			}
+		}
+	}
+
+	// Redirect to relay state or default page
+	relayState := ValidateRelayState(r.FormValue("RelayState"))
+	http.Redirect(w, r, relayState, http.StatusFound)
+	return nil
 }
 
 func (s *SAMLDisco) handleLogoutForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleLogout(w, r) // TODO: Use spConfig stores
+	if spConfig.samlService == nil {
+		// Fall back to local-only logout
+		s.clearSessionCookiesForSP(w, r, spConfig)
+		returnTo := ValidateRelayState(r.URL.Query().Get("return_to"))
+		http.Redirect(w, r, returnTo, http.StatusFound)
+		return nil
+	}
+
+	session := GetSession(r)
+	returnTo := ValidateRelayState(r.URL.Query().Get("return_to"))
+
+	// If we have a session, try SP-initiated SLO
+	if session != nil && spConfig.metadataStore != nil {
+		idp, err := spConfig.metadataStore.GetIdP(session.IdPEntityID)
+		if err == nil && idp != nil && idp.SLOURL != "" {
+			// IdP supports SLO - redirect to IdP SLO
+			sloURL := s.resolveSLOURLForSP(r, spConfig)
+			logoutURL, err := spConfig.samlService.CreateLogoutRequest(session, idp, sloURL, returnTo)
+			if err == nil {
+				http.Redirect(w, r, logoutURL.String(), http.StatusFound)
+				return nil
+			}
+			// If SLO fails, fall through to local-only logout
+			s.getLogger().Warn("failed to create logout request, falling back to local logout",
+				zap.Error(err),
+			)
+		}
+	}
+
+	// Fall back to local-only logout (no SLO or SLO failed)
+	s.clearSessionCookiesForSP(w, r, spConfig)
+	http.Redirect(w, r, returnTo, http.StatusFound)
+	return nil
 }
 
 func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleSLO(w, r) // TODO: Use spConfig stores
+	if spConfig.samlService == nil {
+		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
+		return nil
+	}
+
+	sloURL := s.resolveSLOURLForSP(r, spConfig)
+
+	// Check if this is a LogoutResponse (SP-initiated return) or LogoutRequest (IdP-initiated)
+	samlResponse := r.URL.Query().Get("SAMLResponse")
+	samlRequest := r.URL.Query().Get("SAMLRequest")
+
+	if samlResponse != "" {
+		// SP-initiated: IdP is redirecting back with LogoutResponse
+		// Get IdP from session or metadata
+		session := GetSession(r)
+		if session == nil {
+			// No session, just redirect
+			returnTo := ValidateRelayState(r.URL.Query().Get("RelayState"))
+			http.Redirect(w, r, returnTo, http.StatusFound)
+			return nil
+		}
+
+		if spConfig.metadataStore == nil {
+			s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
+			return nil
+		}
+		idp, err := spConfig.metadataStore.GetIdP(session.IdPEntityID)
+		if err != nil {
+			s.renderAppError(w, r, domain.ServiceError("Failed to get IdP metadata"))
+			return nil
+		}
+
+		// Validate LogoutResponse
+		err = spConfig.samlService.HandleLogoutResponse(r, sloURL, idp)
+		if err != nil {
+			s.getLogger().Warn("logout response validation failed",
+				zap.Error(err),
+				zap.String("remote_addr", r.RemoteAddr),
+			)
+			// Continue with logout anyway
+		}
+
+		// Clear session
+		http.SetCookie(w, &http.Cookie{
+			Name:     spConfig.SessionCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		})
+		s.clearRememberIdPCookieForSP(w, r, spConfig)
+
+		returnTo := ValidateRelayState(r.URL.Query().Get("RelayState"))
+		http.Redirect(w, r, returnTo, http.StatusFound)
+		return nil
+	}
+
+	if samlRequest != "" {
+		// IdP-initiated: IdP is requesting logout
+		if spConfig.metadataStore == nil {
+			s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
+			return nil
+		}
+		// Get first IdP from metadata store (for IdP-initiated logout, we need to identify the IdP)
+		idps, err := spConfig.metadataStore.ListIdPs("")
+		if err != nil || len(idps) == 0 {
+			s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
+			return nil
+		}
+		idp := &idps[0]
+
+		// Parse LogoutRequest
+		result, err := spConfig.samlService.HandleLogoutRequest(r, sloURL, idp)
+		if err != nil {
+			s.getLogger().Warn("logout request validation failed",
+				zap.Error(err),
+				zap.String("remote_addr", r.RemoteAddr),
+			)
+			s.renderAppError(w, r, domain.AuthError("Logout request validation failed", err))
+			return nil
+		}
+
+		// Clear session
+		http.SetCookie(w, &http.Cookie{
+			Name:     spConfig.SessionCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   r.TLS != nil,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		})
+		s.clearRememberIdPCookieForSP(w, r, spConfig)
+
+		// Send LogoutResponse back to IdP
+		returnTo := ValidateRelayState(r.URL.Query().Get("RelayState"))
+		logoutResponseURL, err := spConfig.samlService.CreateLogoutResponse(result.RequestID, idp, sloURL, returnTo)
+		if err != nil {
+			s.renderAppError(w, r, domain.ServiceError("Failed to create logout response"))
+			return err
+		}
+		http.Redirect(w, r, logoutResponseURL.String(), http.StatusFound)
+		return nil
+	}
+
+	// No SAMLRequest or SAMLResponse - invalid request
+	s.renderAppError(w, r, domain.BadRequestError("Missing SAMLRequest or SAMLResponse"))
+	return nil
 }
 
 func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
@@ -1923,11 +2268,97 @@ func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleSelectIdP(w, r) // TODO: Use spConfig stores
+	// Parse JSON request body
+	var req selectIdPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.renderAppError(w, r, domain.BadRequestError("Request body is invalid"))
+		return nil
+	}
+
+	// Validate entity_id is provided
+	if req.EntityID == "" {
+		s.renderAppError(w, r, domain.BadRequestError("entity_id is required"))
+		return nil
+	}
+
+	// Look up IdP in metadata store
+	if spConfig.metadataStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
+		return nil
+	}
+
+	idp, err := spConfig.metadataStore.GetIdP(req.EntityID)
+	if err != nil {
+		s.getLogger().Debug("idp not found",
+			zap.String("entity_id", req.EntityID),
+			zap.Error(err),
+		)
+		s.renderAppError(w, r, domain.IdPNotFoundError(req.EntityID))
+		return nil
+	}
+
+	s.getLogger().Info("idp selected for authentication",
+		zap.String("entity_id", req.EntityID),
+	)
+
+	// Only remember the selected IdP if explicitly requested (BREAKING CHANGE)
+	if req.Remember {
+		s.setRememberIdPCookieForSP(w, r, spConfig, req.EntityID)
+	}
+
+	// Check SAML service is configured
+	if spConfig.samlService == nil {
+		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
+		return nil
+	}
+
+	// Determine RelayState (return URL after authentication)
+	relayState := req.ReturnURL
+	if relayState == "" {
+		relayState = "/"
+	}
+	relayState = ValidateRelayState(relayState)
+
+	// Determine if forceAuthn is needed based on return URL path
+	opts := &domain.AuthnOptions{
+		ForceAuthn: spConfig.ForceAuthn || MatchesForceAuthnPath(relayState, spConfig.ForceAuthnPaths),
+	}
+
+	// Compute ACS URL and start SAML auth
+	acsURL := s.resolveAcsURLForSP(r, spConfig)
+	redirectURL, err := spConfig.samlService.StartAuthWithOptions(idp, acsURL, relayState, opts)
+	if err != nil {
+		s.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
+		return nil
+	}
+
+	// Return JSON with redirect URL (instead of 302 which causes fetch issues)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"redirect_url": redirectURL.String(),
+	})
+	return nil
 }
 
 func (s *SAMLDisco) handleSessionInfoForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleSessionInfo(w, r) // TODO: Use spConfig stores
+	response := sessionInfoResponse{Authenticated: false}
+
+	// Try to get session from cookie
+	if spConfig.sessionStore != nil {
+		cookie, err := r.Cookie(spConfig.SessionCookieName)
+		if err == nil && cookie.Value != "" {
+			session, err := spConfig.sessionStore.Get(cookie.Value)
+			if err == nil && session != nil {
+				response.Authenticated = true
+				response.Subject = session.Subject
+				response.IdPEntityID = session.IdPEntityID
+				response.Attributes = session.Attributes
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(response)
 }
 
 func (s *SAMLDisco) handleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
@@ -1973,7 +2404,42 @@ func (s *SAMLDisco) handleLogoEndpointForSP(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *SAMLDisco) handleDiscoveryUIForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleDiscoveryUI(w, r) // TODO: Use spConfig stores
+	if spConfig.metadataStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
+		return nil
+	}
+
+	idps, err := spConfig.metadataStore.ListIdPs("")
+	if err != nil {
+		s.renderAppError(w, r, domain.ServiceError("Failed to retrieve identity providers"))
+		return nil
+	}
+
+	// Get return_url from query param (where to redirect after auth)
+	returnURL := ValidateRelayState(r.URL.Query().Get("return_url"))
+
+	// Auto-redirect if only one IdP
+	if len(idps) == 1 && spConfig.samlService != nil {
+		idp := &idps[0]
+		acsURL := s.resolveAcsURLForSP(r, spConfig)
+
+		// Determine if forceAuthn is needed based on return URL path
+		opts := &domain.AuthnOptions{
+			ForceAuthn: spConfig.ForceAuthn || MatchesForceAuthnPath(returnURL, spConfig.ForceAuthnPaths),
+		}
+
+		redirectURL, err := spConfig.samlService.StartAuthWithOptions(idp, acsURL, returnURL, opts)
+		if err != nil {
+			s.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
+			return nil
+		}
+		http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+		return nil
+	}
+
+	// Serve discovery UI HTML
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return s.renderDiscoveryHTMLForSP(w, r, spConfig, idps, returnURL)
 }
 
 func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
@@ -2047,17 +2513,237 @@ func (s *SAMLDisco) resolveAcsURLForSP(r *http.Request, spConfig *SPConfig) *url
 	}
 }
 
+// resolveSLOURLForSP computes the SLO URL from the request and SP config.
+func (s *SAMLDisco) resolveSLOURLForSP(r *http.Request, spConfig *SPConfig) *url.URL {
+	// Compute from request (similar to resolveAcsURLForSP)
+	scheme := "https"
+	if r.TLS == nil {
+		// Check X-Forwarded-Proto header
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		} else {
+			scheme = "http"
+		}
+	}
+
+	return &url.URL{
+		Scheme: scheme,
+		Host:   r.Host,
+		Path:   "/saml/slo",
+	}
+}
+
+// setSessionCookieForSP sets the session cookie on the response for a specific SP config.
+func (s *SAMLDisco) setSessionCookieForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     spConfig.SessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(spConfig.sessionDuration.Seconds()),
+	})
+}
+
+// clearSessionCookiesForSP clears both session and remember IdP cookies for a specific SP config.
+func (s *SAMLDisco) clearSessionCookiesForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     spConfig.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Delete cookie
+	})
+	s.clearRememberIdPCookieForSP(w, r, spConfig)
+}
+
+// setRememberIdPCookieForSP sets a cookie to remember the user's last-used IdP for a specific SP config.
+func (s *SAMLDisco) setRememberIdPCookieForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig, entityID string) {
+	if spConfig.RememberIdPCookieName == "" || spConfig.RememberIdPDuration == "" {
+		return
+	}
+	duration, err := ParseDuration(spConfig.RememberIdPDuration)
+	if err != nil {
+		s.getLogger().Warn("invalid remember IdP duration, skipping cookie",
+			zap.String("duration", spConfig.RememberIdPDuration),
+			zap.Error(err))
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     spConfig.RememberIdPCookieName,
+		Value:    entityID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(duration.Seconds()),
+	})
+}
+
+// clearRememberIdPCookieForSP deletes the remembered IdP cookie for a specific SP config.
+func (s *SAMLDisco) clearRememberIdPCookieForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
+	if spConfig.RememberIdPCookieName == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     spConfig.RememberIdPCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Delete cookie
+	})
+}
+
+// handleDeniedForSP handles access denied responses for a specific SP config.
+func (s *SAMLDisco) handleDeniedForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig, subject string) {
+	redirect := ValidateDenyRedirect(spConfig.EntitlementDenyRedirect)
+	if redirect != "" {
+		http.Redirect(w, r, redirect, http.StatusFound)
+		return
+	}
+	// Default 403 with error page
+	accessDeniedError := &domain.AppError{
+		Code:    domain.ErrCodeBadRequest,
+		Message: "Access denied by entitlements policy",
+		Cause:   domain.ErrAccessDenied,
+	}
+	statusCode := http.StatusForbidden
+	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		json.NewEncoder(w).Encode(domain.NewJSONErrorResponse(accessDeniedError))
+		return
+	}
+	s.renderHTTPError(w, statusCode, "Access Denied", accessDeniedError.Message)
+}
+
+// renderDiscoveryHTMLForSP renders the discovery UI HTML for a specific SP config.
+func (s *SAMLDisco) renderDiscoveryHTMLForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig, idps []domain.IdPInfo, returnURL string) error {
+	// Localize IdPs based on Accept-Language header
+	langPrefs := ParseAcceptLanguage(r.Header.Get("Accept-Language"))
+	defaultLang := s.getDefaultLanguage()
+	if spConfig.DefaultLanguage != "" {
+		defaultLang = spConfig.DefaultLanguage
+	}
+	localizedIdPs := localizeIdPList(idps, langPrefs, defaultLang)
+
+	// Separate pinned IdPs from the main list
+	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(spConfig, localizedIdPs)
+
+	// Get the remembered IdP entity ID
+	rememberedIdPID := s.getRememberIdPCookieForSP(r, spConfig)
+
+	// Look up full IdP info for the remembered IdP (and localize it)
+	var rememberedIdP *domain.IdPInfo
+	if rememberedIdPID != "" && spConfig.metadataStore != nil {
+		if idp, err := spConfig.metadataStore.GetIdP(rememberedIdPID); err == nil {
+			localized := domain.LocalizeIdPInfo(*idp, langPrefs, defaultLang)
+			rememberedIdP = &localized
+		}
+	}
+
+	// Convert alt login config to template data
+	altLogins := make([]AltLoginOption, len(spConfig.AltLogins))
+	for i, alt := range spConfig.AltLogins {
+		altLogins[i] = AltLoginOption{URL: alt.URL, Label: alt.Label}
+	}
+
+	renderer := spConfig.templateRenderer
+	if renderer == nil {
+		renderer = s.templateRenderer
+	}
+	if renderer == nil {
+		return fmt.Errorf("template renderer not configured")
+	}
+
+	return renderer.RenderDisco(w, DiscoData{
+		IdPs:            filteredIdPs,
+		PinnedIdPs:      pinnedIdPs,
+		ReturnURL:       returnURL,
+		RememberedIdPID: rememberedIdPID,
+		RememberedIdP:   rememberedIdP,
+		AltLogins:       altLogins,
+		ServiceName:     spConfig.ServiceName,
+	})
+}
+
+// getRememberIdPCookieForSP reads the remembered IdP entity ID from the cookie for a specific SP config.
+func (s *SAMLDisco) getRememberIdPCookieForSP(r *http.Request, spConfig *SPConfig) string {
+	if spConfig.RememberIdPCookieName == "" {
+		return ""
+	}
+	cookie, err := r.Cookie(spConfig.RememberIdPCookieName)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+	return cookie.Value
+}
+
+// separatePinnedIdPsForSP separates pinned IdPs from the main list for a specific SP config.
+func (s *SAMLDisco) separatePinnedIdPsForSP(spConfig *SPConfig, idps []domain.IdPInfo) ([]domain.IdPInfo, []domain.IdPInfo) {
+	if len(spConfig.PinnedIdPs) == 0 {
+		return nil, idps
+	}
+
+	pinnedMap := make(map[string]bool)
+	for _, entityID := range spConfig.PinnedIdPs {
+		pinnedMap[entityID] = true
+	}
+
+	var pinned []domain.IdPInfo
+	var filtered []domain.IdPInfo
+
+	for _, idp := range idps {
+		if pinnedMap[idp.EntityID] {
+			pinned = append(pinned, idp)
+		} else {
+			filtered = append(filtered, idp)
+		}
+	}
+
+	return pinned, filtered
+}
+
 func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.Session, spConfig *SPConfig) {
-	// Strip incoming headers if configured (for both SAML and entitlement headers)
+	// Use snapshots if available (taken during Provision to prevent mutation),
+	// otherwise fall back to live config (for backward compatibility or tests that don't call Provision)
+	attributeHeaders := spConfig.attributeHeadersSnapshot
+	if len(attributeHeaders) == 0 {
+		attributeHeaders = spConfig.AttributeHeaders
+	}
+	entitlementHeaders := spConfig.entitlementHeadersSnapshot
+	if len(entitlementHeaders) == 0 {
+		entitlementHeaders = spConfig.EntitlementHeaders
+	}
+	headerPrefix := spConfig.headerPrefixSnapshot
+	// Check if snapshot is empty (zero value) - if so, use live config
+	if headerPrefix == "" && spConfig.HeaderPrefix != "" {
+		headerPrefix = spConfig.HeaderPrefix
+	}
+
+	// Store original header values before stripping (for rollback on error)
+	var originalHeaders map[string][]string
 	if shouldStripAttributeHeadersForSP(spConfig) {
-		for _, mapping := range spConfig.AttributeHeaders {
-			headerName := ApplyHeaderPrefix(spConfig.HeaderPrefix, mapping.HeaderName)
+		originalHeaders = make(map[string][]string)
+		for _, mapping := range attributeHeaders {
+			headerName := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			headerName = http.CanonicalHeaderKey(headerName)
+			if values := r.Header[headerName]; len(values) > 0 {
+				originalHeaders[headerName] = values
+			}
 			r.Header.Del(headerName)
 		}
-		for _, mapping := range spConfig.EntitlementHeaders {
-			headerName := ApplyHeaderPrefix(spConfig.HeaderPrefix, mapping.HeaderName)
+		for _, mapping := range entitlementHeaders {
+			headerName := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			headerName = http.CanonicalHeaderKey(headerName)
+			if values := r.Header[headerName]; len(values) > 0 {
+				originalHeaders[headerName] = values
+			}
 			r.Header.Del(headerName)
 		}
 	}
@@ -2087,6 +2773,12 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 					zap.Error(err),
 					zap.String("subject", session.Subject),
 				)
+				// If EntitlementHeaders are configured, restore headers before returning
+				// (consistent with mapping error behavior - HEADER-012)
+				if len(entitlementHeaders) > 0 && originalHeaders != nil {
+					restoreHeaderState(r, originalHeaders)
+					return
+				}
 			}
 		} else {
 			entitlementResult = result
@@ -2097,9 +2789,13 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 	combined := domain.CombineAttributes(multiAttrs, entitlementResult)
 
 	// Map SAML attributes to headers (if AttributeHeaders configured)
-	if len(spConfig.AttributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
-		headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, spConfig.AttributeHeaders, spConfig.HeaderPrefix)
+	if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
+		headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, attributeHeaders, headerPrefix)
 		if err != nil {
+			// Restore original headers before returning
+			if originalHeaders != nil {
+				restoreHeaderState(r, originalHeaders)
+			}
 			s.getLogger().Error("failed to map attributes to headers",
 				zap.Error(err),
 				zap.String("subject", session.Subject),
@@ -2115,9 +2811,13 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 	}
 
 	// Map entitlements to headers (if EntitlementHeaders configured)
-	if len(spConfig.EntitlementHeaders) > 0 && entitlementResult != nil {
-		entitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, spConfig.EntitlementHeaders)
+	if len(entitlementHeaders) > 0 && entitlementResult != nil {
+		mappedEntitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, entitlementHeaders)
 		if err != nil {
+			// Restore original headers before returning
+			if originalHeaders != nil {
+				restoreHeaderState(r, originalHeaders)
+			}
 			s.getLogger().Error("failed to map entitlements to headers",
 				zap.Error(err),
 				zap.String("subject", session.Subject),
@@ -2126,8 +2826,8 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 		}
 
 		// Apply prefix to entitlement headers
-		for header, value := range entitlementHeaders {
-			finalHeader := ApplyHeaderPrefix(spConfig.HeaderPrefix, header)
+		for header, value := range mappedEntitlementHeaders {
+			finalHeader := ApplyHeaderPrefix(headerPrefix, header)
 			finalHeader = http.CanonicalHeaderKey(finalHeader)
 			r.Header.Set(finalHeader, value)
 		}

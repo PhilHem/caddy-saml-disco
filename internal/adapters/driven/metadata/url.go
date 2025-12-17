@@ -22,6 +22,8 @@ type URLMetadataStore struct {
 	cacheTTL                    time.Duration
 	idpFilter                   string
 	registrationAuthorityFilter string
+	entityCategoryFilter        string
+	assuranceCertificationFilter string
 	signatureVerifier           ports.SignatureVerifier
 	logger                      *zap.Logger
 	metricsRecorder             ports.MetricsRecorder
@@ -60,6 +62,8 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		cacheTTL:                    cacheTTL,
 		idpFilter:                   options.idpFilter,
 		registrationAuthorityFilter: options.registrationAuthorityFilter,
+		entityCategoryFilter:        options.entityCategoryFilter,
+		assuranceCertificationFilter: options.assuranceCertificationFilter,
 		signatureVerifier:           options.signatureVerifier,
 		logger:                      options.logger,
 		metricsRecorder:             options.metricsRecorder,
@@ -310,6 +314,26 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		}
 	}
 
+	// Apply entity category filter if configured
+	if s.entityCategoryFilter != "" {
+		idps = FilterIdPsByEntityCategory(idps, s.entityCategoryFilter)
+		if len(idps) == 0 {
+			refreshErr := fmt.Errorf("no IdPs match entity category filter %q", s.entityCategoryFilter)
+			s.markRefreshFailed(refreshErr)
+			return refreshErr
+		}
+	}
+
+	// Apply assurance certification filter if configured
+	if s.assuranceCertificationFilter != "" {
+		idps = FilterIdPsByAssuranceCertification(idps, s.assuranceCertificationFilter)
+		if len(idps) == 0 {
+			refreshErr := fmt.Errorf("no IdPs match assurance certification filter %q", s.assuranceCertificationFilter)
+			s.markRefreshFailed(refreshErr)
+			return refreshErr
+		}
+	}
+
 	// Success - update all state
 	now := s.clock.Now()
 	s.mu.Lock()
@@ -344,3 +368,6 @@ func (s *URLMetadataStore) markRefreshFailed(err error) {
 
 // Ensure URLMetadataStore implements ports.MetadataStore
 var _ ports.MetadataStore = (*URLMetadataStore)(nil)
+
+
+

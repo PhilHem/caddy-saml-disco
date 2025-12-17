@@ -195,49 +195,14 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
   - Metadata refresh correctly updates certificates (metadata is source of truth)
 
 ### Federation Metadata
-- [ ] Parse `mdattr:EntityAttributes` for entity categories (R&S, SIRTFI)
-- [ ] Filter IdPs by entity category or assurance level
+- [x] TASK-ECAT-001 - Parse `mdattr:EntityAttributes` for entity categories (R&S, SIRTFI) (fixes ECAT-001)
+- [x] TASK-ECAT-002 - Filter IdPs by entity category or assurance level
 
 ### Quality
-- [ ] Complete remaining test updates after hexagonal architecture refactoring
-- [testing] [blocking] Test files need updates after hexagonal architecture refactoring (Cycle 11 complete)
-  - **Description**: Test files reference functions moved to adapter during hexagonal architecture refactoring, causing build failures
-  - **Root cause**: Cycle 11 moved `plugin.go`, `caddyfile.go`, `config.go`, `templates.go`, `saml.go`, and attribute mapping functions to `internal/adapters/driving/caddy/`, but test files still reference old package locations
-  - **Remediation**: 
-    - Update `attributes_test.go` and `attributes_fuzz_test.go` to import and use `caddy.MapAttributesToHeaders`, `caddy.sanitizeHeaderValue`, `caddy.MaxHeaderValueLength` from adapter
-    - Verify all test files using moved functions are updated (check for references to `parseDuration`, `validateRelayState`, `parseAcceptLanguage`, `localizeIdPList`)
-    - Run `go test -tags=unit ./...` to verify all tests compile and pass
-  - **Progress**: 
-    - ✓ Exported `ParseDuration` and `ValidateRelayState` in `internal/adapters/driving/caddy/plugin.go` (Phase 7)
-    - ✓ Updated `plugin_fuzz_test.go` and `plugin_fuzz_ci_test.go` to use exported functions
-    - ⚠️ Still remaining: `boolPtr`, `sanitizeHeaderValue`, `parseMetadata`, `extractAndValidateExpiry` need export/update
-  - **Impact**: Blocking - unit tests cannot run until fixed
-- [testing] [quality] Multi-SP handler isolation incomplete (Phase 6)
-  - **Description**: Some ForSP handler methods (`handleACSForSP`, `handleLogoutForSP`, `handleSLOForSP`, `handleSelectIdPForSP`, `handleSessionInfoForSP`, `handleDiscoveryUIForSP`) delegate to instance-level handlers instead of using SP config stores
-  - **Root cause**: Incremental implementation prioritized core routing and critical handlers; remaining handlers were left as TODOs to maintain compilation
-  - **Remediation**: 
-    - Refactor each handler to use `spConfig.metadataStore`, `spConfig.sessionStore`, `spConfig.samlService` instead of instance-level stores
-    - Update `handleACSForSP` to use SP config's session store and SAML service
-    - Update `handleLogoutForSP` and `handleSLOForSP` to use SP config's session store
-    - Update `handleSelectIdPForSP` and `handleDiscoveryUIForSP` to use SP config's metadata store and template renderer
-    - Update `handleSessionInfoForSP` to use SP config's session store
-  - **Impact**: Quality - handlers work but don't provide complete isolation between SP configs
-- [testing] [quality] Missing property-based test for session isolation (Phase 6)
-  - **Description**: Property-based test for session isolation between SP configs is not implemented (Cycle 7 from plan)
-  - **Root cause**: Implementation focused on core routing and config validation; session isolation test deferred
-  - **Remediation**: 
-    - Create `isolation_property_test.go` with `TestSAMLDisco_MultiSP_Property_SessionIsolation`
-    - Verify that sessions created for one SP config cannot be accessed by another SP config
-    - Test cookie name isolation and session store isolation
-  - **Impact**: Quality - reduces confidence in isolation guarantees without automated verification
-- [testing] [quality] Missing integration tests for multi-SP feature (Phase 6)
-  - **Description**: Integration tests for end-to-end multi-SP flow are not implemented (Cycle 10 from plan)
-  - **Root cause**: Implementation prioritized unit tests and property-based tests; integration tests deferred
-  - **Remediation**: 
-    - Create `tests/integration/multisp_test.go` with `TestMultiSP_EndToEndFlow`
-    - Test multiple SP configs with different hostnames routing to correct IdPs
-    - Verify session isolation between SP configs in real HTTP scenarios
-  - **Impact**: Quality - feature works but lacks end-to-end validation
+- [ ] TASK-TEST-001 - Test files need updates after hexagonal architecture refactoring (see TEST-001)
+- [x] TASK-TEST-002 - Multi-SP handler isolation incomplete (see TEST-002)
+- [x] TASK-TEST-003 - Missing property-based test for session isolation (see TEST-003)
+- [x] TASK-TEST-004 - Missing integration tests for multi-SP feature (see TEST-004)
 
 **Outcome:** Full-featured SAML SP plugin for Caddy.
 
@@ -298,6 +263,8 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 - [x] Property-based test for multi-value handling
   - Separator injection attacks (`;` in attribute values)
   - Round-trip consistency (inject → parse → same values)
+  - Empty separator defaulting property test (ATTR-003)
+  - Separator sanitization edge case fixes (ATTR-005, ATTR-006): separators that sanitize to empty now re-default to `;`
 - [x] Property-based test for header stripping
   - Incoming spoofed headers always removed before injection
   - Case-insensitive header matching
@@ -307,14 +274,35 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
   - Non-ASCII character handling (Unicode, emoji, normalization forms)
   - Concurrency testing (race condition verification)
   - Default behavior consistency (single-SP vs multi-SP)
+- [x] Rollback verification for header mapping errors (HEADER-004, HEADER-009)
+  - Rollback mechanism verified: original headers restored when mapping fails
+  - Property-based test for rollback invariant
+  - Concurrency test for rollback correctness
+  - Entitlement header rollback tests (single-SP and multi-SP modes)
+  - Fixed inconsistency: multi-SP mode now uses `restoreHeaderState()` consistently
+- [x] Rollback verification for entitlement lookup errors (HEADER-012)
+  - Fixed inconsistent rollback behavior: lookup errors now restore headers (consistent with mapping errors)
+  - Differential test comparing lookup vs mapping error behavior: `TestHeaderStripping_Property_DifferentialLookupVsMappingErrors`
+  - Property-based test verifies consistent rollback across all error types
+  - Both single-SP and multi-SP modes updated consistently
+- [x] Config mutation concurrency fix (HEADER-010)
+  - Fixed data races when `HeaderPrefix` or `AttributeHeaders` mutate concurrently with `applyAttributeHeaders()`
+  - Added config snapshots during `Provision()` to prevent mutation between validation and runtime
+  - Concurrency test: `TestHeaderStripping_Concurrency_ConfigMutationInvariant` verifies header names match validation-time expectations
+  - Applied to both single-SP and multi-SP modes
+- [x] Header restoration bug fixes (HEADER-015, HEADER-016)
+  - Fixed HEADER-015: SAML attributes now always applied even when entitlement lookup fails (removed early return)
+  - Fixed HEADER-016: Header value accumulation prevented by deleting headers before restoring in `restoreHeaderState()`
+  - Property-based tests: `TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError`, `TestHeaderStripping_Property_RestoreDoesNotAccumulate`
+  - Updated differential test to reflect new behavior: SAML attributes applied regardless of entitlement lookup outcome
 
 ### Infrastructure
 
-- [ ] Create `*_fuzz_test.go` files with Go 1.18+ native fuzzing
-- [ ] Add fuzz corpus directories (`testdata/fuzz/`)
-- [ ] GitHub Actions workflow for nightly fuzzing campaigns
-- [ ] XML bomb protection (max entity expansion limit)
-- [ ] Metadata size limits configuration
+- [ ] TASK-FUZZ-001 - Create `*_fuzz_test.go` files with Go 1.18+ native fuzzing
+- [ ] TASK-FUZZ-002 - Add fuzz corpus directories (`testdata/fuzz/`)
+- [ ] TASK-FUZZ-003 - GitHub Actions workflow for nightly fuzzing campaigns
+- [ ] TASK-FUZZ-004 - XML bomb protection (max entity expansion limit)
+- [ ] TASK-FUZZ-005 - Metadata size limits configuration
 
 **Outcome:** No crashes in 24-hour fuzzing runs, improved confidence in security-critical code paths.
 
@@ -343,7 +331,7 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 
 - [x] Combine with SAML attributes (local entitlements supplement IdP-provided ones)
 - [x] Example: `examples/local-entitlements/` with Caddyfile and sample JSON
-- [ ] Documentation: when to use local entitlements vs external authz
+- [ ] TASK-DOC-001 - Documentation: when to use local entitlements vs external authz
 
 ### Testing
 

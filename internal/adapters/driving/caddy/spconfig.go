@@ -26,6 +26,12 @@ type SPConfig struct {
 	samlService      *SAMLService
 	sessionDuration  time.Duration
 	templateRenderer *TemplateRenderer
+
+	// Config snapshots (immutable copies taken during Provision to prevent mutation)
+	// These are used in applyAttributeHeadersForSP() to ensure header names match validation-time expectations.
+	headerPrefixSnapshot     string
+	attributeHeadersSnapshot []AttributeMapping
+	entitlementHeadersSnapshot []EntitlementHeaderMapping
 }
 
 // Validate checks if the SP config is valid.
@@ -34,6 +40,31 @@ func (c *SPConfig) Validate() error {
 		return fmt.Errorf("hostname is required")
 	}
 	return c.Config.Validate()
+}
+
+// SetMetadataStore sets the metadata store for testing.
+func (c *SPConfig) SetMetadataStore(store ports.MetadataStore) {
+	c.metadataStore = store
+}
+
+// SetSessionStore sets the session store for testing.
+func (c *SPConfig) SetSessionStore(store ports.SessionStore) {
+	c.sessionStore = store
+}
+
+// SetSAMLService sets the SAML service for testing.
+func (c *SPConfig) SetSAMLService(service *SAMLService) {
+	c.samlService = service
+}
+
+// SetEntitlementStore sets the entitlement store for testing.
+func (c *SPConfig) SetEntitlementStore(store ports.EntitlementStore) {
+	c.entitlementStore = store
+}
+
+// SetLogoStore sets the logo store for testing.
+func (c *SPConfig) SetLogoStore(store ports.LogoStore) {
+	c.logoStore = store
 }
 
 // validateSPConfigs validates a slice of SP configs and ensures cookie names are unique.
@@ -56,3 +87,6 @@ func validateSPConfigs(configs []*SPConfig) error {
 	}
 	return nil
 }
+
+
+
