@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,9 +41,15 @@ type URLMetadataStore struct {
 	lastError       error      // error from last refresh (nil if success)
 	validUntil      *time.Time // validUntil from metadata (nil if not present)
 
+	// Refresh synchronization - prevents concurrent refreshes
+	refreshMu sync.Mutex
+	refreshing bool // true when refresh is in progress
+
 	// Background refresh goroutine management
-	stopCh chan struct{}
-	closed bool
+	stopCh        chan struct{}
+	refreshCtx    context.Context    // cancellable context for background refresh
+	refreshCancel context.CancelFunc // cancel function for refreshCtx
+	closed        bool
 }
 
 // NewURLMetadataStore creates a new URLMetadataStore with passive refresh.
@@ -82,6 +89,7 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 func NewURLMetadataStoreWithRefresh(url string, refreshInterval time.Duration, opts ...MetadataOption) *URLMetadataStore {
 	s := NewURLMetadataStore(url, refreshInterval, opts...)
 	s.stopCh = make(chan struct{})
+	s.refreshCtx, s.refreshCancel = context.WithCancel(context.Background())
 	go s.refreshLoop(refreshInterval)
 	return s
 }
@@ -93,7 +101,8 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			err := s.doRefresh(context.Background(), true) // force=true bypasses cache TTL
+			// Use cancellable context for background refresh
+			err := s.doRefresh(s.refreshCtx, true) // force=true bypasses cache TTL
 			if s.logger != nil {
 				if err != nil {
 					s.logger.Warn("background metadata refresh failed",
@@ -111,6 +120,9 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 			}
 		case <-s.stopCh:
 			return
+		case <-s.refreshCtx.Done():
+			// Context was cancelled (e.g., by Close())
+			return
 		}
 	}
 }
@@ -124,6 +136,10 @@ func (s *URLMetadataStore) Close() error {
 	if s.stopCh != nil && !s.closed {
 		close(s.stopCh)
 		s.closed = true
+		// Cancel refresh context to stop in-progress HTTP requests
+		if s.refreshCancel != nil {
+			s.refreshCancel()
+		}
 	}
 	return nil
 }
@@ -209,15 +225,41 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 // If force is false, respects cache TTL and returns early if cache is valid.
 // If force is true, always fetches (used by background refresh).
 func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
-	// Check if cache is still valid (unless forced)
+	// Acquire refresh lock to prevent concurrent refreshes
+	s.refreshMu.Lock()
+	
+	// Check if refresh is already in progress
+	if s.refreshing {
+		s.refreshMu.Unlock()
+		// Another refresh is in progress, wait for it or return early
+		// For simplicity, we return early - the in-progress refresh will update the cache
+		return nil
+	}
+	
+	// Check if cache is still valid (unless forced) - do this while holding refreshMu
+	// to ensure atomic check with refresh state
 	s.mu.RLock()
-	if !force && !s.lastFetch.IsZero() && s.clock.Now().Sub(s.lastFetch) < s.cacheTTL {
+	cacheValid := !force && !s.lastFetch.IsZero() && s.clock.Now().Sub(s.lastFetch) < s.cacheTTL
+	if cacheValid {
 		s.mu.RUnlock()
+		s.refreshMu.Unlock()
 		return nil // Cache hit
 	}
+	// Read etag/lastModified while holding both locks to ensure consistency
 	etag := s.etag
 	lastModified := s.lastModified
 	s.mu.RUnlock()
+	
+	// Mark refresh as in progress
+	s.refreshing = true
+	s.refreshMu.Unlock()
+	
+	// Ensure we clear refreshing flag when done
+	defer func() {
+		s.refreshMu.Lock()
+		s.refreshing = false
+		s.refreshMu.Unlock()
+	}()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, nil)
 	if err != nil {
@@ -294,44 +336,12 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		return refreshErr
 	}
 
-	// Apply IdP filter if configured
-	if s.idpFilter != "" {
-		idps = filterIdPs(idps, s.idpFilter)
-		if len(idps) == 0 {
-			refreshErr := fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
-			s.markRefreshFailed(refreshErr)
-			return refreshErr
-		}
-	}
-
-	// Apply registration authority filter if configured
-	if s.registrationAuthorityFilter != "" {
-		idps = filterIdPsByRegistrationAuthority(idps, s.registrationAuthorityFilter)
-		if len(idps) == 0 {
-			refreshErr := fmt.Errorf("no IdPs match registration authority filter %q", s.registrationAuthorityFilter)
-			s.markRefreshFailed(refreshErr)
-			return refreshErr
-		}
-	}
-
-	// Apply entity category filter if configured
-	if s.entityCategoryFilter != "" {
-		idps = FilterIdPsByEntityCategory(idps, s.entityCategoryFilter)
-		if len(idps) == 0 {
-			refreshErr := fmt.Errorf("no IdPs match entity category filter %q", s.entityCategoryFilter)
-			s.markRefreshFailed(refreshErr)
-			return refreshErr
-		}
-	}
-
-	// Apply assurance certification filter if configured
-	if s.assuranceCertificationFilter != "" {
-		idps = FilterIdPsByAssuranceCertification(idps, s.assuranceCertificationFilter)
-		if len(idps) == 0 {
-			refreshErr := fmt.Errorf("no IdPs match assurance certification filter %q", s.assuranceCertificationFilter)
-			s.markRefreshFailed(refreshErr)
-			return refreshErr
-		}
+	// Apply all filters and collect failures
+	idps, filterFailures := s.applyFiltersAndCollectFailures(idps)
+	if len(filterFailures) > 0 {
+		refreshErr := fmt.Errorf("no IdPs match filters: %s", strings.Join(filterFailures, ", "))
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
 	}
 
 	// Success - update all state
@@ -352,6 +362,19 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	}
 
 	return nil
+}
+
+// applyFiltersAndCollectFailures applies all configured filters and collects
+// which filters would reduce the IdP set to zero. Returns filtered IdPs and
+// a list of filter failure descriptions.
+func (s *URLMetadataStore) applyFiltersAndCollectFailures(idps []domain.IdPInfo) ([]domain.IdPInfo, []string) {
+	return applyFiltersAndCollectFailures(
+		idps,
+		s.idpFilter,
+		s.registrationAuthorityFilter,
+		s.entityCategoryFilter,
+		s.assuranceCertificationFilter,
+	)
 }
 
 // markRefreshFailed updates state when refresh fails, preserving existing data.

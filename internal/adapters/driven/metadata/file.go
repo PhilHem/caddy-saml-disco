@@ -128,48 +128,14 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		return fmt.Errorf("parse metadata: %w", err)
 	}
 
-	// Apply IdP filter if configured
-	if s.idpFilter != "" {
-		idps = filterIdPs(idps, s.idpFilter)
-		if len(idps) == 0 {
-			if s.metricsRecorder != nil {
-				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
-			}
-			return fmt.Errorf("no IdPs match filter pattern %q", s.idpFilter)
+	// Apply all filters and collect failures
+	idps, filterFailures := s.applyFiltersAndCollectFailures(idps)
+	if len(filterFailures) > 0 {
+		if s.metricsRecorder != nil {
+			s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
 		}
-	}
-
-	// Apply registration authority filter if configured
-	if s.registrationAuthorityFilter != "" {
-		idps = filterIdPsByRegistrationAuthority(idps, s.registrationAuthorityFilter)
-		if len(idps) == 0 {
-			if s.metricsRecorder != nil {
-				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
-			}
-			return fmt.Errorf("no IdPs match registration authority filter %q", s.registrationAuthorityFilter)
-		}
-	}
-
-	// Apply entity category filter if configured
-	if s.entityCategoryFilter != "" {
-		idps = FilterIdPsByEntityCategory(idps, s.entityCategoryFilter)
-		if len(idps) == 0 {
-			if s.metricsRecorder != nil {
-				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
-			}
-			return fmt.Errorf("no IdPs match entity category filter %q", s.entityCategoryFilter)
-		}
-	}
-
-	// Apply assurance certification filter if configured
-	if s.assuranceCertificationFilter != "" {
-		idps = FilterIdPsByAssuranceCertification(idps, s.assuranceCertificationFilter)
-		if len(idps) == 0 {
-			if s.metricsRecorder != nil {
-				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
-			}
-			return fmt.Errorf("no IdPs match assurance certification filter %q", s.assuranceCertificationFilter)
-		}
+		// Build comprehensive error message with all failing filters
+		return fmt.Errorf("no IdPs match filters: %s", strings.Join(filterFailures, ", "))
 	}
 
 	s.mu.Lock()
@@ -184,6 +150,74 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 	return nil
 }
 
+// applyFiltersAndCollectFailures applies all configured filters and collects
+// which filters would reduce the IdP set to zero. Returns filtered IdPs and
+// a list of filter failure descriptions.
+func (s *FileMetadataStore) applyFiltersAndCollectFailures(idps []domain.IdPInfo) ([]domain.IdPInfo, []string) {
+	return applyFiltersAndCollectFailures(
+		idps,
+		s.idpFilter,
+		s.registrationAuthorityFilter,
+		s.entityCategoryFilter,
+		s.assuranceCertificationFilter,
+	)
+}
+
+// applyFiltersAndCollectFailures is a shared helper that applies all configured filters
+// and collects which filters would reduce the IdP set to zero. Returns filtered IdPs
+// and a list of filter failure descriptions.
+func applyFiltersAndCollectFailures(
+	idps []domain.IdPInfo,
+	idpFilter string,
+	registrationAuthorityFilter string,
+	entityCategoryFilter string,
+	assuranceCertificationFilter string,
+) ([]domain.IdPInfo, []string) {
+	var failures []string
+
+	// Apply IdP filter if configured
+	if idpFilter != "" {
+		filtered := filterIdPs(idps, idpFilter)
+		if len(filtered) == 0 {
+			failures = append(failures, fmt.Sprintf("filter pattern %q", idpFilter))
+		} else {
+			idps = filtered
+		}
+	}
+
+	// Apply registration authority filter if configured
+	if registrationAuthorityFilter != "" {
+		filtered := FilterIdPsByRegistrationAuthority(idps, registrationAuthorityFilter)
+		if len(filtered) == 0 {
+			failures = append(failures, fmt.Sprintf("registration authority filter %q", registrationAuthorityFilter))
+		} else {
+			idps = filtered
+		}
+	}
+
+	// Apply entity category filter if configured
+	if entityCategoryFilter != "" {
+		filtered := FilterIdPsByEntityCategory(idps, entityCategoryFilter)
+		if len(filtered) == 0 {
+			failures = append(failures, fmt.Sprintf("entity category filter %q", entityCategoryFilter))
+		} else {
+			idps = filtered
+		}
+	}
+
+	// Apply assurance certification filter if configured
+	if assuranceCertificationFilter != "" {
+		filtered := FilterIdPsByAssuranceCertification(idps, assuranceCertificationFilter)
+		if len(filtered) == 0 {
+			failures = append(failures, fmt.Sprintf("assurance certification filter %q", assuranceCertificationFilter))
+		} else {
+			idps = filtered
+		}
+	}
+
+	return idps, failures
+}
+
 // Health returns the health status of the file metadata store.
 func (s *FileMetadataStore) Health() domain.MetadataHealth {
 	s.mu.RLock()
@@ -193,6 +227,17 @@ func (s *FileMetadataStore) Health() domain.MetadataHealth {
 		IdPCount:           len(s.idps),
 		MetadataValidUntil: s.validUntil,
 	}
+}
+
+// filterEmptyStrings removes empty strings from a slice.
+func filterEmptyStrings(ss []string) []string {
+	var result []string
+	for _, s := range ss {
+		if s != "" {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // filterIdPs returns only IdPs whose entity ID matches the pattern.
@@ -209,10 +254,10 @@ func filterIdPs(idps []domain.IdPInfo, pattern string) []domain.IdPInfo {
 	return filtered
 }
 
-// filterIdPsByRegistrationAuthority returns only IdPs whose registration authority
+// FilterIdPsByRegistrationAuthority returns only IdPs whose registration authority
 // matches the pattern. Supports comma-separated patterns for multiple authorities.
 // IdPs without a registration authority are excluded when a filter is active.
-func filterIdPsByRegistrationAuthority(idps []domain.IdPInfo, pattern string) []domain.IdPInfo {
+func FilterIdPsByRegistrationAuthority(idps []domain.IdPInfo, pattern string) []domain.IdPInfo {
 	if pattern == "" {
 		return idps
 	}
@@ -222,6 +267,9 @@ func filterIdPsByRegistrationAuthority(idps []domain.IdPInfo, pattern string) []
 	for i := range patterns {
 		patterns[i] = strings.TrimSpace(patterns[i])
 	}
+
+	// Filter out empty patterns (METADATA-012: empty pattern matches everything)
+	patterns = filterEmptyStrings(patterns)
 
 	var filtered []domain.IdPInfo
 	for _, idp := range idps {
@@ -253,6 +301,9 @@ func FilterIdPsByEntityCategory(idps []domain.IdPInfo, categories string) []doma
 	for i := range categoryList {
 		categoryList[i] = strings.TrimSpace(categoryList[i])
 	}
+
+	// Filter out empty strings (METADATA-013: empty strings never match but are processed)
+	categoryList = filterEmptyStrings(categoryList)
 
 	var filtered []domain.IdPInfo
 	for _, idp := range idps {
@@ -293,6 +344,9 @@ func FilterIdPsByAssuranceCertification(idps []domain.IdPInfo, certifications st
 	for i := range certList {
 		certList[i] = strings.TrimSpace(certList[i])
 	}
+
+	// Filter out empty strings (METADATA-013: empty strings never match but are processed)
+	certList = filterEmptyStrings(certList)
 
 	var filtered []domain.IdPInfo
 	for _, idp := range idps {

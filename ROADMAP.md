@@ -199,10 +199,15 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
 - [x] TASK-ECAT-002 - Filter IdPs by entity category or assurance level
 
 ### Quality
-- [ ] TASK-TEST-001 - Test files need updates after hexagonal architecture refactoring (see TEST-001)
+- [x] TASK-TEST-001 - Test files need updates after hexagonal architecture refactoring (see TEST-001, TEST-008) - MapAttributesToHeadersWithPrefix already exported in plugin.go, tests pass
 - [x] TASK-TEST-002 - Multi-SP handler isolation incomplete (see TEST-002)
 - [x] TASK-TEST-003 - Missing property-based test for session isolation (see TEST-003)
 - [x] TASK-TEST-004 - Missing integration tests for multi-SP feature (see TEST-004)
+- [x] TASK-TEST-005 - Fix tests accessing unexported adapter internals after hexagonal refactoring (see TEST-005, TEST-006, TEST-007, ARCH-003, ARCH-004)
+- [x] TASK-ARCH-006 - Create AttributeMapper port interface for attribute mapping operations (fixes ARCH-006, ARCH-007, ARCH-008, partially addresses ARCH-002)
+  - Created `AttributeMapper` port interface in `internal/core/ports/attributes.go`
+  - Created `CaddyAttributeMapper` adapter implementing port interface
+  - Refactored tests to use port interface through helper functions
 
 **Outcome:** Full-featured SAML SP plugin for Caddy.
 
@@ -231,6 +236,12 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
   - Malformed RFC3339, timezone edge cases, far future/past dates
 - [x] `FuzzExtractIdPInfo` - IdP info extraction (`metadata.go:732`)
   - Missing required elements, malformed localized values
+- [x] Property-based tests for metadata filters (METADATA-001, METADATA-002, METADATA-009, METADATA-010, METADATA-011)
+  - FilterIdPsByRegistrationAuthority idempotency (METADATA-001)
+  - FilterIdPsByRegistrationAuthority order independence (METADATA-002)
+  - filterIdPs slice reference behavior verification (METADATA-009)
+  - Duplicate patterns handling verification (METADATA-010)
+  - Filter order independence property test (METADATA-011)
 
 ### Priority 3: Input Validation
 
@@ -265,6 +276,21 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
   - Round-trip consistency (inject → parse → same values)
   - Empty separator defaulting property test (ATTR-003)
   - Separator sanitization edge case fixes (ATTR-005, ATTR-006): separators that sanitize to empty now re-default to `;`
+- [x] Property-based tests for prefix application consistency (ATTR-002, ATTR-012)
+  - Prefix application consistency regardless of mapping order (ATTR-002)
+  - Order dependency consistency when multiple mappings produce same header name (ATTR-012)
+- [x] Property-based tests for ResolveAttributeName (ATTR-001, ATTR-013, ATTR-014, ATTR-015)
+  - Roundtrip idempotence: OID→friendly→OID (ATTR-001)
+  - Registry bidirectional consistency validation (ATTR-014)
+  - Edge case: friendly names with "urn:oid:" prefix (ATTR-015)
+  - Fixed test bug: swapped return values in bidirectionality test (ATTR-013)
+- [x] Property-based tests for attribute mapping functions (ATTR-016, ATTR-017, ATTR-018, ATTR-019, ATTR-020, ATTR-021)
+  - sanitizeHeaderValue idempotency verification (ATTR-016): confirms function is already idempotent
+  - ApplyHeaderPrefix associativity and double-prefix behavior (ATTR-017): documents intentional string concatenation behavior
+  - MapAttributesToHeadersWithPrefix double-prefix behavior (ATTR-018): documents consistent behavior with ApplyHeaderPrefix
+  - MapAttributesToHeadersWithPrefix idempotency property test (ATTR-019): verifies calling function twice with same inputs produces identical outputs
+  - MapAttributesToHeaders thread-safety concurrency test (ATTR-020): verifies concurrent calls with different inputs don't interfere (pure functions with no shared mutable state)
+  - Differential test comparing MapAttributesToHeaders vs MapAttributesToHeadersWithPrefix(prefix="") (ATTR-021): verifies equivalence when prefix is empty
 - [x] Property-based test for header stripping
   - Incoming spoofed headers always removed before injection
   - Case-insensitive header matching

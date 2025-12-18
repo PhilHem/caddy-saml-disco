@@ -81,7 +81,7 @@ func FuzzMapAttributesToHeaders(f *testing.F) {
 			{SAMLAttribute: attrName, HeaderName: headerName},
 		}
 
-		result, err := MapAttributesToHeaders(attrs, mappings)
+		result, err := mapAttributesToHeadersViaPort(attrs, mappings)
 
 		// Check invariants regardless of error
 		checkAttributeMappingInvariantsFuzz(t, attrs, mappings, result, err)
@@ -103,22 +103,19 @@ func FuzzMapAttributesToHeaders_MultiValue(f *testing.F) {
 			{SAMLAttribute: attrName, HeaderName: headerName, Separator: separator},
 		}
 
-		result, err := MapAttributesToHeaders(attrs, mappings)
+		result, err := mapAttributesToHeadersViaPort(attrs, mappings)
 
 		checkAttributeMappingInvariantsFuzz(t, attrs, mappings, result, err)
 
 		// Additional check: if successful, verify separator is used correctly
 		if err == nil && len(result) > 0 {
-			if headerVal, ok := result[headerName]; ok {
+			if _, ok := result[headerName]; ok {
 				// The value should contain the separator if both vals are non-empty
 				// (after sanitization, the separator might not be present if values were empty)
 				if val1 != "" && val2 != "" && separator != "" {
-					// Sanitized separator should be present
-					sanitizedSep := sanitizeHeaderValue(separator)
-					if sanitizedSep != "" && !strings.Contains(headerVal, sanitizedSep) {
-						// This is OK if values were sanitized away
-						_ = headerVal
-					}
+					// Note: separator sanitization is tested indirectly through MapAttributesToHeaders
+					// The separator is sanitized internally, so we just verify the result is valid
+					_ = separator
 				}
 			}
 		}

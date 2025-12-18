@@ -61,4 +61,5 @@ var (
 	NewURLMetadataStoreWithRefresh = metadata.NewURLMetadataStoreWithRefresh
 	FilterIdPsByEntityCategory     = metadata.FilterIdPsByEntityCategory
 	FilterIdPsByAssuranceCertification = metadata.FilterIdPsByAssuranceCertification
+	FilterIdPsByRegistrationAuthority = metadata.FilterIdPsByRegistrationAuthority
 )

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 )
 
@@ -249,7 +250,7 @@ func FuzzParseMetadataExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, validUntil, err := parseMetadata([]byte(input))
+		idps, validUntil, err := metadata.ParseMetadata([]byte(input))
 		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
 	})
 }
@@ -497,7 +498,7 @@ func FuzzExtractIdPInfoExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, _, err := parseMetadata([]byte(input))
+		idps, _, err := metadata.ParseMetadata([]byte(input))
 		checkExtractIdPInfoInvariants(t, []byte(input), idps, err)
 		_ = err
 	})

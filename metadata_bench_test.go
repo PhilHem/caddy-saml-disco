@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 )
 
 // Benchmark metadata parsing with various IdP counts.
@@ -171,9 +173,9 @@ func benchmarkParseMetadata(b *testing.B, data []byte, expectedCount int) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		idps, _, err = parseMetadata(data)
+		idps, _, err = metadata.ParseMetadata(data)
 		if err != nil {
-			b.Fatalf("parseMetadata failed: %v", err)
+			b.Fatalf("ParseMetadata failed: %v", err)
 		}
 	}
 	b.StopTimer()
@@ -345,7 +347,7 @@ func setupBenchStore(b *testing.B, count int) *InMemoryMetadataStore {
 		data = fixture5000
 	}
 
-	idps, _, err := parseMetadata(data)
+	idps, _, err := metadata.ParseMetadata(data)
 	if err != nil {
 		b.Fatalf("failed to parse fixture: %v", err)
 	}
@@ -383,9 +385,9 @@ func TestMemoryUsage(t *testing.T) {
 			}
 
 			// Parse the metadata
-			idps, _, err := parseMetadata(fixture)
+			idps, _, err := metadata.ParseMetadata(fixture)
 			if err != nil {
-				t.Fatalf("parseMetadata failed: %v", err)
+				t.Fatalf("ParseMetadata failed: %v", err)
 			}
 
 			// Calculate approximate size of IdPInfo slice in memory

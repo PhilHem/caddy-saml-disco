@@ -100,6 +100,51 @@ Core interfaces: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `
 - **Metrics**: `metrics.go` (PrometheusMetricsRecorder, NoopMetricsRecorder)
 - **Caddy**: `plugin.go` (module registration), `caddyfile.go` (config parsing)
 
+### Concurrency Model
+
+Concurrency follows hexagonal architecture boundaries:
+
+| Layer | Concurrency | Rationale |
+|-------|-------------|-----------|
+| **Domain** (`internal/core/domain/`) | None | Pure functions, no I/O, no shared mutable state. Thread-safe by design (stateless). |
+| **Ports** (`internal/core/ports/`) | Interface-agnostic | Ports define *what*, not *how*. Implementations must be safe for concurrent use. |
+| **Adapters** (`internal/adapters/`) | All concurrency lives here | Adapters manage I/O, caching, background workers, and synchronization. |
+
+**Standard Adapter Pattern** (based on `URLMetadataStore`):
+
+```go
+type StatefulAdapter struct {
+    // Data protection - RWMutex for read-heavy workloads
+    mu   sync.RWMutex
+    data SomeData
+    
+    // Refresh serialization - prevents concurrent refresh/reload operations
+    refreshMu  sync.Mutex
+    refreshing bool
+    
+    // Lifecycle management - for background goroutines
+    stopCh        chan struct{}
+    refreshCtx    context.Context
+    refreshCancel context.CancelFunc
+    closed        bool
+}
+```
+
+**Key invariants:**
+
+1. **Data protection**: Use `sync.RWMutex` for shared state (read-heavy pattern)
+2. **Refresh serialization**: Use `refreshMu` + `refreshing` flag to prevent concurrent refresh operations
+3. **Lifecycle**: Use `stopCh` + `closed` flag for graceful shutdown signaling
+4. **Cancellation**: Use `context.Context` for cancelling in-flight I/O operations
+5. **Test hooks**: Use `WithOnRefresh`, `WithOnCleanup`, `WithClock` callbacks for deterministic testing
+
+**What to avoid:**
+
+- Channels for data access (only use for lifecycle signals)
+- Multiple mutexes protecting the same logical data
+- Bare goroutines without lifecycle management
+- `time.Sleep` in tests (use clock interfaces and callbacks)
+
 ## Key Constraints
 
 1. Core domain logic must never import `caddyserver/caddy`

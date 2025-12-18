@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // TestNoopMetricsRecorder_Implements verifies NoopMetricsRecorder implements MetricsRecorder.
@@ -33,6 +33,38 @@ func TestPrometheusMetricsRecorder_Implements(t *testing.T) {
 	var _ MetricsRecorder = (*PrometheusMetricsRecorder)(nil)
 }
 
+// getMetricValue extracts a metric value from the registry by name and labels.
+func getMetricValue(reg prometheus.Gatherer, name string, labels map[string]string) float64 {
+	metrics, _ := reg.Gather()
+	for _, mf := range metrics {
+		if mf.GetName() != name {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			// Check if labels match
+			labelMap := make(map[string]string)
+			for _, label := range m.GetLabel() {
+				labelMap[label.GetName()] = label.GetValue()
+			}
+			matches := true
+			for k, v := range labels {
+				if labelMap[k] != v {
+					matches = false
+					break
+				}
+			}
+			if matches {
+				if mf.GetType() == dto.MetricType_COUNTER {
+					return m.GetCounter().GetValue()
+				} else if mf.GetType() == dto.MetricType_GAUGE {
+					return m.GetGauge().GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
 // TestPrometheusMetricsRecorder_AuthAttempt verifies auth counter increments correctly.
 func TestPrometheusMetricsRecorder_AuthAttempt(t *testing.T) {
 	reg := prometheus.NewRegistry()
@@ -43,18 +75,18 @@ func TestPrometheusMetricsRecorder_AuthAttempt(t *testing.T) {
 	r.RecordAuthAttempt("https://idp1.example.com", false)
 	r.RecordAuthAttempt("https://idp2.example.com", true)
 
-	// Verify success count for idp1
-	if got := testutil.ToFloat64(r.authAttemptsTotal.WithLabelValues("https://idp1.example.com", "success")); got != 2 {
+	// Verify success count for idp1 by gathering from registry
+	if got := getMetricValue(reg, "saml_disco_auth_attempts_total", map[string]string{"idp_entity_id": "https://idp1.example.com", "result": "success"}); got != 2 {
 		t.Errorf("idp1 success count = %v, want 2", got)
 	}
 
 	// Verify failure count for idp1
-	if got := testutil.ToFloat64(r.authAttemptsTotal.WithLabelValues("https://idp1.example.com", "failure")); got != 1 {
+	if got := getMetricValue(reg, "saml_disco_auth_attempts_total", map[string]string{"idp_entity_id": "https://idp1.example.com", "result": "failure"}); got != 1 {
 		t.Errorf("idp1 failure count = %v, want 1", got)
 	}
 
 	// Verify success count for idp2
-	if got := testutil.ToFloat64(r.authAttemptsTotal.WithLabelValues("https://idp2.example.com", "success")); got != 1 {
+	if got := getMetricValue(reg, "saml_disco_auth_attempts_total", map[string]string{"idp_entity_id": "https://idp2.example.com", "result": "success"}); got != 1 {
 		t.Errorf("idp2 success count = %v, want 1", got)
 	}
 }
@@ -72,18 +104,18 @@ func TestPrometheusMetricsRecorder_Sessions(t *testing.T) {
 	r.RecordSessionValidation(true)
 	r.RecordSessionValidation(false)
 
-	// Verify sessions created count
-	if got := testutil.ToFloat64(r.sessionsCreatedTotal); got != 3 {
+	// Verify sessions created count by gathering from registry
+	if got := getMetricValue(reg, "saml_disco_sessions_created_total", nil); got != 3 {
 		t.Errorf("sessions created = %v, want 3", got)
 	}
 
 	// Verify valid session validations
-	if got := testutil.ToFloat64(r.sessionValidationsTotal.WithLabelValues("valid")); got != 2 {
+	if got := getMetricValue(reg, "saml_disco_session_validations_total", map[string]string{"result": "valid"}); got != 2 {
 		t.Errorf("valid session validations = %v, want 2", got)
 	}
 
 	// Verify invalid session validations
-	if got := testutil.ToFloat64(r.sessionValidationsTotal.WithLabelValues("invalid")); got != 1 {
+	if got := getMetricValue(reg, "saml_disco_session_validations_total", map[string]string{"result": "invalid"}); got != 1 {
 		t.Errorf("invalid session validations = %v, want 1", got)
 	}
 }
@@ -98,23 +130,23 @@ func TestPrometheusMetricsRecorder_MetadataRefresh(t *testing.T) {
 	r.RecordMetadataRefresh("url", false, 0)
 	r.RecordMetadataRefresh("file", true, 10)
 
-	// Verify url success count
-	if got := testutil.ToFloat64(r.metadataRefreshTotal.WithLabelValues("url", "success")); got != 2 {
+	// Verify url success count by gathering from registry
+	if got := getMetricValue(reg, "saml_disco_metadata_refresh_total", map[string]string{"source": "url", "result": "success"}); got != 2 {
 		t.Errorf("url success count = %v, want 2", got)
 	}
 
 	// Verify url failure count
-	if got := testutil.ToFloat64(r.metadataRefreshTotal.WithLabelValues("url", "failure")); got != 1 {
+	if got := getMetricValue(reg, "saml_disco_metadata_refresh_total", map[string]string{"source": "url", "result": "failure"}); got != 1 {
 		t.Errorf("url failure count = %v, want 1", got)
 	}
 
 	// Verify file success count
-	if got := testutil.ToFloat64(r.metadataRefreshTotal.WithLabelValues("file", "success")); got != 1 {
+	if got := getMetricValue(reg, "saml_disco_metadata_refresh_total", map[string]string{"source": "file", "result": "success"}); got != 1 {
 		t.Errorf("file success count = %v, want 1", got)
 	}
 
 	// Verify IdP count gauge (should be last value: 10 from file refresh)
-	if got := testutil.ToFloat64(r.metadataIdpCount); got != 10 {
+	if got := getMetricValue(reg, "saml_disco_metadata_idp_count", nil); got != 10 {
 		t.Errorf("idp count = %v, want 10", got)
 	}
 }
