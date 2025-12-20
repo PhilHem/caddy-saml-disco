@@ -7,7 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/quick"
 )
 
 // Cycle 1: Test that LogoStore interface exists and ErrLogoNotFound is defined
@@ -263,4 +266,170 @@ func TestHandleLogoEndpoint_CacheHeaders(t *testing.T) {
 	_ = req
 	// Test skipped - handleLogoEndpoint is unexported
 	t.Skip("handleLogoEndpoint is unexported, test indirectly through ServeHTTP")
+}
+
+// Cycle 13: Test CachingLogoStore concurrent access - CONC-001
+// This test verifies that multiple concurrent Gets for the same uncached logo
+// trigger only one HTTP fetch (not multiple due to TOCTOU race).
+
+func TestCachingLogoStore_Concurrency_SingleFetch(t *testing.T) {
+	var fetchCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetchCount.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		w.Write([]byte("fake-png-data"))
+	}))
+	defer server.Close()
+
+	metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+		EntityID: "https://idp.example.com",
+		LogoURL:  server.URL + "/logo.png",
+	}})
+
+	store := NewCachingLogoStore(metadataStore, nil)
+
+	const numGoroutines = 50
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines)
+
+	// Start all goroutines at once to maximize race condition probability
+	start := make(chan struct{})
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start // Wait for signal to start
+			_, err := store.Get("https://idp.example.com")
+			if err != nil {
+				errors <- err
+			}
+		}()
+	}
+
+	// Start all goroutines simultaneously
+	close(start)
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Errorf("Get() returned error: %v", err)
+	}
+
+	// IMPORTANT: With proper fetch serialization, we should have exactly 1 fetch.
+	// Without serialization (TOCTOU race), we'll have multiple fetches.
+	count := int(fetchCount.Load())
+	if count != 1 {
+		t.Errorf("fetchCount = %d, want 1 (CONC-001: TOCTOU race detected - multiple concurrent fetches)", count)
+	}
+}
+
+// Cycle 14: Test CachingLogoStore concurrent Get returns consistent data - CONC-002
+// This test verifies that all concurrent Gets receive the same cached data.
+
+func TestCachingLogoStore_Property_CacheConsistency(t *testing.T) {
+	f := func(logoData []byte) bool {
+		if len(logoData) == 0 || len(logoData) > 1024 {
+			return true // Skip edge cases
+		}
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(logoData)
+		}))
+		defer server.Close()
+
+		metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+			EntityID: "https://idp.example.com",
+			LogoURL:  server.URL + "/logo.png",
+		}})
+
+		store := NewCachingLogoStore(metadataStore, nil)
+
+		const numGoroutines = 20
+		var wg sync.WaitGroup
+		results := make(chan []byte, numGoroutines)
+		errors := make(chan error, numGoroutines)
+
+		start := make(chan struct{})
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				logo, err := store.Get("https://idp.example.com")
+				if err != nil {
+					errors <- err
+					return
+				}
+				results <- logo.Data
+			}()
+		}
+
+		close(start)
+		wg.Wait()
+		close(results)
+		close(errors)
+
+		for err := range errors {
+			t.Logf("error: %v", err)
+			return false
+		}
+
+		// All results should be identical
+		var first []byte
+		for data := range results {
+			if first == nil {
+				first = data
+			} else if !bytes.Equal(first, data) {
+				return false // Inconsistent data
+			}
+		}
+
+		// Data should match original
+		return bytes.Equal(first, logoData)
+	}
+
+	if err := quick.Check(f, &quick.Config{MaxCount: 10}); err != nil {
+		t.Error(err)
+	}
+}
+
+// Cycle 15: Test InMemoryLogoStore concurrent access is thread-safe
+
+func TestInMemoryLogoStore_Concurrency_ThreadSafe(t *testing.T) {
+	store := NewInMemoryLogoStore()
+
+	const numGoroutines = 100
+	const numOpsPerGoroutine = 10
+
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines*numOpsPerGoroutine)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			entityID := "https://idp.example.com"
+			logo := &CachedLogo{
+				Data:        []byte("test-data"),
+				ContentType: "image/png",
+			}
+
+			for j := 0; j < numOpsPerGoroutine; j++ {
+				// Alternate between Set and Get
+				if j%2 == 0 {
+					store.Set(entityID, logo)
+				} else {
+					_, _ = store.Get(entityID) // Ignore errors, testing thread-safety not correctness
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Errorf("concurrent operation error: %v", err)
+	}
 }

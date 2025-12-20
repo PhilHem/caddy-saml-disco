@@ -11,6 +11,7 @@ type AuthResult = caddy.AuthResult
 type AuthnOptions = domain.AuthnOptions
 
 var (
-	NewSAMLService      = caddy.NewSAMLService
-	NewSAMLServiceWithStore = caddy.NewSAMLServiceWithStore
+	NewSAMLService           = caddy.NewSAMLService
+	NewSAMLServiceWithStore  = caddy.NewSAMLServiceWithStore
+	ValidateAuthnContextComparison = domain.ValidateAuthnContextComparison
 )

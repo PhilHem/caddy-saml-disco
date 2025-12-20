@@ -263,7 +263,7 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			if err != nil {
 				return fmt.Errorf("load SP certificate: %w", err)
 			}
-			s.samlService = NewSAMLService(s.EntityID, privateKey, certificate)
+			s.samlService = NewSAMLServiceWithCleanup(s.EntityID, privateKey, certificate, DefaultRequestCleanupInterval)
 
 			// Configure metadata signing if enabled
 			if s.SignMetadata {
@@ -438,7 +438,7 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 			if err != nil {
 				return fmt.Errorf("load SP certificate: %w", err)
 			}
-			spCfg.samlService = NewSAMLService(spCfg.EntityID, privateKey, certificate)
+			spCfg.samlService = NewSAMLServiceWithCleanup(spCfg.EntityID, privateKey, certificate, DefaultRequestCleanupInterval)
 
 			// Configure metadata signing if enabled
 			if spCfg.SignMetadata {
@@ -944,19 +944,35 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 		originalHeaders = make(map[string][]string)
 		for _, mapping := range attributeHeaders {
 			headerToStrip := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
-			headerToStrip = http.CanonicalHeaderKey(headerToStrip)
-			if values := r.Header[headerToStrip]; len(values) > 0 {
-				originalHeaders[headerToStrip] = values
+			canonical := http.CanonicalHeaderKey(headerToStrip)
+			// Find the actual key in the map (may differ in case, especially for non-ASCII)
+			// Iterate through all headers to find case-insensitive match
+			for key := range r.Header {
+				// Use EqualFold for Unicode-aware case-insensitive matching
+				if strings.EqualFold(key, headerToStrip) || http.CanonicalHeaderKey(key) == canonical {
+					// Save original value before deletion
+					originalHeaders[canonical] = r.Header[key]
+					// Delete header case-insensitively
+					deleteHeaderCaseInsensitive(r, headerToStrip)
+					break
+				}
 			}
-			r.Header.Del(headerToStrip)
 		}
 		for _, mapping := range entitlementHeaders {
 			headerToStrip := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
-			headerToStrip = http.CanonicalHeaderKey(headerToStrip)
-			if values := r.Header[headerToStrip]; len(values) > 0 {
-				originalHeaders[headerToStrip] = values
+			canonical := http.CanonicalHeaderKey(headerToStrip)
+			// Find the actual key in the map (may differ in case, especially for non-ASCII)
+			// Iterate through all headers to find case-insensitive match
+			for key := range r.Header {
+				// Use EqualFold for Unicode-aware case-insensitive matching
+				if strings.EqualFold(key, headerToStrip) || http.CanonicalHeaderKey(key) == canonical {
+					// Save original value before deletion
+					originalHeaders[canonical] = r.Header[key]
+					// Delete header case-insensitively
+					deleteHeaderCaseInsensitive(r, headerToStrip)
+					break
+				}
 			}
-			r.Header.Del(headerToStrip)
 		}
 	}
 
@@ -1089,6 +1105,35 @@ func shouldStripAttributeHeadersForSP(spConfig *SPConfig) bool {
 		return true
 	}
 	return *spConfig.StripAttributeHeaders
+}
+
+// deleteHeaderCaseInsensitive deletes a header from the request using case-insensitive matching.
+// This is necessary because http.Header.Del() is case-sensitive for the map key, but HTTP headers
+// are case-insensitive. For non-ASCII characters, http.CanonicalHeaderKey may not normalize
+// correctly, so we need to find the actual key in the map using case-insensitive comparison.
+func deleteHeaderCaseInsensitive(r *http.Request, headerName string) {
+	// Use http.Header.Get to check if header exists (case-insensitive)
+	// Then find and delete the actual key in the map
+	canonical := http.CanonicalHeaderKey(headerName)
+	if r.Header.Get(canonical) == "" {
+		return // Header doesn't exist
+	}
+	
+	// Find the actual key(s) in the map that match case-insensitively
+	// Use strings.EqualFold for Unicode-aware case-insensitive comparison
+	keysToDelete := make([]string, 0)
+	for key := range r.Header {
+		// Compare using EqualFold for Unicode-aware case-insensitive matching
+		// Also check canonical forms in case EqualFold doesn't work for all cases
+		if strings.EqualFold(key, headerName) || http.CanonicalHeaderKey(key) == canonical {
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+	
+	// Delete all matching keys
+	for _, key := range keysToDelete {
+		delete(r.Header, key)
+	}
 }
 
 // getLogger returns the logger, or a no-op logger if not set.
@@ -1917,6 +1962,11 @@ func ParseAcceptLanguage(header string) []string {
 			}
 		}
 
+		// Skip empty language strings
+		if lang == "" {
+			continue
+		}
+
 		if q > 0 {
 			langs = append(langs, langQ{lang: lang, q: q})
 			// Add base language for regional variants (en-US -> en)
@@ -1934,7 +1984,7 @@ func ParseAcceptLanguage(header string) []string {
 
 	// Deduplicate while preserving order
 	seen := make(map[string]bool)
-	var result []string
+	result := []string{}
 	for _, lq := range langs {
 		if !seen[lq.lang] {
 			seen[lq.lang] = true
@@ -2837,13 +2887,30 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 // Cleanup stops background goroutines when the module is unloaded.
 // Implements caddy.CleanerUpper for graceful shutdown.
 func (s *SAMLDisco) Cleanup() error {
+	// Close the SAML service (stops request store cleanup goroutine)
+	if s.samlService != nil {
+		if err := s.samlService.Close(); err != nil {
+			return err
+		}
+	}
+
 	// Close the metadata store if it supports Close()
 	if closer, ok := s.metadataStore.(interface{ Close() error }); ok {
-		return closer.Close()
+		if err := closer.Close(); err != nil {
+			return err
+		}
 	}
-	// Also cleanup SP config stores
+
+	// Also cleanup SP config resources
 	if s.registry != nil {
 		for _, spCfg := range s.SPConfigs {
+			// Close SP-specific SAML service
+			if spCfg.samlService != nil {
+				if err := spCfg.samlService.Close(); err != nil {
+					return err
+				}
+			}
+			// Close SP-specific metadata store
 			if closer, ok := spCfg.metadataStore.(interface{ Close() error }); ok {
 				if err := closer.Close(); err != nil {
 					return err

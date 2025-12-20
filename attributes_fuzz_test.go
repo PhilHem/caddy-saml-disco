@@ -1,9 +1,42 @@
+//go:build go1.18 && !unit
+
 package caddysamldisco
 
 import (
 	"strings"
 	"testing"
 )
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+// newTestAttributeMapper returns an AttributeMapper instance for testing.
+// Tests should use this to test through the port interface rather than
+// calling adapter functions directly.
+func newTestAttributeMapper() AttributeMapper {
+	return NewCaddyAttributeMapper()
+}
+
+// convertToPortMappings converts AttributeMapping to PortAttributeMapping.
+func convertToPortMappings(mappings []AttributeMapping) []PortAttributeMapping {
+	result := make([]PortAttributeMapping, len(mappings))
+	for i, m := range mappings {
+		result[i] = PortAttributeMapping{
+			SAMLAttribute: m.SAMLAttribute,
+			HeaderName:    m.HeaderName,
+			Separator:     m.Separator,
+		}
+	}
+	return result
+}
+
+// mapAttributesToHeadersViaPort is a helper that calls MapAttributesToHeaders through the port interface.
+// This allows tests to test through the port interface while using the existing AttributeMapping type.
+func mapAttributesToHeadersViaPort(attrs map[string][]string, mappings []AttributeMapping) (map[string]string, error) {
+	mapper := newTestAttributeMapper()
+	return mapper.MapAttributesToHeaders(attrs, convertToPortMappings(mappings))
+}
 
 // =============================================================================
 // Minimal Fuzz Seeds (Local Development - Fast)

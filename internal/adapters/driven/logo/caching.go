@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
@@ -44,11 +45,17 @@ func WithLogoMaxSize(size int64) LogoStoreOption {
 }
 
 // CachingLogoStore fetches logos from URLs and caches them.
+// Thread-safe: uses fetchMu to serialize fetch operations per entityID,
+// preventing multiple concurrent HTTP requests for the same uncached logo.
 type CachingLogoStore struct {
 	metadataStore ports.MetadataStore
 	httpClient    *http.Client
 	cache         *InMemoryLogoStore
 	maxSize       int64
+
+	// Concurrency control for fetch operations
+	fetchMu   sync.Mutex           // Serializes access to fetching map
+	fetching  map[string]chan struct{} // Tracks in-progress fetches by entityID
 }
 
 // NewCachingLogoStore creates a new caching logo store.
@@ -68,15 +75,48 @@ func NewCachingLogoStore(metadataStore ports.MetadataStore, httpClient *http.Cli
 		httpClient:    httpClient,
 		cache:         NewInMemoryLogoStore(),
 		maxSize:       options.maxSize,
+		fetching:      make(map[string]chan struct{}),
 	}
 }
 
 // Get returns a logo for the given entity ID, fetching and caching if needed.
+// Thread-safe: serializes concurrent fetches for the same entityID.
 func (s *CachingLogoStore) Get(entityID string) (*ports.CachedLogo, error) {
-	// Check cache first
+	// Check cache first (fast path)
 	if logo, err := s.cache.Get(entityID); err == nil {
 		return logo, nil
 	}
+
+	// Acquire fetch lock to check/set in-progress state
+	s.fetchMu.Lock()
+
+	// Double-check cache while holding lock (may have been populated by another goroutine)
+	if logo, err := s.cache.Get(entityID); err == nil {
+		s.fetchMu.Unlock()
+		return logo, nil
+	}
+
+	// Check if fetch is already in progress
+	if wait, ok := s.fetching[entityID]; ok {
+		s.fetchMu.Unlock()
+		// Wait for the in-progress fetch to complete
+		<-wait
+		// Now the cache should be populated (or failed)
+		return s.cache.Get(entityID)
+	}
+
+	// Start a new fetch - create wait channel
+	wait := make(chan struct{})
+	s.fetching[entityID] = wait
+	s.fetchMu.Unlock()
+
+	// Cleanup: remove from fetching map and signal waiters
+	defer func() {
+		s.fetchMu.Lock()
+		delete(s.fetching, entityID)
+		close(wait)
+		s.fetchMu.Unlock()
+	}()
 
 	// Get IdP info to find LogoURL
 	idp, err := s.metadataStore.GetIdP(entityID)
@@ -87,7 +127,7 @@ func (s *CachingLogoStore) Get(entityID string) (*ports.CachedLogo, error) {
 		return nil, ErrLogoNotFound
 	}
 
-	// Fetch logo
+	// Fetch logo (only one goroutine does this per entityID)
 	logo, err := s.fetchLogo(idp.LogoURL)
 	if err != nil {
 		return nil, err
@@ -139,6 +179,9 @@ func (s *CachingLogoStore) fetchLogo(logoURL string) (*ports.CachedLogo, error) 
 
 // Ensure CachingLogoStore implements ports.LogoStore
 var _ ports.LogoStore = (*CachingLogoStore)(nil)
+
+
+
 
 
 

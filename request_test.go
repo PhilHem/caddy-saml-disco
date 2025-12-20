@@ -180,17 +180,27 @@ func TestInMemoryRequestStore_BackgroundCleanup(t *testing.T) {
 		t.Fatal("timeout waiting for cleanup")
 	}
 
-	// Check that expired entry was purged by looking at internal state
-	store.mu.RLock()
-	_, expiredExists := store.entries["expired"]
-	_, validExists := store.entries["valid"]
-	store.mu.RUnlock()
-
-	if expiredExists {
-		t.Error("expired entry still exists after cleanup")
+	// Check that expired entry was purged by testing through public interface
+	// Expired entry should not be in GetAll() and Valid() should return false
+	if store.Valid("expired") {
+		t.Error("expired entry should not be valid")
 	}
-	if !validExists {
-		t.Error("valid entry was incorrectly purged")
+	allIDs := store.GetAll()
+	expiredFound := false
+	validFound := false
+	for _, id := range allIDs {
+		if id == "expired" {
+			expiredFound = true
+		}
+		if id == "valid" {
+			validFound = true
+		}
+	}
+	if expiredFound {
+		t.Error("expired entry still exists after cleanup (found in GetAll())")
+	}
+	if !validFound {
+		t.Error("valid entry was incorrectly purged (not found in GetAll())")
 	}
 }
 

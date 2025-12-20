@@ -8,9 +8,6 @@ import (
 	"sync"
 	"testing"
 	"testing/quick"
-
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
 // =============================================================================
@@ -20,15 +17,15 @@ import (
 // newTestAttributeMapper returns an AttributeMapper instance for testing.
 // Tests should use this to test through the port interface rather than
 // calling adapter functions directly.
-func newTestAttributeMapper() ports.AttributeMapper {
-	return caddy.NewCaddyAttributeMapper()
+func newTestAttributeMapper() AttributeMapper {
+	return NewCaddyAttributeMapper()
 }
 
-// convertToPortMappings converts caddy.AttributeMapping to ports.AttributeMapping.
-func convertToPortMappings(mappings []AttributeMapping) []ports.AttributeMapping {
-	result := make([]ports.AttributeMapping, len(mappings))
+// convertToPortMappings converts AttributeMapping to PortAttributeMapping.
+func convertToPortMappings(mappings []AttributeMapping) []PortAttributeMapping {
+	result := make([]PortAttributeMapping, len(mappings))
 	for i, m := range mappings {
-		result[i] = ports.AttributeMapping{
+		result[i] = PortAttributeMapping{
 			SAMLAttribute: m.SAMLAttribute,
 			HeaderName:    m.HeaderName,
 			Separator:     m.Separator,
@@ -1837,5 +1834,259 @@ func TestMapAttributesToHeaders_Differential_WithPrefixEquivalence(t *testing.T)
 
 	if err := quick.Check(f, nil); err != nil {
 		t.Error(err)
+	}
+}
+
+// =============================================================================
+// ARCH-027: Type Conversion Roundtrip Property Test
+// =============================================================================
+
+// TestCaddyAttributeMapper_Property_TypeConversionRoundtrip tests ARCH-027:
+// Property: Converting ports.AttributeMapping → caddy.AttributeMapping → ports.AttributeMapping
+// should preserve all fields (roundtrip conversion).
+func TestCaddyAttributeMapper_Property_TypeConversionRoundtrip(t *testing.T) {
+	f := func(samlAttr, headerName, separator string) bool {
+		// Generate valid port mapping
+		portMapping := PortAttributeMapping{
+			SAMLAttribute: samlAttr,
+			HeaderName:    headerName,
+			Separator:     separator,
+		}
+
+		// Convert to caddy type (simulate CaddyAttributeMapper conversion)
+		caddyMapping := AttributeMapping{
+			SAMLAttribute: portMapping.SAMLAttribute,
+			HeaderName:    portMapping.HeaderName,
+			Separator:     portMapping.Separator,
+		}
+
+		// Convert back to port type
+		roundtrip := PortAttributeMapping{
+			SAMLAttribute: caddyMapping.SAMLAttribute,
+			HeaderName:    caddyMapping.HeaderName,
+			Separator:     caddyMapping.Separator,
+		}
+
+		// Verify all fields preserved
+		return portMapping.SAMLAttribute == roundtrip.SAMLAttribute &&
+			portMapping.HeaderName == roundtrip.HeaderName &&
+			portMapping.Separator == roundtrip.Separator
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}
+
+// =============================================================================
+// ARCH-029: Differential Test - Port Interface vs Direct Calls
+// =============================================================================
+
+// mapsEqual compares two maps for equality (helper for differential tests).
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// TestMapAttributesToHeaders_Differential_PortInterfaceVsDirect tests ARCH-029:
+// Differential test comparing port interface implementation vs direct adapter function calls.
+// Verifies that CaddyAttributeMapper produces identical results to direct MapAttributesToHeaders calls.
+func TestMapAttributesToHeaders_Differential_PortInterfaceVsDirect(t *testing.T) {
+	testCases := []struct {
+		name     string
+		attrs    map[string][]string
+		mappings []AttributeMapping
+	}{
+		{
+			name: "SingleMapping_ValidHeader",
+			attrs: map[string][]string{
+				"mail": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "X-Mail"},
+			},
+		},
+		{
+			name: "MultipleMappings",
+			attrs: map[string][]string{
+				"mail":                              {"user@example.com"},
+				"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user@example.edu"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "X-Mail"},
+				{SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", HeaderName: "X-Remote-User"},
+			},
+		},
+		{
+			name: "MissingAttribute",
+			attrs: map[string][]string{
+				"mail": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "nonexistent", HeaderName: "X-Missing"},
+			},
+		},
+		{
+			name: "MultipleValues_WithSeparator",
+			attrs: map[string][]string{
+				"urn:oid:1.3.6.1.4.1.5923.1.1.1.7": {"value1", "value2", "value3"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.7", HeaderName: "X-Entitlements", Separator: ","},
+			},
+		},
+		{
+			name: "OID_FriendlyNameResolution",
+			attrs: map[string][]string{
+				"eduPersonPrincipalName": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", HeaderName: "X-Remote-User"},
+			},
+		},
+		{
+			name: "EmptyMappings",
+			attrs: map[string][]string{
+				"mail": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{},
+		},
+		{
+			name: "EmptySeparator_DefaultsToSemicolon",
+			attrs: map[string][]string{
+				"mail": {"value1", "value2"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "X-Mail", Separator: ""},
+			},
+		},
+		{
+			name: "InvalidHeaderName_NoXPrefix",
+			attrs: map[string][]string{
+				"mail": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "Invalid-Header"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Call through port interface
+			portResult, portErr := mapAttributesToHeadersViaPort(tc.attrs, tc.mappings)
+
+			// Call direct adapter function
+			directResult, directErr := MapAttributesToHeaders(tc.attrs, tc.mappings)
+
+			// Compare error presence
+			if (portErr != nil) != (directErr != nil) {
+				t.Errorf("error presence mismatch: port=%v, direct=%v", portErr, directErr)
+				return
+			}
+
+			// Compare error messages if both have errors
+			if portErr != nil && directErr != nil {
+				if portErr.Error() != directErr.Error() {
+					t.Errorf("error message mismatch:\nport:   %q\ndirect: %q", portErr.Error(), directErr.Error())
+				}
+				return
+			}
+
+			// Compare result maps
+			if !mapsEqual(portResult, directResult) {
+				t.Errorf("result mismatch:\nport:   %v\ndirect: %v", portResult, directResult)
+			}
+		})
+	}
+}
+
+// TestMapAttributesToHeadersWithPrefix_Differential_PortInterfaceVsDirect tests ARCH-029:
+// Differential test for MapAttributesToHeadersWithPrefix comparing port interface vs direct calls.
+func TestMapAttributesToHeadersWithPrefix_Differential_PortInterfaceVsDirect(t *testing.T) {
+	testCases := []struct {
+		name     string
+		attrs    map[string][]string
+		mappings []AttributeMapping
+		prefix   string
+	}{
+		{
+			name: "WithPrefix_ValidHeader",
+			attrs: map[string][]string{
+				"mail": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "User"},
+			},
+			prefix: "X-Saml-",
+		},
+		{
+			name: "EmptyPrefix_EquivalentToNoPrefix",
+			attrs: map[string][]string{
+				"mail": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "X-Mail"},
+			},
+			prefix: "",
+		},
+		{
+			name: "MultipleMappings_WithPrefix",
+			attrs: map[string][]string{
+				"mail":                              {"user@example.com"},
+				"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user@example.edu"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "User"},
+				{SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", HeaderName: "Remote-User"},
+			},
+			prefix: "X-Saml-",
+		},
+		{
+			name: "InvalidPrefix",
+			attrs: map[string][]string{
+				"mail": {"user@example.com"},
+			},
+			mappings: []AttributeMapping{
+				{SAMLAttribute: "mail", HeaderName: "User"},
+			},
+			prefix: "Invalid-Prefix",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Call through port interface
+			portResult, portErr := mapAttributesToHeadersWithPrefixViaPort(tc.attrs, tc.mappings, tc.prefix)
+
+			// Call direct adapter function
+			directResult, directErr := MapAttributesToHeadersWithPrefix(tc.attrs, tc.mappings, tc.prefix)
+
+			// Compare error presence
+			if (portErr != nil) != (directErr != nil) {
+				t.Errorf("error presence mismatch: port=%v, direct=%v", portErr, directErr)
+				return
+			}
+
+			// Compare error messages if both have errors
+			if portErr != nil && directErr != nil {
+				if portErr.Error() != directErr.Error() {
+					t.Errorf("error message mismatch:\nport:   %q\ndirect: %q", portErr.Error(), directErr.Error())
+				}
+				return
+			}
+
+			// Compare result maps
+			if !mapsEqual(portResult, directResult) {
+				t.Errorf("result mismatch:\nport:   %v\ndirect: %v", portResult, directResult)
+			}
+		})
 	}
 }

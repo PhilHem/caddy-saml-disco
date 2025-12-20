@@ -6,6 +6,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // ParseCaddyfile sets up the handler from Caddyfile tokens.
@@ -246,7 +248,7 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 
 				// Validate header name at parse time
-				if !IsValidHeaderName(mapping.HeaderName) {
+				if !domain.IsValidHeaderName(mapping.HeaderName) {
 					return d.Errf("attribute_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
 				}
 
@@ -330,7 +332,7 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 
 				// Validate header name at parse time
-				if !IsValidHeaderName(mapping.HeaderName) {
+				if !domain.IsValidHeaderName(mapping.HeaderName) {
 					return d.Errf("entitlement_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
 				}
 
@@ -541,7 +543,7 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 			}
 
 			// Validate header name at parse time
-			if !IsValidHeaderName(mapping.HeaderName) {
+			if !domain.IsValidHeaderName(mapping.HeaderName) {
 				return d.Errf("attribute_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
 			}
 
@@ -595,6 +597,9 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 	}
 	return nil
 }
+
+
+
 
 
 

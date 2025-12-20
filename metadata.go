@@ -14,6 +14,7 @@ type LocalizedValue = domain.LocalizedValue
 type Logo = domain.Logo
 type RegistrationInfo = domain.RegistrationInfo
 type MetadataHealth = domain.MetadataHealth
+type ScopeInfo = domain.ScopeInfo
 
 // Re-export domain errors
 var (
@@ -31,6 +32,9 @@ var (
 	LocalizedValuesToMap  = domain.LocalizedValuesToMap
 	SelectBestLogo        = domain.SelectBestLogo
 	MatchesEntityIDPattern = domain.MatchesEntityIDPattern
+	ExtractScope          = domain.ExtractScope
+	ValidateScope         = domain.ValidateScope
+	IsScopedAttribute     = domain.IsScopedAttribute
 )
 
 // Re-export MetadataStore interface from ports
@@ -62,4 +66,5 @@ var (
 	FilterIdPsByEntityCategory     = metadata.FilterIdPsByEntityCategory
 	FilterIdPsByAssuranceCertification = metadata.FilterIdPsByAssuranceCertification
 	FilterIdPsByRegistrationAuthority = metadata.FilterIdPsByRegistrationAuthority
+	ParseMetadata                    = metadata.ParseMetadata
 )

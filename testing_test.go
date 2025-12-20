@@ -28,8 +28,12 @@ func TestNewSAMLDiscoForTest_Concurrency_ThreadSafety(t *testing.T) {
 	const numInstancesPerGoroutine = 5
 
 	// Create shared test dependencies (these should be thread-safe)
-	metadataStore := NewInMemoryMetadataStore()
-	sessionStore := NewCookieSessionStore("test-key", nil, nil)
+	metadataStore := NewInMemoryMetadataStore([]IdPInfo{})
+	testKey, err := LoadPrivateKey("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("load test key: %v", err)
+	}
+	sessionStore := NewCookieSessionStore(testKey, 8*time.Hour)
 
 	// Generate a test key and cert for SAMLService
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -130,3 +134,6 @@ type testError struct {
 func (e *testError) Error() string {
 	return fmt.Sprintf("goroutine %d call %d: %s", e.goroutineID, e.callID, e.message)
 }
+
+
+

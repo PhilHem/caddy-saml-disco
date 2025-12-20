@@ -208,6 +208,29 @@ Propagate SAML attributes to backend applications via HTTP headers, following th
   - Created `AttributeMapper` port interface in `internal/core/ports/attributes.go`
   - Created `CaddyAttributeMapper` adapter implementing port interface
   - Refactored tests to use port interface through helper functions
+- [x] TASK-ARCH-007 - Verify architectural boundary violations with differential and static analysis tests (see ARCH-005, ARCH-009, ARCH-010, ARCH-011, ARCH-012, ARCH-013, ARCH-014, ARCH-015, ARCH-016, ARCH-017, ARCH-018, ARCH-019, ARCH-020, ARCH-021, ARCH-022, ARCH-028)
+  - Created differential test for root package re-exports vs direct internal imports (`root_reexport_differential_test.go`)
+  - Created analysis test for package boundary confusion in tests (`package_boundary_analysis_test.go`)
+  - Created preventive test for import cycle detection (`import_cycle_test.go`)
+  - Created edge case tests for root package re-exports (`root_reexport_edge_cases_test.go`) covering context value type assertions (ARCH-013), type switches (ARCH-014), JSON unmarshaling (ARCH-015), and concurrent reflection (ARCH-016)
+  - Confirmed ARCH-010 (package boundary confusion) and verified ARCH-011 (no import cycles currently exist)
+  - Verified ARCH-009, ARCH-013, ARCH-014, ARCH-015, ARCH-016: All tests pass - root package re-exports behave identically to direct imports (no bugs found, marked as wontfix)
+  - Fixed ARCH-017 through ARCH-022: Re-exported utility functions (`ValidateRelayState`, `ParseAcceptLanguage`, `ParseDuration`, `MatchesForceAuthnPath`, `ValidateAuthnContextComparison`) in root package and updated `plugin_fuzz_test.go` to use root package re-exports instead of direct internal imports, ensuring tests exercise the same code path as production
+  - Fixed ARCH-023, ARCH-024, ARCH-025, ARCH-026: Added missing re-exports for scope functions (`ScopeInfo`, `ExtractScope`, `ValidateScope`, `IsScopedAttribute`) and `ParseMetadata` in `metadata.go`, added port interface re-exports (`PortAttributeMapping`, `AttributeMapper`, `NewCaddyAttributeMapper`) in `config.go`, and updated 7 test files (`force_authn_test.go`, `saml_test.go`, `plugin_test.go`, `plugin_fuzz_test.go`, `plugin_fuzz_ci_test.go`, `attributes_test.go`, `concurrency_port_test.go`) to use root package re-exports instead of direct internal imports
+- [x] TASK-CONC-001 - Fix CachingLogoStore TOCTOU race condition (fixes CONC-001, CONC-002)
+  - Added `fetchMu sync.Mutex` and `fetching map[string]chan struct{}` for fetch serialization
+  - Implemented double-check locking pattern to prevent concurrent HTTP fetches for same entityID
+  - Added concurrency tests: `TestCachingLogoStore_Concurrency_SingleFetch`, `TestCachingLogoStore_Property_CacheConsistency`
+- [x] TASK-LIFE-001 - Fix request store memory leak (fixes LIFE-001)
+  - Split `NewSAMLService` into two variants: simple (for tests) and `NewSAMLServiceWithCleanup` (for production)
+  - Plugin now uses `NewSAMLServiceWithCleanup` with 5-minute cleanup interval
+  - `Cleanup()` method properly closes SAMLService instances
+- [x] TASK-TEST-011 - Add missing adapter unit tests (fixes TEST-011, TEST-012, TEST-013)
+  - Created `internal/adapters/driven/session/cookie_test.go` with unit and concurrency tests
+  - Created `internal/adapters/driven/metrics/metrics_test.go` for NoopMetricsRecorder and PrometheusMetricsRecorder
+  - Created `internal/adapters/driven/signature/signature_test.go` for NoopVerifier, NoopSigner, XMLDsigVerifier, XMLDsigSigner
+  - Verified TEST-009, TEST-010 already have tests in root package (wontfix)
+  - Verified CONC-003 CookieSessionStore is thread-safe via JWT library (wontfix)
 
 **Outcome:** Full-featured SAML SP plugin for Caddy.
 

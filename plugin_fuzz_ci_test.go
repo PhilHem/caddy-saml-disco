@@ -6,9 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 )
 
 // FuzzValidateRelayStateExtended uses the full seed corpus for thorough CI testing.
@@ -19,7 +16,7 @@ func FuzzValidateRelayStateExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := caddyadapter.ValidateRelayState(input)
+		result := ValidateRelayState(input)
 		checkRelayStateInvariants(t, input, result)
 	})
 }
@@ -250,7 +247,7 @@ func FuzzParseMetadataExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, validUntil, err := metadata.ParseMetadata([]byte(input))
+		idps, validUntil, err := ParseMetadata([]byte(input))
 		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
 	})
 }
@@ -498,7 +495,7 @@ func FuzzExtractIdPInfoExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, _, err := metadata.ParseMetadata([]byte(input))
+		idps, _, err := ParseMetadata([]byte(input))
 		checkExtractIdPInfoInvariants(t, []byte(input), idps, err)
 		_ = err
 	})
@@ -572,7 +569,7 @@ func FuzzParseAcceptLanguageExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := caddyadapter.ParseAcceptLanguage(input)
+		result := ParseAcceptLanguage(input)
 		checkParseAcceptLanguageInvariants(t, input, result)
 	})
 }
@@ -743,7 +740,7 @@ func FuzzParseDurationExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		dur, err := caddyadapter.ParseDuration(input)
+		dur, err := ParseDuration(input)
 		checkParseDurationInvariants(t, input, dur, err)
 	})
 }

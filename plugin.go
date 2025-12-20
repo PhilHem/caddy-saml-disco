@@ -24,6 +24,10 @@ type HealthResponse = caddyadapter.HealthResponse
 var (
 	MapAttributesToHeadersWithPrefix = caddyadapter.MapAttributesToHeadersWithPrefix
 	ValidateDenyRedirect             = caddyadapter.ValidateDenyRedirect
+	ValidateRelayState               = caddyadapter.ValidateRelayState
+	ParseAcceptLanguage              = caddyadapter.ParseAcceptLanguage
+	ParseDuration                    = caddyadapter.ParseDuration
+	MatchesForceAuthnPath            = caddyadapter.MatchesForceAuthnPath
 )
 
 func init() {

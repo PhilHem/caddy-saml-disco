@@ -76,5 +76,45 @@ func IsScopedAttribute(name string) bool {
 	return scopedAttributes[name]
 }
 
+// IsValidHeaderName checks if a header name is valid for attribute mapping.
+// Valid names must:
+//   - Start with "X-" or "x-" (case-insensitive prefix)
+//   - Be at least 3 characters long (X- plus at least one character)
+//   - Contain only ASCII letters, digits, and hyphens after the prefix
+//
+// This is a pure function with no side effects or I/O.
+// This function defines the validation contract for header names across all adapters.
+func IsValidHeaderName(name string) bool {
+	if len(name) < 3 {
+		return false
+	}
+
+	// Check X- prefix (case-insensitive)
+	prefix := name[:2]
+	if len(prefix) < 2 {
+		return false
+	}
+	if (prefix[0] != 'X' && prefix[0] != 'x') || prefix[1] != '-' {
+		return false
+	}
+
+	// Check remaining characters
+	for i := 2; i < len(name); i++ {
+		c := name[i]
+		valid := (c >= 'A' && c <= 'Z') ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-'
+		if !valid {
+			return false
+		}
+	}
+
+	return true
+}
+
+
+
+
 
 

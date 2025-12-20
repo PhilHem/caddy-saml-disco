@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // MaxHeaderValueLength is the maximum length for HTTP header values.
@@ -57,7 +59,7 @@ func sanitizeHeaderValue(v string) string {
 func MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []AttributeMapping, prefix string) (map[string]string, error) {
 	// If prefix is set, validate that it starts with X- and is valid
 	if prefix != "" {
-		if !IsValidHeaderName(prefix) {
+		if !domain.IsValidHeaderName(prefix) {
 			return nil, fmt.Errorf("invalid header prefix %q: must start with X- and contain only A-Za-z0-9-", prefix)
 		}
 	}
@@ -69,14 +71,14 @@ func MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []Attr
 		if prefix != "" {
 			// When prefix is set, validate the final combined name
 			finalName := ApplyHeaderPrefix(prefix, m.HeaderName)
-			if !IsValidHeaderName(finalName) {
+			if !domain.IsValidHeaderName(finalName) {
 				return nil, fmt.Errorf("invalid header name %q with prefix %q: final name %q must start with X- and contain only A-Za-z0-9-", m.HeaderName, prefix, finalName)
 			}
 			// Temporarily set header name to final name so MapAttributesToHeaders validates correctly
 			adjustedMappings[i].HeaderName = finalName
 		} else {
 			// Without prefix, validate the header name directly
-			if !IsValidHeaderName(m.HeaderName) {
+			if !domain.IsValidHeaderName(m.HeaderName) {
 				return nil, fmt.Errorf("invalid header name %q: must start with X- and contain only A-Za-z0-9-", m.HeaderName)
 			}
 		}
@@ -99,6 +101,9 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+
+
 
 
 

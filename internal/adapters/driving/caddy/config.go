@@ -1,6 +1,10 @@
 package caddy
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+)
 
 // Config holds the configuration for the SAML Discovery plugin.
 type Config struct {
@@ -256,7 +260,7 @@ func (c *Config) Validate() error {
 
 	// Validate header prefix
 	if c.HeaderPrefix != "" {
-		if !IsValidHeaderName(c.HeaderPrefix) {
+		if !domain.IsValidHeaderName(c.HeaderPrefix) {
 			return fmt.Errorf("header_prefix %q must start with X- and contain only A-Za-z0-9-", c.HeaderPrefix)
 		}
 	}
@@ -274,11 +278,11 @@ func (c *Config) Validate() error {
 		// Otherwise, validate the header name directly (must start with X-)
 		if c.HeaderPrefix != "" {
 			finalName := ApplyHeaderPrefix(c.HeaderPrefix, m.HeaderName)
-			if !IsValidHeaderName(finalName) {
+			if !domain.IsValidHeaderName(finalName) {
 				return fmt.Errorf("attribute_headers[%d]: header_name %q with prefix %q results in invalid name %q: must start with X- and contain only A-Za-z0-9-", i, m.HeaderName, c.HeaderPrefix, finalName)
 			}
 		} else {
-			if !IsValidHeaderName(m.HeaderName) {
+			if !domain.IsValidHeaderName(m.HeaderName) {
 				return fmt.Errorf("attribute_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
 			}
 		}
@@ -298,7 +302,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("entitlement_headers[%d]: header_name is required", i)
 		}
 
-		if !IsValidHeaderName(m.HeaderName) {
+		if !domain.IsValidHeaderName(m.HeaderName) {
 			return fmt.Errorf("entitlement_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
 		}
 	}
@@ -333,40 +337,6 @@ func boolPtr(v bool) *bool {
 	return &b
 }
 
-// IsValidHeaderName checks if a header name is valid for attribute mapping.
-// Valid names must:
-//   - Start with "X-" or "x-" (case-insensitive prefix)
-//   - Be at least 3 characters long (X- plus at least one character)
-//   - Contain only ASCII letters, digits, and hyphens after the prefix
-func IsValidHeaderName(name string) bool {
-	if len(name) < 3 {
-		return false
-	}
-
-	// Check X- prefix (case-insensitive)
-	prefix := name[:2]
-	if len(prefix) < 2 {
-		return false
-	}
-	if (prefix[0] != 'X' && prefix[0] != 'x') || prefix[1] != '-' {
-		return false
-	}
-
-	// Check remaining characters
-	for i := 2; i < len(name); i++ {
-		c := name[i]
-		valid := (c >= 'A' && c <= 'Z') ||
-			(c >= 'a' && c <= 'z') ||
-			(c >= '0' && c <= '9') ||
-			c == '-'
-		if !valid {
-			return false
-		}
-	}
-
-	return true
-}
-
 // ApplyHeaderPrefix prepends prefix to header name.
 // If prefix is empty, returns headerName unchanged.
 func ApplyHeaderPrefix(prefix, headerName string) string {
@@ -375,6 +345,9 @@ func ApplyHeaderPrefix(prefix, headerName string) string {
 	}
 	return prefix + headerName
 }
+
+
+
 
 
 

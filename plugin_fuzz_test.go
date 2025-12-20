@@ -16,10 +16,6 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // fuzzTestKey is a shared RSA key for fuzz tests, generated once at init.
@@ -169,7 +165,7 @@ func FuzzValidateDenyRedirect(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
-		result := caddyadapter.ValidateDenyRedirect(input)
+		result := ValidateDenyRedirect(input)
 		// Must never panic
 		// Must never return dangerous schemes
 		if result != "" {
@@ -190,7 +186,7 @@ func FuzzValidateRelayState(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := caddyadapter.ValidateRelayState(input)
+		result := ValidateRelayState(input)
 		checkRelayStateInvariants(t, input, result)
 	})
 }
@@ -383,7 +379,7 @@ func FuzzParseMetadata(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, validUntil, err := metadata.ParseMetadata([]byte(input))
+		idps, validUntil, err := ParseMetadata([]byte(input))
 		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
 	})
 }
@@ -646,7 +642,7 @@ func FuzzExtractAndValidateExpiry(f *testing.F) {
 	// Note: extractAndValidateExpiry is unexported, test indirectly through ParseMetadata
 	f.Fuzz(func(t *testing.T, input string) {
 		// Test indirectly through ParseMetadata which calls extractAndValidateExpiry internally
-		idps, validUntil, err := metadata.ParseMetadata([]byte(input))
+		idps, validUntil, err := ParseMetadata([]byte(input))
 		// Check that validUntil matches what extractAndValidateExpiry would return
 		_ = idps
 		_ = validUntil
@@ -742,7 +738,7 @@ func FuzzExtractIdPInfo(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, _, err := metadata.ParseMetadata([]byte(input))
+		idps, _, err := ParseMetadata([]byte(input))
 		checkExtractIdPInfoInvariants(t, []byte(input), idps, err)
 		// Discard err - we only care about invariants on successful parses
 		_ = err
@@ -801,7 +797,7 @@ func FuzzParseAcceptLanguage(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := caddyadapter.ParseAcceptLanguage(input)
+		result := ParseAcceptLanguage(input)
 		checkParseAcceptLanguageInvariants(t, input, result)
 	})
 }
@@ -940,7 +936,7 @@ func FuzzParseDuration(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		dur, err := caddyadapter.ParseDuration(input)
+		dur, err := ParseDuration(input)
 		checkParseDurationInvariants(t, input, dur, err)
 	})
 }
@@ -1004,7 +1000,7 @@ func FuzzMatchesForceAuthnPath(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, path, pattern string) {
 		patterns := []string{pattern}
-		result := caddyadapter.MatchesForceAuthnPath(path, patterns)
+		result := MatchesForceAuthnPath(path, patterns)
 		checkForceAuthnPathInvariants(t, path, patterns, result)
 	})
 }
@@ -1056,13 +1052,13 @@ func FuzzAuthnContextValidation(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, context, comparison string) {
-		opts := &domain.AuthnOptions{
+		opts := &AuthnOptions{
 			RequestedAuthnContext:  []string{context},
 			AuthnContextComparison: comparison,
 		}
 
 		// Validate comparison value
-		err := domain.ValidateAuthnContextComparison(comparison)
+		err := ValidateAuthnContextComparison(comparison)
 		checkAuthnContextInvariants(t, opts.RequestedAuthnContext, comparison, err)
 	})
 }
@@ -1100,10 +1096,10 @@ func FuzzHandleACS_EncryptedAssertion(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, encryptedData string) {
 		// Create service with test keys
-		service := caddyadapter.NewSAMLService("https://sp.example.com", fuzzTestKey, fuzzTestCert)
+		service := NewSAMLService("https://sp.example.com", fuzzTestKey, fuzzTestCert)
 
 		// Create minimal IdP info
-		idp := &domain.IdPInfo{
+		idp := &IdPInfo{
 			EntityID:    "https://idp.example.com",
 			DisplayName: "Test IdP",
 			SSOURL:      "https://idp.example.com/sso",

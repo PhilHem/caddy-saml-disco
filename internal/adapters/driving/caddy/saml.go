@@ -36,14 +36,30 @@ type AuthResult struct {
 	SessionIndex string
 }
 
+// DefaultRequestCleanupInterval is the default interval for cleaning up expired SAML request IDs.
+const DefaultRequestCleanupInterval = 5 * time.Minute
+
 // NewSAMLService creates a new SAML service with the given configuration.
-// Uses an in-memory request store without background cleanup.
+// Uses an in-memory request store WITHOUT background cleanup.
+// For production use with background cleanup, use NewSAMLServiceWithCleanup.
 func NewSAMLService(entityID string, privateKey *rsa.PrivateKey, certificate *x509.Certificate) *SAMLService {
 	return &SAMLService{
 		entityID:     entityID,
 		privateKey:   privateKey,
 		certificate:  certificate,
 		requestStore: request.NewInMemoryRequestStore(),
+	}
+}
+
+// NewSAMLServiceWithCleanup creates a SAML service with background cleanup.
+// The cleanupInterval specifies how often expired request IDs are cleaned up.
+// Call Close() when the service is no longer needed to stop the cleanup goroutine.
+func NewSAMLServiceWithCleanup(entityID string, privateKey *rsa.PrivateKey, certificate *x509.Certificate, cleanupInterval time.Duration) *SAMLService {
+	return &SAMLService{
+		entityID:     entityID,
+		privateKey:   privateKey,
+		certificate:  certificate,
+		requestStore: request.NewInMemoryRequestStoreWithCleanup(cleanupInterval),
 	}
 }
 
@@ -56,6 +72,15 @@ func NewSAMLServiceWithStore(entityID string, privateKey *rsa.PrivateKey, certif
 		certificate:  certificate,
 		requestStore: store,
 	}
+}
+
+// Close stops the background cleanup goroutine of the request store.
+// Should be called when the SAMLService is no longer needed.
+func (s *SAMLService) Close() error {
+	if closer, ok := s.requestStore.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
 // SetMetadataSigner sets the signer used for SP metadata.

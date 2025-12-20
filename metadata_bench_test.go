@@ -12,6 +12,9 @@ import (
 	"testing"
 	"text/template"
 
+	// NOTE: Direct import of internal/adapters/driven/metadata is intentional for benchmarking.
+	// We benchmark the raw ParseMetadata function performance as an internal implementation detail.
+	// In production code, metadata parsing goes through the MetadataStore interface (re-exported in metadata.go).
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 )
 

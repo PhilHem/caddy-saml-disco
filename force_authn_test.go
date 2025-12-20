@@ -4,20 +4,18 @@ package caddysamldisco
 
 import (
 	"testing"
-
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 )
 
 func TestMatchesForceAuthnPath_EmptyPaths(t *testing.T) {
 	paths := []string{}
-	if caddyadapter.MatchesForceAuthnPath("/admin/settings", paths) {
+	if MatchesForceAuthnPath("/admin/settings", paths) {
 		t.Error("empty paths should not match anything")
 	}
 }
 
 func TestMatchesForceAuthnPath_ExactMatch(t *testing.T) {
 	paths := []string{"/admin/settings"}
-	if !caddyadapter.MatchesForceAuthnPath("/admin/settings", paths) {
+	if !MatchesForceAuthnPath("/admin/settings", paths) {
 		t.Error("exact path should match")
 	}
 }
@@ -36,7 +34,7 @@ func TestMatchesForceAuthnPath_WildcardSuffix(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		if got := caddyadapter.MatchesForceAuthnPath(tc.path, paths); got != tc.match {
+		if got := MatchesForceAuthnPath(tc.path, paths); got != tc.match {
 			t.Errorf("MatchesForceAuthnPath(%q) = %v, want %v", tc.path, got, tc.match)
 		}
 	}
@@ -56,7 +54,7 @@ func TestMatchesForceAuthnPath_MultiplePatterns(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		if got := caddyadapter.MatchesForceAuthnPath(tc.path, paths); got != tc.match {
+		if got := MatchesForceAuthnPath(tc.path, paths); got != tc.match {
 			t.Errorf("MatchesForceAuthnPath(%q) = %v, want %v", tc.path, got, tc.match)
 		}
 	}
@@ -64,10 +62,13 @@ func TestMatchesForceAuthnPath_MultiplePatterns(t *testing.T) {
 
 func TestMatchesForceAuthnPath_NoMatch(t *testing.T) {
 	paths := []string{"/admin/*"}
-	if caddyadapter.MatchesForceAuthnPath("/public/page", paths) {
+	if MatchesForceAuthnPath("/public/page", paths) {
 		t.Error("non-matching path should not match")
 	}
 }
+
+
+
 
 
 

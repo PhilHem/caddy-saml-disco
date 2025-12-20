@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-
-	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
 // =============================================================================
@@ -46,7 +44,7 @@ func TestAttributeMapper_Concurrency_ThreadSafetyViaPort(t *testing.T) {
 				headerName := "X-" + headerNameSuffix
 
 				attrs := map[string][]string{attrKey: {attrVal}}
-				mappings := []ports.AttributeMapping{
+				mappings := []PortAttributeMapping{
 					{SAMLAttribute: attrKey, HeaderName: headerName},
 				}
 
@@ -98,3 +96,6 @@ func TestAttributeMapper_Concurrency_ThreadSafetyViaPort(t *testing.T) {
 		t.Errorf("encountered %d errors during concurrent access", errorCount)
 	}
 }
+
+
+

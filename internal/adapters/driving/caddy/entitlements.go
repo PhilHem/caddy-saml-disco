@@ -13,7 +13,7 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 
 	for _, m := range mappings {
 		// Validate header name
-		if !IsValidHeaderName(m.HeaderName) {
+		if !domain.IsValidHeaderName(m.HeaderName) {
 			return nil, fmt.Errorf("invalid header name %q: must start with X- and contain only A-Za-z0-9-", m.HeaderName)
 		}
 
@@ -60,6 +60,9 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 
 	return headers, nil
 }
+
+
+
 
 
 

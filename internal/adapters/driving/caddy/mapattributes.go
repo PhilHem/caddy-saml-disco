@@ -22,7 +22,7 @@ func MapAttributesToHeaders(attrs map[string][]string, mappings []AttributeMappi
 
 	for _, m := range mappings {
 		// Validate header name
-		if !IsValidHeaderName(m.HeaderName) {
+		if !domain.IsValidHeaderName(m.HeaderName) {
 			return nil, fmt.Errorf("invalid header name %q: must start with X- and contain only A-Za-z0-9-", m.HeaderName)
 		}
 
@@ -85,6 +85,9 @@ func MapAttributesToHeaders(attrs map[string][]string, mappings []AttributeMappi
 
 	return result, nil
 }
+
+
+
 
 
 
