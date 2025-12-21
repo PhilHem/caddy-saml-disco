@@ -17,14 +17,14 @@ type AttributeMapper = ports.AttributeMapper
 
 var (
 	IsValidHeaderName      = domain.IsValidHeaderName
-	ApplyHeaderPrefix      = caddy.ApplyHeaderPrefix
-	MapAttributesToHeaders = caddy.MapAttributesToHeaders
+	ApplyHeaderPrefix      = domain.ApplyHeaderPrefix
+	MapAttributesToHeaders = domain.MapAttributesToHeaders
 	NewCaddyAttributeMapper = caddy.NewCaddyAttributeMapper
 )
 
-// Note: sanitizeHeaderValue is not exported from caddy package (internal function)
-// Tests that need it should import caddy package directly or use a test helper
+// Note: SanitizeHeaderValue is exported from domain package
+// Tests that need it should import domain package directly
 
 const (
-	MaxHeaderValueLength = caddy.MaxHeaderValueLength
+	MaxHeaderValueLength = domain.MaxHeaderValueLength
 )
