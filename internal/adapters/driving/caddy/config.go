@@ -337,14 +337,6 @@ func boolPtr(v bool) *bool {
 	return &b
 }
 
-// ApplyHeaderPrefix prepends prefix to header name.
-// If prefix is empty, returns headerName unchanged.
-func ApplyHeaderPrefix(prefix, headerName string) string {
-	if prefix == "" {
-		return headerName
-	}
-	return prefix + headerName
-}
 
 
 

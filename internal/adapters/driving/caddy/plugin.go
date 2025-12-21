@@ -943,7 +943,7 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 		// Save state before stripping
 		originalHeaders = make(map[string][]string)
 		for _, mapping := range attributeHeaders {
-			headerToStrip := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
+			headerToStrip := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			canonical := http.CanonicalHeaderKey(headerToStrip)
 			// Find the actual key in the map (may differ in case, especially for non-ASCII)
 			// Iterate through all headers to find case-insensitive match
@@ -959,7 +959,7 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 			}
 		}
 		for _, mapping := range entitlementHeaders {
-			headerToStrip := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
+			headerToStrip := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			canonical := http.CanonicalHeaderKey(headerToStrip)
 			// Find the actual key in the map (may differ in case, especially for non-ASCII)
 			// Iterate through all headers to find case-insensitive match
@@ -1017,7 +1017,16 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 
 		// Map SAML attributes to headers (if AttributeHeaders configured)
 		if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
-			headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, attributeHeaders, headerPrefix)
+			// Convert caddy.AttributeMapping to ports.AttributeMapping
+			portMappings := make([]ports.AttributeMapping, len(attributeHeaders))
+			for i, m := range attributeHeaders {
+				portMappings[i] = ports.AttributeMapping{
+					SAMLAttribute: m.SAMLAttribute,
+					HeaderName:    m.HeaderName,
+					Separator:     m.Separator,
+				}
+			}
+			headers, err := domain.MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, portMappings, headerPrefix)
 			if err != nil {
 				// Configuration error - should have been caught at startup
 				// Restore original headers before returning
@@ -1055,7 +1064,7 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 
 		// Apply prefix to entitlement headers
 		for header, value := range mappedEntitlementHeaders {
-			finalHeader := ApplyHeaderPrefix(headerPrefix, header)
+			finalHeader := domain.ApplyHeaderPrefix(headerPrefix, header)
 			finalHeader = http.CanonicalHeaderKey(finalHeader)
 			r.Header.Set(finalHeader, value)
 		}
@@ -1067,7 +1076,7 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 func saveHeaderState(r *http.Request, mappings []AttributeMapping, prefix string) map[string][]string {
 	originalHeaders := make(map[string][]string)
 	for _, mapping := range mappings {
-		headerName := ApplyHeaderPrefix(prefix, mapping.HeaderName)
+		headerName := domain.ApplyHeaderPrefix(prefix, mapping.HeaderName)
 		headerName = http.CanonicalHeaderKey(headerName)
 		if values := r.Header[headerName]; len(values) > 0 {
 			originalHeaders[headerName] = values
@@ -2781,7 +2790,7 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 	if shouldStripAttributeHeadersForSP(spConfig) {
 		originalHeaders = make(map[string][]string)
 		for _, mapping := range attributeHeaders {
-			headerName := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
+			headerName := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			headerName = http.CanonicalHeaderKey(headerName)
 			if values := r.Header[headerName]; len(values) > 0 {
 				originalHeaders[headerName] = values
@@ -2789,7 +2798,7 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 			r.Header.Del(headerName)
 		}
 		for _, mapping := range entitlementHeaders {
-			headerName := ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
+			headerName := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
 			headerName = http.CanonicalHeaderKey(headerName)
 			if values := r.Header[headerName]; len(values) > 0 {
 				originalHeaders[headerName] = values
@@ -2840,7 +2849,7 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 
 	// Map SAML attributes to headers (if AttributeHeaders configured)
 	if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
-		headers, err := MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, attributeHeaders, headerPrefix)
+		headers, err := domain.MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, attributeHeaders, headerPrefix)
 		if err != nil {
 			// Restore original headers before returning
 			if originalHeaders != nil {
@@ -2877,7 +2886,7 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 
 		// Apply prefix to entitlement headers
 		for header, value := range mappedEntitlementHeaders {
-			finalHeader := ApplyHeaderPrefix(headerPrefix, header)
+			finalHeader := domain.ApplyHeaderPrefix(headerPrefix, header)
 			finalHeader = http.CanonicalHeaderKey(finalHeader)
 			r.Header.Set(finalHeader, value)
 		}

@@ -27,14 +27,14 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 				if sep == "" {
 					sep = ";"
 				}
-				sep = sanitizeHeaderValue(sep)
+				sep = domain.SanitizeHeaderValue(sep)
 				// Re-default if sanitization removed all characters
 				if sep == "" {
 					sep = ";"
 				}
 				values := make([]string, 0, len(result.Roles))
 				for _, role := range result.Roles {
-					sanitized := sanitizeHeaderValue(role)
+					sanitized := domain.SanitizeHeaderValue(role)
 					if sanitized != "" {
 						values = append(values, sanitized)
 					}
@@ -48,7 +48,7 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 			// Metadata field
 			if result.Metadata != nil {
 				if v, ok := result.Metadata[m.Field]; ok {
-					value = sanitizeHeaderValue(v)
+					value = domain.SanitizeHeaderValue(v)
 				}
 			}
 		}
@@ -60,6 +60,7 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 
 	return headers, nil
 }
+
 
 
 
