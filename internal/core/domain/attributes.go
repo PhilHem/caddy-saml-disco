@@ -1,6 +1,12 @@
 package domain
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"unicode"
+
+	"github.com/philiph/caddy-saml-disco/internal/core/ports"
+)
 
 // oidRegistry maps OIDs to their friendly names and vice versa.
 // This is a pure domain component with no external dependencies.
@@ -111,6 +117,199 @@ func IsValidHeaderName(name string) bool {
 	}
 
 	return true
+}
+
+// MaxHeaderValueLength is the maximum length for HTTP header values.
+const MaxHeaderValueLength = 8192
+
+// @tra: Domain.SanitizeHeaderValue
+// SanitizeHeaderValue removes dangerous characters and enforces length limits.
+// This is a pure function with no side effects or I/O.
+// Thread-safe: pure function with no shared mutable state.
+func SanitizeHeaderValue(v string) string {
+	if v == "" {
+		return ""
+	}
+
+	var result strings.Builder
+	result.Grow(min(len(v), MaxHeaderValueLength))
+
+	for _, r := range v {
+		// Skip control characters (including CR, LF, null)
+		if r < 32 || r == 127 {
+			continue
+		}
+
+		// Skip Unicode line/paragraph separators
+		if r == '\u2028' || r == '\u2029' {
+			continue
+		}
+
+		// Skip null in any form
+		if r == 0 {
+			continue
+		}
+
+		// Skip problematic Unicode characters
+		if unicode.Is(unicode.Cf, r) { // Format characters (includes BOM, RTL override, etc.)
+			continue
+		}
+
+		result.WriteRune(r)
+
+		// Enforce length limit
+		if result.Len() >= MaxHeaderValueLength {
+			break
+		}
+	}
+
+	return result.String()
+}
+
+// @tra: Domain.ApplyHeaderPrefix
+// ApplyHeaderPrefix prepends prefix to header name.
+// If prefix is empty, returns headerName unchanged.
+// This is a pure function with no side effects or I/O.
+// Thread-safe: pure function with no shared mutable state.
+func ApplyHeaderPrefix(prefix, headerName string) string {
+	if prefix == "" {
+		return headerName
+	}
+	return prefix + headerName
+}
+
+// @tra: Domain.MapAttributesToHeaders
+// MapAttributesToHeaders transforms SAML attributes to HTTP headers.
+// This is a pure function with no side effects or I/O.
+// Thread-safe: pure function with no shared mutable state.
+//
+// Security guarantees:
+//   - All header names must start with "X-" (prevents overwriting standard headers)
+//   - All header names contain only valid characters (A-Za-z0-9-)
+//   - Output values are sanitized (no CR/LF, bounded length, no null bytes)
+//   - Missing attributes produce no header (not an empty string)
+//
+// Returns an error if any header name is invalid.
+func MapAttributesToHeaders(attrs map[string][]string, mappings []ports.AttributeMapping) (map[string]string, error) {
+	result := make(map[string]string)
+
+	for _, m := range mappings {
+		// Validate header name
+		if !IsValidHeaderName(m.HeaderName) {
+			return nil, fmt.Errorf("invalid header name %q: must start with X- and contain only A-Za-z0-9-", m.HeaderName)
+		}
+
+		// Resolve attribute name to both OID and friendly name
+		oid, friendlyName := ResolveAttributeName(m.SAMLAttribute)
+
+		// Try to look up attribute using both forms (IdP may send either)
+		var values []string
+		var exists bool
+
+		// First try the configured form
+		values, exists = attrs[m.SAMLAttribute]
+		if !exists {
+			// If configured as OID, try friendly name (IdP might send friendly name)
+			if m.SAMLAttribute == oid && friendlyName != oid {
+				values, exists = attrs[friendlyName]
+			}
+			// If configured as friendly name, try OID (IdP might send OID)
+			if !exists && m.SAMLAttribute == friendlyName && oid != friendlyName {
+				values, exists = attrs[oid]
+			}
+		}
+
+		if !exists || len(values) == 0 {
+			continue
+		}
+
+		// Filter out empty values
+		nonEmpty := make([]string, 0, len(values))
+		for _, v := range values {
+			if v != "" {
+				nonEmpty = append(nonEmpty, v)
+			}
+		}
+		if len(nonEmpty) == 0 {
+			continue
+		}
+
+		// Determine separator
+		sep := m.Separator
+		if sep == "" {
+			sep = ";"
+		}
+		// Sanitize separator too
+		sep = SanitizeHeaderValue(sep)
+		// Re-default if sanitization removed all characters
+		if sep == "" {
+			sep = ";"
+		}
+
+		// Join and sanitize
+		joined := strings.Join(nonEmpty, sep)
+		sanitized := SanitizeHeaderValue(joined)
+
+		// Only set header if we have a non-empty value after sanitization
+		if sanitized != "" {
+			result[m.HeaderName] = sanitized
+		}
+	}
+
+	return result, nil
+}
+
+// @tra: Domain.MapAttributesToHeadersWithPrefix
+// MapAttributesToHeadersWithPrefix transforms SAML attributes to HTTP headers with optional prefix.
+// This is a wrapper around MapAttributesToHeaders that applies a prefix to header names.
+// If prefix is set, header names don't need to start with "X-" (the final combined name must be valid).
+// If prefix is empty, existing validation applies (headers must start with "X-").
+// This is a pure function with no side effects or I/O.
+// Thread-safe: pure function with no shared mutable state.
+func MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []ports.AttributeMapping, prefix string) (map[string]string, error) {
+	// If prefix is set, validate that it starts with X- and is valid
+	if prefix != "" {
+		if !IsValidHeaderName(prefix) {
+			return nil, fmt.Errorf("invalid header prefix %q: must start with X- and contain only A-Za-z0-9-", prefix)
+		}
+	}
+
+	// Create adjusted mappings for validation and processing
+	adjustedMappings := make([]ports.AttributeMapping, len(mappings))
+	for i, m := range mappings {
+		adjustedMappings[i] = m
+		if prefix != "" {
+			// When prefix is set, validate the final combined name
+			finalName := ApplyHeaderPrefix(prefix, m.HeaderName)
+			if !IsValidHeaderName(finalName) {
+				return nil, fmt.Errorf("invalid header name %q with prefix %q: final name %q must start with X- and contain only A-Za-z0-9-", m.HeaderName, prefix, finalName)
+			}
+			// Temporarily set header name to final name so MapAttributesToHeaders validates correctly
+			adjustedMappings[i].HeaderName = finalName
+		} else {
+			// Without prefix, validate the header name directly
+			if !IsValidHeaderName(m.HeaderName) {
+				return nil, fmt.Errorf("invalid header name %q: must start with X- and contain only A-Za-z0-9-", m.HeaderName)
+			}
+		}
+	}
+
+	// Map attributes to headers (using adjusted mappings)
+	result, err := MapAttributesToHeaders(attrs, adjustedMappings)
+	if err != nil {
+		return nil, err
+	}
+
+	// If prefix was set, the result already has prefixed names from adjustedMappings
+	// Otherwise, return as-is
+	return result, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 

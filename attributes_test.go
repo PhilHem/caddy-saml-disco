@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"testing/quick"
+
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // =============================================================================
@@ -52,6 +54,7 @@ func mapAttributesToHeadersWithPrefixViaPort(attrs map[string][]string, mappings
 // =============================================================================
 
 func TestMapAttributesToHeaders_EmptyMappings(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"email": {"user@example.com"},
 	}
@@ -67,6 +70,7 @@ func TestMapAttributesToHeaders_EmptyMappings(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_SingleMapping(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"urn:oid:0.9.2342.19200300.100.1.3": {"user@example.com"},
 	}
@@ -84,6 +88,7 @@ func TestMapAttributesToHeaders_SingleMapping(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_MissingAttribute(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"email": {"user@example.com"},
 	}
@@ -101,6 +106,7 @@ func TestMapAttributesToHeaders_MissingAttribute(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_MultipleValues_DefaultSeparator(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"urn:oid:1.3.6.1.4.1.5923.1.1.1.7": {"admin", "user", "editor"},
 	}
@@ -119,6 +125,7 @@ func TestMapAttributesToHeaders_MultipleValues_DefaultSeparator(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_MultipleValues_CustomSeparator(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"urn:oid:1.3.6.1.4.1.5923.1.1.1.7": {"admin", "user", "editor"},
 	}
@@ -137,6 +144,7 @@ func TestMapAttributesToHeaders_MultipleValues_CustomSeparator(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_InvalidHeaderName_NoXPrefix(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"email": {"user@example.com"},
 	}
@@ -151,6 +159,7 @@ func TestMapAttributesToHeaders_InvalidHeaderName_NoXPrefix(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_InvalidHeaderName_InvalidChars(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"email": {"user@example.com"},
 	}
@@ -165,6 +174,7 @@ func TestMapAttributesToHeaders_InvalidHeaderName_InvalidChars(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_SanitizesNewlines(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"evil": {"value\r\nInjected-Header: bad"},
 	}
@@ -182,6 +192,7 @@ func TestMapAttributesToHeaders_SanitizesNewlines(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_TruncatesLongValues(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	longValue := strings.Repeat("a", 10000)
 	attrs := map[string][]string{
 		"long": {longValue},
@@ -200,6 +211,7 @@ func TestMapAttributesToHeaders_TruncatesLongValues(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_EmptyAttributeValue(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"empty": {},
 	}
@@ -217,6 +229,7 @@ func TestMapAttributesToHeaders_EmptyAttributeValue(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_MultipleMappings(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	attrs := map[string][]string{
 		"urn:oid:1.3.6.1.4.1.5923.1.1.1.6":  {"user@example.com"},
 		"urn:oid:0.9.2342.19200300.100.1.3": {"user@example.com"},
@@ -317,6 +330,7 @@ func TestResolveAttributeName_AllCommonAttributes(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesFriendlyName_IdPSendsOID(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// User configures with friendly name, IdP sends OID
 	attrs := map[string][]string{
 		"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user@example.com"},
@@ -335,6 +349,7 @@ func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesFriendlyName_IdPSends
 }
 
 func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesOID_IdPSendsFriendlyName(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// User configures with OID, IdP sends friendly name
 	attrs := map[string][]string{
 		"eduPersonPrincipalName": {"user@example.com"},
@@ -353,6 +368,7 @@ func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesOID_IdPSendsFriendlyN
 }
 
 func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesFriendlyName_IdPSendsFriendlyName(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// User configures with friendly name, IdP sends friendly name
 	attrs := map[string][]string{
 		"eduPersonPrincipalName": {"user@example.com"},
@@ -371,6 +387,7 @@ func TestMapAttributesToHeaders_WithFriendlyName_ConfigUsesFriendlyName_IdPSends
 }
 
 func TestMapAttributesToHeaders_UnknownAttribute_PassesThrough(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Unknown attributes should work as-is (backward compatibility)
 	attrs := map[string][]string{
 		"customAttribute": {"value"},
@@ -389,6 +406,7 @@ func TestMapAttributesToHeaders_UnknownAttribute_PassesThrough(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_SeparatorSanitizesToEmpty_DefaultsToSemicolon(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Test that separator containing only control characters sanitizes to empty
 	// and re-defaults to ";"
 	attrs := map[string][]string{
@@ -418,6 +436,7 @@ func TestMapAttributesToHeaders_SeparatorSanitizesToEmpty_DefaultsToSemicolon(t 
 // =============================================================================
 
 func TestMapAttributesToHeaders_Property_NoExtraHeaders(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	f := func(attrKey, attrVal, headerName string) bool {
 		// Ensure valid header name for this property test
 		headerName = "X-" + sanitizeForHeaderName(headerName)
@@ -455,6 +474,7 @@ func TestMapAttributesToHeaders_Property_NoExtraHeaders(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_Property_NoMissingHeaders(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	f := func(attrKey, attrVal, headerName string) bool {
 		// Ensure valid header name
 		headerName = "X-" + sanitizeForHeaderName(headerName)
@@ -486,6 +506,7 @@ func TestMapAttributesToHeaders_Property_NoMissingHeaders(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_Property_Deterministic(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	f := func(attrKey, attrVal, headerName string) bool {
 		headerName = "X-" + sanitizeForHeaderName(headerName)
 		if headerName == "X-" {
@@ -523,6 +544,7 @@ func TestMapAttributesToHeaders_Property_Deterministic(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_Property_NoHeaderInjection(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	f := func(attrVal string) bool {
 		attrs := map[string][]string{"test": {attrVal}}
 		mappings := []AttributeMapping{{SAMLAttribute: "test", HeaderName: "X-Test"}}
@@ -547,6 +569,7 @@ func TestMapAttributesToHeaders_Property_NoHeaderInjection(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_Property_BoundedLength(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	f := func(attrVal string) bool {
 		attrs := map[string][]string{"test": {attrVal}}
 		mappings := []AttributeMapping{{SAMLAttribute: "test", HeaderName: "X-Test"}}
@@ -571,6 +594,7 @@ func TestMapAttributesToHeaders_Property_BoundedLength(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_Property_XPrefixEnforced(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	f := func(headerName string) bool {
 		// Test that non-X- headers are rejected
 		if strings.HasPrefix(headerName, "X-") || strings.HasPrefix(headerName, "x-") {
@@ -592,6 +616,7 @@ func TestMapAttributesToHeaders_Property_XPrefixEnforced(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_Property_EmptySeparatorDefaults(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Property: Empty separator always defaults to ";" regardless of input
 	f := func(attrKey string, val1, val2 string, headerName string) bool {
 		// Ensure valid header name
@@ -923,6 +948,7 @@ func isValidHeaderNameForTest(name string) bool {
 // =============================================================================
 
 func TestApplyHeaderPrefix_EmptyPrefix(t *testing.T) {
+	tra.Require(t, "Domain.ApplyHeaderPrefix")
 	// Prefix empty - header name unchanged
 	result := ApplyHeaderPrefix("", "X-Remote-User")
 	if result != "X-Remote-User" {
@@ -931,6 +957,7 @@ func TestApplyHeaderPrefix_EmptyPrefix(t *testing.T) {
 }
 
 func TestApplyHeaderPrefix_WithPrefix(t *testing.T) {
+	tra.Require(t, "Domain.ApplyHeaderPrefix")
 	// Prefix applied to header name
 	result := ApplyHeaderPrefix("X-Saml-", "User")
 	if result != "X-Saml-User" {
@@ -939,6 +966,7 @@ func TestApplyHeaderPrefix_WithPrefix(t *testing.T) {
 }
 
 func TestApplyHeaderPrefix_WithPrefixAndExistingX(t *testing.T) {
+	tra.Require(t, "Domain.ApplyHeaderPrefix")
 	// Prefix applied even if header already has X-
 	result := ApplyHeaderPrefix("X-Saml-", "X-Remote-User")
 	if result != "X-Saml-X-Remote-User" {
@@ -950,6 +978,7 @@ func TestApplyHeaderPrefix_WithPrefixAndExistingX(t *testing.T) {
 // Property: sanitizing a value twice should produce the same result.
 // Since sanitizeHeaderValue is unexported, we test it indirectly through MapAttributesToHeaders.
 func TestSanitizeHeaderValue_Property_Idempotency(t *testing.T) {
+	tra.Require(t, "Domain.SanitizeHeaderValue")
 	f := func(attrVal string) bool {
 		// Skip empty strings
 		if attrVal == "" {
@@ -995,6 +1024,7 @@ func TestSanitizeHeaderValue_Property_Idempotency(t *testing.T) {
 // TestApplyHeaderPrefix_Property_Associativity tests ATTR-017:
 // Property: Verify associativity and double-prefix behavior.
 func TestApplyHeaderPrefix_Property_Associativity(t *testing.T) {
+	tra.Require(t, "Domain.ApplyHeaderPrefix")
 	// Test associativity: ApplyHeaderPrefix(p1, ApplyHeaderPrefix(p2, name)) == ApplyHeaderPrefix(p1+p2, name)
 	f1 := func(prefix1, prefix2, headerName string) bool {
 		// Ensure valid prefixes and header name
@@ -1054,6 +1084,7 @@ func TestApplyHeaderPrefix_Property_Associativity(t *testing.T) {
 // TestMapAttributesToHeadersWithPrefix_Property_DoublePrefix tests ATTR-018:
 // Property: If header names already have prefix, calling function again should not double-prefix.
 func TestMapAttributesToHeadersWithPrefix_Property_DoublePrefix(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeadersWithPrefix")
 	f := func(attrKey, attrVal, headerName, prefix string) bool {
 		// Ensure valid prefix and header name
 		prefix = "X-" + sanitizeForHeaderName(prefix)
@@ -1128,6 +1159,7 @@ func TestMapAttributesToHeadersWithPrefix_Property_DoublePrefix(t *testing.T) {
 // TestMapAttributesToHeadersWithPrefix_Property_Idempotency tests ATTR-019:
 // Property: Calling MapAttributesToHeadersWithPrefix twice with same inputs should produce identical outputs.
 func TestMapAttributesToHeadersWithPrefix_Property_Idempotency(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeadersWithPrefix")
 	f := func(attrKey, attrVal, headerName, prefixSuffix string) bool {
 		// Ensure valid header name (without X- prefix since prefix will be added)
 		headerName = sanitizeForHeaderName(headerName)
@@ -1186,6 +1218,7 @@ func TestMapAttributesToHeadersWithPrefix_Property_Idempotency(t *testing.T) {
 // TestMapAttributesToHeaders_Property_ThreadSafety tests ATTR-020:
 // Property: Concurrent calls with different inputs should not interfere (functions are pure with no shared mutable state).
 func TestMapAttributesToHeaders_Property_ThreadSafety(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	const numGoroutines = 100
 	const numCallsPerGoroutine = 10
 
@@ -1255,6 +1288,7 @@ func TestMapAttributesToHeaders_Property_ThreadSafety(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_WithPrefix(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeadersWithPrefix")
 	attrs := map[string][]string{"mail": {"user@example.com"}}
 	mappings := []AttributeMapping{{SAMLAttribute: "mail", HeaderName: "User"}}
 	prefix := "X-Saml-"
@@ -1273,6 +1307,7 @@ func TestMapAttributesToHeaders_WithPrefix(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_WithPrefix_NoXRequired(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeadersWithPrefix")
 	// When prefix is set, header names don't need X- prefix
 	attrs := map[string][]string{"mail": {"user@example.com"}}
 	mappings := []AttributeMapping{{SAMLAttribute: "mail", HeaderName: "Remote-User"}}
@@ -1288,6 +1323,7 @@ func TestMapAttributesToHeaders_WithPrefix_NoXRequired(t *testing.T) {
 }
 
 func TestMapAttributesToHeaders_WithoutPrefix_RequiresX(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeadersWithPrefix")
 	// Without prefix, existing behavior - must start with X-
 	attrs := map[string][]string{"mail": {"user@example.com"}}
 	mappings := []AttributeMapping{{SAMLAttribute: "mail", HeaderName: "User"}} // Missing X-
@@ -1308,6 +1344,7 @@ func TestMapAttributesToHeaders_WithoutPrefix_RequiresX(t *testing.T) {
 // Given the same set of mappings in different orders, prefix application should
 // produce the same set of header names (regardless of which values end up in those headers).
 func TestMapAttributesToHeadersWithPrefix_Property_PrefixConsistentRegardlessOfOrder(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeadersWithPrefix")
 	f := func(attrKey1, attrKey2, attrVal1, attrVal2, headerName1, headerName2, prefixSuffix string) bool {
 		// Ensure valid header names (without X- prefix since prefix will be added)
 		headerName1 = sanitizeForHeaderName(headerName1)
@@ -1487,6 +1524,7 @@ func TestMapAttributesToHeadersWithPrefix_Property_OrderDependencyConsistent(t *
 // TestMapAttributesToHeaders_Differential_BothFormsDifferentValues tests ATTR-007:
 // When IdP sends both OID and friendly name with different values, verify which value is used.
 func TestMapAttributesToHeaders_Differential_BothFormsDifferentValues(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Test case: IdP sends both forms with different values
 	attrs := map[string][]string{
 		"eduPersonPrincipalName":                        {"user1@example.com"},
@@ -1533,6 +1571,7 @@ func TestMapAttributesToHeaders_Differential_BothFormsDifferentValues(t *testing
 // TestMapAttributesToHeaders_Differential_MultipleMappingsSameAttribute tests ATTR-008:
 // Multiple mappings referencing same logical attribute process independently.
 func TestMapAttributesToHeaders_Differential_MultipleMappingsSameAttribute(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// IdP sends both forms with potentially different values
 	attrs := map[string][]string{
 		"eduPersonPrincipalName":                        {"user1@example.com"},
@@ -1568,6 +1607,7 @@ func TestMapAttributesToHeaders_Differential_MultipleMappingsSameAttribute(t *te
 // TestMapAttributesToHeaders_Differential_LookupOrder tests ATTR-009:
 // Property: When both forms exist, configured form should always be used.
 func TestMapAttributesToHeaders_Differential_LookupOrder(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Test with known attributes that have both OID and friendly name forms
 	testCases := []struct {
 		name           string
@@ -1636,6 +1676,7 @@ func TestMapAttributesToHeaders_Differential_LookupOrder(t *testing.T) {
 // TestMapAttributesToHeaders_Differential_EmptyValueHandling tests ATTR-010:
 // Empty value filtering behavior.
 func TestMapAttributesToHeaders_Differential_EmptyValueHandling(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Test case: Attribute with mix of empty and non-empty values
 	attrs := map[string][]string{
 		"urn:oid:1.3.6.1.4.1.5923.1.1.1.7": {"", "value1", "", "value2", ""},
@@ -1664,6 +1705,7 @@ func TestMapAttributesToHeaders_Differential_EmptyValueHandling(t *testing.T) {
 // TestMapAttributesToHeaders_Differential_CaseSensitivity tests ATTR-011:
 // Case sensitivity of attribute name matching.
 func TestMapAttributesToHeaders_Differential_CaseSensitivity(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Test case: Configure with correct case, IdP sends different case
 	attrs := map[string][]string{
 		"edupersonprincipalname": {"user@example.com"}, // lowercase
@@ -1698,6 +1740,7 @@ func TestMapAttributesToHeaders_Differential_CaseSensitivity(t *testing.T) {
 // TestMapAttributesToHeaders_Differential_Comprehensive tests ATTR-004:
 // Comprehensive differential test suite combining all edge cases.
 func TestMapAttributesToHeaders_Differential_Comprehensive(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	t.Run("RoundtripScenarios", func(t *testing.T) {
 		// Test: Configure with OID, IdP sends friendly name (roundtrip)
 		attrs := map[string][]string{
@@ -1782,6 +1825,7 @@ func TestMapAttributesToHeaders_Differential_Comprehensive(t *testing.T) {
 // Property: mapAttributesToHeadersViaPort(attrs, mappings) should produce same result as
 // mapAttributesToHeadersWithPrefixViaPort(attrs, mappings, "") (empty prefix should be equivalent).
 func TestMapAttributesToHeaders_Differential_WithPrefixEquivalence(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	f := func(attrKey, attrVal, headerName string) bool {
 		// Ensure valid header name
 		headerName = "X-" + sanitizeForHeaderName(headerName)
@@ -1899,6 +1943,7 @@ func mapsEqual(a, b map[string]string) bool {
 // Differential test comparing port interface implementation vs direct adapter function calls.
 // Verifies that CaddyAttributeMapper produces identical results to direct MapAttributesToHeaders calls.
 func TestMapAttributesToHeaders_Differential_PortInterfaceVsDirect(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeaders")
 	testCases := []struct {
 		name     string
 		attrs    map[string][]string
@@ -2011,6 +2056,7 @@ func TestMapAttributesToHeaders_Differential_PortInterfaceVsDirect(t *testing.T)
 // TestMapAttributesToHeadersWithPrefix_Differential_PortInterfaceVsDirect tests ARCH-029:
 // Differential test for MapAttributesToHeadersWithPrefix comparing port interface vs direct calls.
 func TestMapAttributesToHeadersWithPrefix_Differential_PortInterfaceVsDirect(t *testing.T) {
+	tra.Require(t, "Domain.MapAttributesToHeadersWithPrefix")
 	testCases := []struct {
 		name     string
 		attrs    map[string][]string

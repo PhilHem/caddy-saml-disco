@@ -57,14 +57,14 @@ check_code_annotations() {
         # Find @tra: annotations
         while IFS=: read -r line_num content; do
             # Extract anchor from // @tra: Anchor
-            anchor=$(echo "$content" | grep -oE '@tra:\s*[A-Za-z0-9_.]+' | sed 's/@tra:\s*//' || true)
+            anchor=$(echo "$content" | grep -oE '@tra:\s*[A-Za-z0-9_.]+' | sed 's/@tra:\s*//' | xargs || true)
 
             if [[ -z "$anchor" ]]; then
                 continue
             fi
 
-            # Validate anchor format
-            if ! echo "$anchor" | grep -qE '^(Domain\.(Invariant|Policy)|UseCase|Port|Adapter|Contract)\.'; then
+            # Validate anchor format - allow Domain.*, Domain.Invariant.*, Domain.Policy.*, UseCase.*, Port.*, Adapter.*, Contract.*
+            if ! echo "$anchor" | grep -qE '^(Domain\.(Invariant|Policy)\.[A-Za-z0-9_]+|Domain\.[A-Z][A-Za-z0-9_]*|UseCase\.[A-Za-z0-9_]+|Port\.[A-Za-z0-9_]+|Adapter\.[A-Za-z0-9_]+|Contract\.[A-Za-z0-9_]+)$'; then
                 errors+=("$file:$line_num: Invalid TRA format '$anchor'")
                 continue
             fi
