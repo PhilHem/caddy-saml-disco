@@ -248,6 +248,60 @@ CI and pre-commit use identical commands to local development:
 
 Install hooks: `pre-commit install`
 
+### Test Responsibility Anchors (TRA)
+
+This project uses Test Responsibility Anchors for architectural test discipline.
+
+**Rules:**
+- Every test declares exactly one responsibility via `tra.Require(t, "...")`
+- Production code uses `// @tra: Anchor` comments to link to tests
+- Never bulk-add TRA markers - each is a deliberate architectural decision
+
+**Valid TRA prefixes:**
+- `Domain.Invariant.*` - Core domain rules that must never be violated
+- `Domain.Policy.*` - Business policies and logic
+- `UseCase.*` - Application use cases
+- `Port.*` - Port interfaces/contracts
+- `Adapter.*` - Adapter-specific behavior
+- `Contract.*` - External API contracts
+
+**Before modifying code:**
+1. Check for `// @tra:` comment above the function
+2. If present, grep for that anchor to find the protecting test
+3. Read and understand the test before changing the code
+4. Update test first if the responsibility changes
+
+**TRA Implementation:**
+- Go package: `internal/testutil/tra/tra.go`
+- Pre-commit scripts: `scripts/tra-check.sh`, `scripts/tra-bidirectional.sh`
+- Adoption check: `./scripts/tra-adoption-check.sh`
+
+**Example usage:**
+
+```go
+import "github.com/philiph/caddy-saml-disco/internal/testutil/tra"
+
+func TestSessionExpiry(t *testing.T) {
+    tra.Require(t, "Domain.Invariant.SessionMustExpire")
+    // test code...
+}
+
+// For legacy tests during migration:
+func TestOldBehavior(t *testing.T) {
+    tra.RequireLegacy(t)
+    // old test code...
+}
+```
+
+**Code annotation:**
+
+```go
+// @tra: Domain.Invariant.SessionMustExpire
+func (s *Session) IsExpired() bool {
+    return time.Now().After(s.ExpiresAt)
+}
+```
+
 ## API Endpoints
 
 ```
