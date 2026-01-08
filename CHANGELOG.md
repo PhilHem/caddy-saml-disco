@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-01-08
+
+### Fixed
+- **SAML ACS response parsing**: Call `ParseForm()` before processing SAML response.
+  The `crewjam/saml` library uses `req.PostForm.Get("SAMLResponse")` but doesn't call
+  `ParseForm()` itself. Without this, `PostForm` is nil and returns empty string,
+  causing "invalid xml: no root" errors.
+
 ## [0.15.0] - 2026-01-08
 
 ### Added

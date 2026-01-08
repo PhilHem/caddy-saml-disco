@@ -254,6 +254,13 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *domain.Id
 	// Get all valid request IDs for validation
 	possibleRequestIDs := s.requestStore.GetAll()
 
+	// Parse the form body to populate r.PostForm
+	// This is required because crewjam/saml's ParseResponse uses r.PostForm.Get("SAMLResponse")
+	// but doesn't call ParseForm() itself. Without this, PostForm is nil and returns empty string.
+	if err := r.ParseForm(); err != nil {
+		return nil, fmt.Errorf("parse form: %w", err)
+	}
+
 	// Parse and validate the SAML response
 	// Note: ParseResponse automatically decrypts encrypted assertions using sp.Key
 	assertion, err := sp.ParseResponse(r, possibleRequestIDs)
