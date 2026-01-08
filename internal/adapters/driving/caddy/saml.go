@@ -24,7 +24,7 @@ type SAMLService struct {
 	certificate    *x509.Certificate
 	requestStore   ports.RequestStore
 	metadataSigner ports.MetadataSigner // optional signer for SP metadata
-	sloURL         *url.URL       // optional SLO URL for SP metadata
+	sloURL         *url.URL             // optional SLO URL for SP metadata
 }
 
 // AuthResult contains the result of processing a SAML assertion.

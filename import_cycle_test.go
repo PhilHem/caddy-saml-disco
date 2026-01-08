@@ -158,13 +158,3 @@ func parseImportsForCycle(filePath string) ([]string, error) {
 
 	return imports, nil
 }
-
-
-
-
-
-
-
-
-
-

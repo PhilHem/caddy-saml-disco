@@ -29,13 +29,3 @@ type AttributeMapper interface {
 	// If prefix is empty, existing validation applies (headers must start with "X-").
 	MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []domain.AttributeMapping, prefix string) (map[string]string, error)
 }
-
-
-
-
-
-
-
-
-
-

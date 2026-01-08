@@ -142,16 +142,3 @@ func AuthError(message string, cause error) *AppError {
 func ServiceError(message string) *AppError {
 	return &AppError{Code: ErrCodeServiceError, Message: message}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

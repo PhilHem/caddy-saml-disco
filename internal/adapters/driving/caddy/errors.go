@@ -14,10 +14,10 @@ import (
 // @tra: Adapter.SAMLAuthErrors
 type SAMLErrorDetails struct {
 	Category     domain.SAMLErrorCategory
-	Message      string                   // Human-readable description
-	PrivateError string                   // Original error from PrivateErr
-	IdPStatus    *IdPStatusInfo           // Extracted from Response XML (if available)
-	TimeContext  *TimeConstraintContext   // For time constraint errors
+	Message      string                 // Human-readable description
+	PrivateError string                 // Original error from PrivateErr
+	IdPStatus    *IdPStatusInfo         // Extracted from Response XML (if available)
+	TimeContext  *TimeConstraintContext // For time constraint errors
 }
 
 // IdPStatusInfo contains SAML status information extracted from IdP response.

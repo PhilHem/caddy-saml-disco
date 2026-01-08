@@ -282,7 +282,7 @@ func FuzzApplyAttributeHeaders(f *testing.F) {
 		_ = strip
 		_ = dropAttr
 		_ = mapping
-		
+
 		// TODO: Test applyAttributeHeaders indirectly through ServeHTTP or another public method
 		// Test skipped - applyAttributeHeaders is unexported
 		t.Skip("applyAttributeHeaders is unexported, test indirectly through ServeHTTP")
@@ -949,12 +949,12 @@ func fuzzForceAuthnPathSeeds() [][]string {
 		{"/admin/settings", "/admin/*"},
 		{"/public", "/admin/*"},
 		{"", ""},
-		{"/admin/../public", "/admin/*"}, // Path traversal attempt
-		{"/admin", "/admin/*"},           // No trailing path
-		{"/admin/settings", "/admin/settings"}, // Exact match
+		{"/admin/../public", "/admin/*"},             // Path traversal attempt
+		{"/admin", "/admin/*"},                       // No trailing path
+		{"/admin/settings", "/admin/settings"},       // Exact match
 		{"/settings/security", "/settings/security"}, // Exact match
-		{"/admin/users/edit", "/admin/*"}, // Wildcard match
-		{"/public/page", "/admin/*"},      // No match
+		{"/admin/users/edit", "/admin/*"},            // Wildcard match
+		{"/public/page", "/admin/*"},                 // No match
 	}
 }
 
@@ -1012,8 +1012,8 @@ func fuzzAuthnContextSeeds() [][]string {
 		{"urn:oasis:names:tc:SAML:2.0:ac:classes:Password", "exact"},
 		{"urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract", "minimum"},
 		{"", ""},
-		{"invalid\x00uri", "exact"}, // null byte injection attempt
-		{"urn:test", "INVALID"},     // invalid comparison
+		{"invalid\x00uri", "exact"},           // null byte injection attempt
+		{"urn:test", "INVALID"},               // invalid comparison
 		{strings.Repeat("a", 10000), "exact"}, // very long URI
 	}
 }
@@ -1100,10 +1100,10 @@ func FuzzHandleACS_EncryptedAssertion(f *testing.F) {
 
 		// Create minimal IdP info
 		idp := &IdPInfo{
-			EntityID:    "https://idp.example.com",
-			DisplayName: "Test IdP",
-			SSOURL:      "https://idp.example.com/sso",
-			SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			EntityID:     "https://idp.example.com",
+			DisplayName:  "Test IdP",
+			SSOURL:       "https://idp.example.com/sso",
+			SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 			Certificates: []string{},
 		}
 		acsURL, _ := url.Parse("https://sp.example.com/saml/acs")

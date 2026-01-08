@@ -18,18 +18,18 @@ import (
 
 // URLMetadataStore loads IdP metadata from a URL with caching.
 type URLMetadataStore struct {
-	url                         string
-	httpClient                  *http.Client
-	cacheTTL                    time.Duration
-	idpFilter                   string
-	registrationAuthorityFilter string
-	entityCategoryFilter        string
+	url                          string
+	httpClient                   *http.Client
+	cacheTTL                     time.Duration
+	idpFilter                    string
+	registrationAuthorityFilter  string
+	entityCategoryFilter         string
 	assuranceCertificationFilter string
-	signatureVerifier           ports.SignatureVerifier
-	logger                      *zap.Logger
-	metricsRecorder             ports.MetricsRecorder
-	onRefresh                   func(error) // callback after background refresh (for testing)
-	clock                       Clock       // for time operations (defaults to RealClock)
+	signatureVerifier            ports.SignatureVerifier
+	logger                       *zap.Logger
+	metricsRecorder              ports.MetricsRecorder
+	onRefresh                    func(error) // callback after background refresh (for testing)
+	clock                        Clock       // for time operations (defaults to RealClock)
 
 	mu              sync.RWMutex
 	idps            []domain.IdPInfo
@@ -42,7 +42,7 @@ type URLMetadataStore struct {
 	validUntil      *time.Time // validUntil from metadata (nil if not present)
 
 	// Refresh synchronization - prevents concurrent refreshes
-	refreshMu sync.Mutex
+	refreshMu  sync.Mutex
 	refreshing bool // true when refresh is in progress
 
 	// Background refresh goroutine management
@@ -65,17 +65,17 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		clock = RealClock{}
 	}
 	return &URLMetadataStore{
-		url:                         url,
-		cacheTTL:                    cacheTTL,
-		idpFilter:                   options.idpFilter,
-		registrationAuthorityFilter: options.registrationAuthorityFilter,
-		entityCategoryFilter:        options.entityCategoryFilter,
+		url:                          url,
+		cacheTTL:                     cacheTTL,
+		idpFilter:                    options.idpFilter,
+		registrationAuthorityFilter:  options.registrationAuthorityFilter,
+		entityCategoryFilter:         options.entityCategoryFilter,
 		assuranceCertificationFilter: options.assuranceCertificationFilter,
-		signatureVerifier:           options.signatureVerifier,
-		logger:                      options.logger,
-		metricsRecorder:             options.metricsRecorder,
-		onRefresh:                   options.onRefresh,
-		clock:                       clock,
+		signatureVerifier:            options.signatureVerifier,
+		logger:                       options.logger,
+		metricsRecorder:              options.metricsRecorder,
+		onRefresh:                    options.onRefresh,
+		clock:                        clock,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -227,7 +227,7 @@ func (s *URLMetadataStore) Refresh(ctx context.Context) error {
 func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	// Acquire refresh lock to prevent concurrent refreshes
 	s.refreshMu.Lock()
-	
+
 	// Check if refresh is already in progress
 	if s.refreshing {
 		s.refreshMu.Unlock()
@@ -235,7 +235,7 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		// For simplicity, we return early - the in-progress refresh will update the cache
 		return nil
 	}
-	
+
 	// Check if cache is still valid (unless forced) - do this while holding refreshMu
 	// to ensure atomic check with refresh state
 	s.mu.RLock()
@@ -249,11 +249,11 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	etag := s.etag
 	lastModified := s.lastModified
 	s.mu.RUnlock()
-	
+
 	// Mark refresh as in progress
 	s.refreshing = true
 	s.refreshMu.Unlock()
-	
+
 	// Ensure we clear refreshing flag when done
 	defer func() {
 		s.refreshMu.Lock()
@@ -391,16 +391,3 @@ func (s *URLMetadataStore) markRefreshFailed(err error) {
 
 // Ensure URLMetadataStore implements ports.MetadataStore
 var _ ports.MetadataStore = (*URLMetadataStore)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

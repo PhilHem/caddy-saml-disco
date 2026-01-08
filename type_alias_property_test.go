@@ -187,13 +187,3 @@ func TestTypeAlias_Property_BehavioralEquivalence(t *testing.T) {
 		}
 	})
 }
-
-
-
-
-
-
-
-
-
-

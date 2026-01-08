@@ -60,10 +60,3 @@ func MapEntitlementsToHeaders(result *domain.EntitlementResult, mappings []Entit
 
 	return headers, nil
 }
-
-
-
-
-
-
-

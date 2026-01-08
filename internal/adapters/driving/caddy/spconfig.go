@@ -29,8 +29,8 @@ type SPConfig struct {
 
 	// Config snapshots (immutable copies taken during Provision to prevent mutation)
 	// These are used in applyAttributeHeadersForSP() to ensure header names match validation-time expectations.
-	headerPrefixSnapshot     string
-	attributeHeadersSnapshot []AttributeMapping
+	headerPrefixSnapshot       string
+	attributeHeadersSnapshot   []AttributeMapping
 	entitlementHeadersSnapshot []EntitlementHeaderMapping
 }
 
@@ -87,16 +87,3 @@ func validateSPConfigs(configs []*SPConfig) error {
 	}
 	return nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

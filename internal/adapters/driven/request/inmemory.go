@@ -129,16 +129,3 @@ func (s *InMemoryRequestStore) GetAll() []string {
 
 // Ensure InMemoryRequestStore implements ports.RequestStore
 var _ ports.RequestStore = (*InMemoryRequestStore)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

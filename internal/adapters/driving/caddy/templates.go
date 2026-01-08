@@ -144,16 +144,3 @@ func (r *TemplateRenderer) RenderDisco(w io.Writer, data DiscoData) error {
 func (r *TemplateRenderer) RenderError(w io.Writer, data ErrorData) error {
 	return r.err.Execute(w, data)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

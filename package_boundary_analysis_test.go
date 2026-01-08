@@ -176,13 +176,3 @@ func TestPackageBoundary_ImportConsistency(t *testing.T) {
 		t.Log("All root package test files use consistent import patterns.")
 	}
 }
-
-
-
-
-
-
-
-
-
-

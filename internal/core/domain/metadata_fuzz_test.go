@@ -95,16 +95,3 @@ func FuzzSelectBestLogo(f *testing.F) {
 		checkSelectBestLogoInvariants(t, logos, result)
 	})
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

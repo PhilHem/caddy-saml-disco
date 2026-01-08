@@ -23,15 +23,15 @@ type RealClock struct{}
 func (RealClock) Now() time.Time { return time.Now() }
 
 type metadataOptions struct {
-	idpFilter                   string
-	registrationAuthorityFilter string
-	entityCategoryFilter        string
+	idpFilter                    string
+	registrationAuthorityFilter  string
+	entityCategoryFilter         string
 	assuranceCertificationFilter string
-	signatureVerifier           ports.SignatureVerifier
-	logger                      *zap.Logger
-	metricsRecorder             ports.MetricsRecorder
-	onRefresh                   func(error)
-	clock                       Clock
+	signatureVerifier            ports.SignatureVerifier
+	logger                       *zap.Logger
+	metricsRecorder              ports.MetricsRecorder
+	onRefresh                    func(error)
+	clock                        Clock
 }
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
@@ -112,16 +112,3 @@ func WithClock(clock Clock) MetadataOption {
 		o.clock = clock
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

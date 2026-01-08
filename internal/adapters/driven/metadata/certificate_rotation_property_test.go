@@ -89,13 +89,13 @@ func createMetadataXMLWithCerts(entityID string, certs []*x509.Certificate) []by
 func TestCertificateRotation_Property_MetadataRefresh(t *testing.T) {
 	// Generate test certificates
 	now := time.Now()
-		idpKey1, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	idpKey1, err := rsa.GenerateKey(cryptorand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("failed to generate key1: %v", err)
 	}
 	idpCert1 := generateTestIdPCertForMetadata(idpKey1, now.Add(-365*24*time.Hour), now.Add(365*24*time.Hour))
 
-		idpKey2, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	idpKey2, err := rsa.GenerateKey(cryptorand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("failed to generate key2: %v", err)
 	}
@@ -247,16 +247,3 @@ func TestCertificateRotation_Property_MetadataRefreshPreservesRotationWindow(t *
 		t.Error(err)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

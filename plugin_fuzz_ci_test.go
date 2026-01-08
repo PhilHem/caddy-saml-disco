@@ -704,30 +704,30 @@ func fuzzParseDurationSeedsExtended() []string {
 	extended := []string{
 		// === Boundary values ===
 		"106751d", "106752d", // At and just over max safe days
-		"0d", "1d", "-1d",    // Edge cases around zero
+		"0d", "1d", "-1d", // Edge cases around zero
 
 		// === Various overflow patterns ===
 		"9223372036854775807d", "-9223372036854775808d", // Max/min int64
-		"999999999999999d", "1000000000000000d",          // Very large values
-		"2147483647d", "-2147483648d",                   // Max/min int32
+		"999999999999999d", "1000000000000000d", // Very large values
+		"2147483647d", "-2147483648d", // Max/min int32
 
 		// === Whitespace/encoding tricks ===
-		" 30d", "30d ", "30\td", "30\nd",               // Whitespace
-		"30d\r", "30d\n",                                // Control chars
+		" 30d", "30d ", "30\td", "30\nd", // Whitespace
+		"30d\r", "30d\n", // Control chars
 
 		// === Mixed formats (should fail gracefully) ===
-		"1d2h", "1h1d", "30d30m",                       // Mixed day/hour formats
+		"1d2h", "1h1d", "30d30m", // Mixed day/hour formats
 
 		// === Decimal/float attempts ===
-		"30.5d", "30.0d", "0.5d",                       // Decimal days
+		"30.5d", "30.0d", "0.5d", // Decimal days
 
 		// === Unicode and special chars ===
-		"３０d", "30ｄ",                                  // Full-width chars
-		"30d\x00", "\x0030d",                            // Null bytes
+		"３０d", "30ｄ", // Full-width chars
+		"30d\x00", "\x0030d", // Null bytes
 
 		// === Very long inputs ===
-		strings.Repeat("9", 100) + "d",                 // Very long number
-		strings.Repeat("d", 1000),                      // Many 'd' chars
+		strings.Repeat("9", 100) + "d", // Very long number
+		strings.Repeat("d", 1000),      // Many 'd' chars
 	}
 	return append(base, extended...)
 }

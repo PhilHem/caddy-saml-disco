@@ -324,7 +324,7 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 
 				mapping := EntitlementHeaderMapping{
-					Field:     args[0],
+					Field:      args[0],
 					HeaderName: args[1],
 				}
 				if len(args) == 3 {
@@ -597,16 +597,3 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 	}
 	return nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

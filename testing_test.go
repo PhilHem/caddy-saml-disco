@@ -134,13 +134,3 @@ type testError struct {
 func (e *testError) Error() string {
 	return fmt.Sprintf("goroutine %d call %d: %s", e.goroutineID, e.callID, e.message)
 }
-
-
-
-
-
-
-
-
-
-

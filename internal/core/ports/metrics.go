@@ -30,16 +30,3 @@ type MetricsRecorder interface {
 	// RecordAuthDuration records authentication processing time.
 	RecordAuthDuration(idpEntityID string, outcome string, duration time.Duration)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -54,8 +54,8 @@ type CachingLogoStore struct {
 	maxSize       int64
 
 	// Concurrency control for fetch operations
-	fetchMu   sync.Mutex           // Serializes access to fetching map
-	fetching  map[string]chan struct{} // Tracks in-progress fetches by entityID
+	fetchMu  sync.Mutex               // Serializes access to fetching map
+	fetching map[string]chan struct{} // Tracks in-progress fetches by entityID
 }
 
 // NewCachingLogoStore creates a new caching logo store.
@@ -179,16 +179,3 @@ func (s *CachingLogoStore) fetchLogo(logoURL string) (*ports.CachedLogo, error) 
 
 // Ensure CachingLogoStore implements ports.LogoStore
 var _ ports.LogoStore = (*CachingLogoStore)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

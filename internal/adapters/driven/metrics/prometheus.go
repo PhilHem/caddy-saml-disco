@@ -143,16 +143,3 @@ func (p *PrometheusMetricsRecorder) RecordAuthDuration(idpEntityID string, outco
 
 // Ensure PrometheusMetricsRecorder implements ports.MetricsRecorder
 var _ ports.MetricsRecorder = (*PrometheusMetricsRecorder)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

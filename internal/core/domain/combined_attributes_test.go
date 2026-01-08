@@ -49,16 +49,3 @@ func TestCombineAttributes_PreservesLocalMetadata(t *testing.T) {
 		t.Error("Local metadata not preserved")
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

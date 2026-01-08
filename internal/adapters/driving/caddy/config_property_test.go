@@ -118,10 +118,10 @@ func TestSPConfigs_Property_UniqueCookieNames(t *testing.T) {
 			configs := make([]Config, numConfigs)
 			for i := range configs {
 				configs[i] = Config{
-					EntityID:         fmt.Sprintf("https://sp%d/saml", i),
-					MetadataFile:     "/path/to/metadata.xml",
-					CertFile:         "/path/to/cert.pem",
-					KeyFile:          "/path/to/key.pem",
+					EntityID:          fmt.Sprintf("https://sp%d/saml", i),
+					MetadataFile:      "/path/to/metadata.xml",
+					CertFile:          "/path/to/cert.pem",
+					KeyFile:           "/path/to/key.pem",
 					SessionCookieName: fmt.Sprintf("cookie_%d", r.Intn(3)), // 0-2, so duplicates possible
 				}
 			}
@@ -133,16 +133,3 @@ func TestSPConfigs_Property_UniqueCookieNames(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

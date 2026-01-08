@@ -151,16 +151,3 @@ func FuzzExtractScope(f *testing.F) {
 		}
 	})
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

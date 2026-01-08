@@ -40,16 +40,3 @@ func (n *NoopMetricsRecorder) RecordAuthDuration(idpEntityID string, outcome str
 
 // Ensure NoopMetricsRecorder implements ports.MetricsRecorder
 var _ ports.MetricsRecorder = (*NoopMetricsRecorder)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -3415,8 +3415,8 @@ func TestFilterIdPsByRegistrationAuthority_DuplicatePatterns(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name    string
-		pattern string
+		name     string
+		pattern  string
 		expected int
 	}{
 		{
@@ -3481,10 +3481,10 @@ func TestApplyFilters_Property_OrderIndependence(t *testing.T) {
 
 	// Test different filter orders
 	testCases := []struct {
-		name    string
-		order1  func([]IdPInfo) []IdPInfo
-		order2  func([]IdPInfo) []IdPInfo
-		desc    string
+		name   string
+		order1 func([]IdPInfo) []IdPInfo
+		order2 func([]IdPInfo) []IdPInfo
+		desc   string
 	}{
 		{
 			name: "registration authority then entity category",
@@ -3859,9 +3859,9 @@ func TestFileMetadataStore_Property_MultipleFilterFailures_DeterministicError(t 
 	// Use aggregate-metadata.xml which has 3 IdPs
 	// Set up multiple filters that would all independently fail (reduce IdP set to zero)
 	store := NewFileMetadataStore("testdata/aggregate-metadata.xml",
-		WithIdPFilter("*nonexistent*"),                    // Would fail: no IdPs match
-		WithRegistrationAuthorityFilter("https://nonexistent.org"), // Would fail: no IdPs have this registration authority
-		WithEntityCategoryFilter("https://nonexistent.org/category"), // Would fail: no IdPs have this category
+		WithIdPFilter("*nonexistent*"),                                   // Would fail: no IdPs match
+		WithRegistrationAuthorityFilter("https://nonexistent.org"),       // Would fail: no IdPs have this registration authority
+		WithEntityCategoryFilter("https://nonexistent.org/category"),     // Would fail: no IdPs have this category
 		WithAssuranceCertificationFilter("https://nonexistent.org/cert"), // Would fail: no IdPs have this certification
 	)
 
@@ -3874,7 +3874,7 @@ func TestFileMetadataStore_Property_MultipleFilterFailures_DeterministicError(t 
 
 	// Property 1: Error message should include all failing filters
 	errMsg := err.Error()
-	
+
 	// Check that all failing filters are mentioned in the error
 	expectedFilters := []string{
 		"filter pattern",
@@ -3882,7 +3882,7 @@ func TestFileMetadataStore_Property_MultipleFilterFailures_DeterministicError(t 
 		"entity category filter",
 		"assurance certification filter",
 	}
-	
+
 	for _, expected := range expectedFilters {
 		if !strings.Contains(errMsg, expected) {
 			t.Errorf("Error message should mention %q, got: %q", expected, errMsg)
@@ -3914,8 +3914,8 @@ func TestFileMetadataStore_Property_PartialFilterFailures(t *testing.T) {
 	// Use aggregate-metadata.xml which has 3 IdPs: idp1, idp2, idp3
 	// Set up filters where some would fail and some would succeed
 	store := NewFileMetadataStore("testdata/aggregate-metadata.xml",
-		WithIdPFilter("*idp1*"),                           // Would succeed: matches idp1
-		WithRegistrationAuthorityFilter("https://nonexistent.org"), // Would fail: no IdPs have this registration authority
+		WithIdPFilter("*idp1*"), // Would succeed: matches idp1
+		WithRegistrationAuthorityFilter("https://nonexistent.org"),   // Would fail: no IdPs have this registration authority
 		WithEntityCategoryFilter("https://nonexistent.org/category"), // Would fail: no IdPs have this category
 	)
 
@@ -3959,9 +3959,9 @@ func TestURLMetadataStore_Property_MultipleFilterFailures_DeterministicError(t *
 
 	// Set up multiple filters that would all independently fail (reduce IdP set to zero)
 	store := NewURLMetadataStore(server.URL, time.Hour,
-		WithIdPFilter("*nonexistent*"),                    // Would fail: no IdPs match
-		WithRegistrationAuthorityFilter("https://nonexistent.org"), // Would fail: no IdPs have this registration authority
-		WithEntityCategoryFilter("https://nonexistent.org/category"), // Would fail: no IdPs have this category
+		WithIdPFilter("*nonexistent*"),                                   // Would fail: no IdPs match
+		WithRegistrationAuthorityFilter("https://nonexistent.org"),       // Would fail: no IdPs have this registration authority
+		WithEntityCategoryFilter("https://nonexistent.org/category"),     // Would fail: no IdPs have this category
 		WithAssuranceCertificationFilter("https://nonexistent.org/cert"), // Would fail: no IdPs have this certification
 	)
 

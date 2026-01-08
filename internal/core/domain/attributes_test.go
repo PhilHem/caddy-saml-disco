@@ -147,12 +147,3 @@ func TestIsValidHeaderName_Property_Consistency(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-
-
-
-
-
-
-
-

@@ -239,16 +239,3 @@ func (s *XMLDsigSigner) Sign(metadata []byte) ([]byte, error) {
 // Ensure implementations satisfy interfaces
 var _ ports.SignatureVerifier = (*XMLDsigVerifier)(nil)
 var _ ports.MetadataSigner = (*XMLDsigSigner)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

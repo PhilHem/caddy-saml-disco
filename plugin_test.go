@@ -233,8 +233,8 @@ func TestApplyAttributeHeaders_StripsSpoofedValues(t *testing.T) {
 
 	// Create session with attributes
 	session := &Session{
-		Subject:    "user@example.com",
-		Attributes: map[string]string{"role": "member"},
+		Subject:     "user@example.com",
+		Attributes:  map[string]string{"role": "member"},
 		IdPEntityID: "https://idp.example.com",
 	}
 	token, err := store.Create(session)
@@ -288,8 +288,8 @@ func TestApplyAttributeHeaders_StripsWhenAttributeMissing(t *testing.T) {
 
 	// Create session without the attribute
 	session := &Session{
-		Subject:    "user@example.com",
-		Attributes: map[string]string{},
+		Subject:     "user@example.com",
+		Attributes:  map[string]string{},
 		IdPEntityID: "https://idp.example.com",
 	}
 	token, err := store.Create(session)
@@ -343,8 +343,8 @@ func TestApplyAttributeHeaders_DisabledPreservesIncoming(t *testing.T) {
 
 	// Create session without the attribute
 	session := &Session{
-		Subject:    "user@example.com",
-		Attributes: map[string]string{},
+		Subject:     "user@example.com",
+		Attributes:  map[string]string{},
 		IdPEntityID: "https://idp.example.com",
 	}
 	token, err := store.Create(session)
@@ -954,7 +954,7 @@ func TestValidateRelayState(t *testing.T) {
 		{"newline in path", "/path\nHeader: injection", "/"},     // header injection blocked
 	}
 
-		for _, tc := range tests {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ValidateRelayState(tc.relayState)
 			if got != tc.want {
@@ -2382,7 +2382,7 @@ func TestDiscoveryAPI_ListIdPs_NoPinnedIdPs(t *testing.T) {
 	}
 
 	s := &SAMLDisco{
-		Config:        Config{},
+		Config: Config{},
 	}
 	s.SetMetadataStore(metadataStore)
 

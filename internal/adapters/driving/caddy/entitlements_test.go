@@ -88,16 +88,3 @@ func TestMapEntitlementsToHeaders_SeparatorSanitizesToEmpty_DefaultsToSemicolon(
 		t.Errorf("X-Entitlement-Roles = %q, want %q", headers["X-Entitlement-Roles"], expected)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

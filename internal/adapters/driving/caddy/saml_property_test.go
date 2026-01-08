@@ -284,10 +284,10 @@ func TestAssertionDecryption_Property_WrongKeyFails(t *testing.T) {
 	// that don't perform real encryption (actual encryption is handled by crewjam/saml),
 	// this test documents the expected security property rather than testing it directly.
 	// The crewjam/saml library enforces this property when handling real encrypted assertions.
-	
+
 	// Test with a simple case to document the property
 	subject := "testuser"
-	
+
 	// Generate two key pairs
 	spKey1, err := rsa.GenerateKey(cryptorand.Reader, 2048)
 	if err != nil {
@@ -311,14 +311,14 @@ func TestAssertionDecryption_Property_WrongKeyFails(t *testing.T) {
 	// In real scenario with crewjam/saml, this would fail during XML decryption
 	// because the encrypted symmetric key cannot be decrypted with the wrong RSA key.
 	_, err = decryptAssertion(encrypted, spKey2)
-	
+
 	// Property: Wrong key should fail OR produce different data
 	// (Our placeholder doesn't encrypt, so we verify the conceptual property)
 	if err != nil {
 		// Good: wrong key failed (expected in real encryption)
 		return
 	}
-	
+
 	// Note: With our placeholder encryption (which doesn't actually encrypt),
 	// decryption with wrong key will succeed but this documents the expected property:
 	// In real encryption (handled by crewjam/saml), wrong keys MUST fail.
@@ -438,16 +438,3 @@ func TestAssertionDecryption_Property_AttributePreservation(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

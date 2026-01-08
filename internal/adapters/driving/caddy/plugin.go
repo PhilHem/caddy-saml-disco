@@ -73,8 +73,8 @@ type SAMLDisco struct {
 
 	// Config snapshots (immutable copies taken during Provision to prevent mutation)
 	// These are used in applyAttributeHeaders() to ensure header names match validation-time expectations.
-	headerPrefixSnapshot     string
-	attributeHeadersSnapshot []AttributeMapping
+	headerPrefixSnapshot       string
+	attributeHeadersSnapshot   []AttributeMapping
 	entitlementHeadersSnapshot []EntitlementHeaderMapping
 }
 
@@ -501,7 +501,7 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		// Single-SP mode: use embedded Config (backward compatibility)
 		spConfig = &SPConfig{
 			Hostname: r.Host, // Use request hostname for single-SP mode
-			Config:    s.Config,
+			Config:   s.Config,
 			// Copy instance-level stores/services
 			metadataStore:    s.metadataStore,
 			sessionStore:     s.sessionStore,
@@ -859,7 +859,7 @@ func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) erro
 	if relayState == "" {
 		relayState = "/"
 	}
-		relayState = ValidateRelayState(relayState)
+	relayState = ValidateRelayState(relayState)
 
 	// Determine if forceAuthn is needed based on return URL path
 	opts := &domain.AuthnOptions{
@@ -1042,37 +1042,37 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 	// Combine SAML attributes with local entitlements
 	combined := domain.CombineAttributes(multiAttrs, entitlementResult)
 
-		// Map SAML attributes to headers (if AttributeHeaders configured)
-		if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
-			// Convert caddy.AttributeMapping to ports.AttributeMapping
-			portMappings := make([]ports.AttributeMapping, len(attributeHeaders))
-			for i, m := range attributeHeaders {
-				portMappings[i] = ports.AttributeMapping{
-					SAMLAttribute: m.SAMLAttribute,
-					HeaderName:    m.HeaderName,
-					Separator:     m.Separator,
-				}
-			}
-			headers, err := domain.MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, portMappings, headerPrefix)
-			if err != nil {
-				// Configuration error - should have been caught at startup
-				// Restore original headers before returning
-				if originalHeaders != nil {
-					restoreHeaderState(r, originalHeaders)
-				}
-				s.getLogger().Error("failed to map attributes to headers",
-					zap.Error(err),
-					zap.String("subject", session.Subject),
-				)
-				return
-			}
-
-			// Set headers on the request
-			for header, value := range headers {
-				canonicalHeader := http.CanonicalHeaderKey(header)
-				r.Header.Set(canonicalHeader, value)
+	// Map SAML attributes to headers (if AttributeHeaders configured)
+	if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
+		// Convert caddy.AttributeMapping to ports.AttributeMapping
+		portMappings := make([]ports.AttributeMapping, len(attributeHeaders))
+		for i, m := range attributeHeaders {
+			portMappings[i] = ports.AttributeMapping{
+				SAMLAttribute: m.SAMLAttribute,
+				HeaderName:    m.HeaderName,
+				Separator:     m.Separator,
 			}
 		}
+		headers, err := domain.MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, portMappings, headerPrefix)
+		if err != nil {
+			// Configuration error - should have been caught at startup
+			// Restore original headers before returning
+			if originalHeaders != nil {
+				restoreHeaderState(r, originalHeaders)
+			}
+			s.getLogger().Error("failed to map attributes to headers",
+				zap.Error(err),
+				zap.String("subject", session.Subject),
+			)
+			return
+		}
+
+		// Set headers on the request
+		for header, value := range headers {
+			canonicalHeader := http.CanonicalHeaderKey(header)
+			r.Header.Set(canonicalHeader, value)
+		}
+	}
 
 	// Map entitlements to headers (if EntitlementHeaders configured)
 	if len(entitlementHeaders) > 0 && entitlementResult != nil {
@@ -1154,7 +1154,7 @@ func deleteHeaderCaseInsensitive(r *http.Request, headerName string) {
 	if r.Header.Get(canonical) == "" {
 		return // Header doesn't exist
 	}
-	
+
 	// Find the actual key(s) in the map that match case-insensitively
 	// Use strings.EqualFold for Unicode-aware case-insensitive comparison
 	keysToDelete := make([]string, 0)
@@ -1165,7 +1165,7 @@ func deleteHeaderCaseInsensitive(r *http.Request, headerName string) {
 			keysToDelete = append(keysToDelete, key)
 		}
 	}
-	
+
 	// Delete all matching keys
 	for _, key := range keysToDelete {
 		delete(r.Header, key)
@@ -1359,7 +1359,7 @@ func (s *SAMLDisco) handleLogoEndpoint(w http.ResponseWriter, r *http.Request) e
 type idpListResponse struct {
 	IdPs          []domain.IdPInfo `json:"idps"`
 	PinnedIdPs    []domain.IdPInfo `json:"pinned_idps,omitempty"`
-	RememberedIdP string    `json:"remembered_idp_id,omitempty"`
+	RememberedIdP string           `json:"remembered_idp_id,omitempty"`
 }
 
 // handleListIdPs handles GET /saml/api/idps and returns available IdPs as JSON.

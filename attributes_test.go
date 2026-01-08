@@ -824,7 +824,7 @@ func TestResolveAttributeName_Property_RegistryConsistency(t *testing.T) {
 func TestResolveAttributeName_Property_FriendlyNameWithOIDPrefix(t *testing.T) {
 	// Property: Friendly names starting with "urn:oid:" prefix should not be incorrectly treated as OIDs
 	// This tests the edge case where a friendly name might start with "urn:oid:" prefix
-	
+
 	// Test with an unknown friendly name that starts with "urn:oid:" prefix
 	// This should pass through unchanged (not be treated as an OID)
 	unknownFriendlyWithPrefix := "urn:oid:customAttribute"
@@ -1527,7 +1527,7 @@ func TestMapAttributesToHeaders_Differential_BothFormsDifferentValues(t *testing
 	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Test case: IdP sends both forms with different values
 	attrs := map[string][]string{
-		"eduPersonPrincipalName":                        {"user1@example.com"},
+		"eduPersonPrincipalName":           {"user1@example.com"},
 		"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user2@example.com"},
 	}
 
@@ -1574,7 +1574,7 @@ func TestMapAttributesToHeaders_Differential_MultipleMappingsSameAttribute(t *te
 	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// IdP sends both forms with potentially different values
 	attrs := map[string][]string{
-		"eduPersonPrincipalName":                        {"user1@example.com"},
+		"eduPersonPrincipalName":           {"user1@example.com"},
 		"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user2@example.com"},
 	}
 
@@ -1610,11 +1610,11 @@ func TestMapAttributesToHeaders_Differential_LookupOrder(t *testing.T) {
 	tra.Require(t, "Domain.MapAttributesToHeaders")
 	// Test with known attributes that have both OID and friendly name forms
 	testCases := []struct {
-		name           string
-		configAttr     string
-		oidValue       string
-		friendlyValue  string
-		expectedValue  string
+		name          string
+		configAttr    string
+		oidValue      string
+		friendlyValue string
+		expectedValue string
 	}{
 		{
 			name:          "ConfigOID_BothFormsExist",
@@ -1961,7 +1961,7 @@ func TestMapAttributesToHeaders_Differential_PortInterfaceVsDirect(t *testing.T)
 		{
 			name: "MultipleMappings",
 			attrs: map[string][]string{
-				"mail":                              {"user@example.com"},
+				"mail":                             {"user@example.com"},
 				"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user@example.edu"},
 			},
 			mappings: []AttributeMapping{
@@ -2086,7 +2086,7 @@ func TestMapAttributesToHeadersWithPrefix_Differential_PortInterfaceVsDirect(t *
 		{
 			name: "MultipleMappings_WithPrefix",
 			attrs: map[string][]string{
-				"mail":                              {"user@example.com"},
+				"mail":                             {"user@example.com"},
 				"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": {"user@example.edu"},
 			},
 			mappings: []AttributeMapping{

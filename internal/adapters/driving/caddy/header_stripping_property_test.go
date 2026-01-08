@@ -826,7 +826,7 @@ func TestHeaderStripping_Property_EntitlementMappingErrorHandling(t *testing.T) 
 		}
 
 		session := &domain.Session{
-			Subject: "user@example.com",
+			Subject:    "user@example.com",
 			Attributes: map[string]string{},
 		}
 
@@ -877,7 +877,7 @@ func TestHeaderStripping_Property_EntitlementMappingErrorHandling(t *testing.T) 
 		}
 
 		session := &domain.Session{
-			Subject: "user@example.com",
+			Subject:    "user@example.com",
 			Attributes: map[string]string{},
 		}
 
@@ -1508,7 +1508,7 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 		}
 
 		session := &domain.Session{
-			Subject: "user@example.com",
+			Subject:    "user@example.com",
 			Attributes: map[string]string{},
 		}
 
@@ -1563,7 +1563,7 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 			}
 
 			session := &domain.Session{
-				Subject: "user@example.com",
+				Subject:    "user@example.com",
 				Attributes: map[string]string{},
 			}
 
@@ -1604,7 +1604,7 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 		}
 
 		session := &domain.Session{
-			Subject: "user@example.com",
+			Subject:    "user@example.com",
 			Attributes: map[string]string{},
 		}
 
@@ -1638,11 +1638,11 @@ func TestHeaderStripping_Concurrency_ConfigMutationInvariant(t *testing.T) {
 	// Create config and validate it
 	disco := &SAMLDisco{
 		Config: Config{
-			EntityID:         "https://sp.example.com/saml",
-			MetadataFile:     "/path/to/metadata.xml",
-			CertFile:         "/path/to/cert.pem",
-			KeyFile:          "/path/to/key.pem",
-			HeaderPrefix:     headerPrefix,
+			EntityID:     "https://sp.example.com/saml",
+			MetadataFile: "/path/to/metadata.xml",
+			CertFile:     "/path/to/cert.pem",
+			KeyFile:      "/path/to/key.pem",
+			HeaderPrefix: headerPrefix,
 			AttributeHeaders: []AttributeMapping{
 				{SAMLAttribute: "test:attr", HeaderName: headerName},
 			},

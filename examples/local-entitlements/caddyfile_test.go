@@ -188,16 +188,3 @@ func TestExampleCaddyfile_ValidConfiguration(t *testing.T) {
 		t.Errorf("Config.Validate() error = %v", err)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

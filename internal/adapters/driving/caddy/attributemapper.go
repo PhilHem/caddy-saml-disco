@@ -23,14 +23,3 @@ func (m *CaddyAttributeMapper) MapAttributesToHeaders(attrs map[string][]string,
 func (m *CaddyAttributeMapper) MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []ports.AttributeMapping, prefix string) (map[string]string, error) {
 	return domain.MapAttributesToHeadersWithPrefix(attrs, mappings, prefix)
 }
-
-
-
-
-
-
-
-
-
-
-

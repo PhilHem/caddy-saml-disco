@@ -18,14 +18,14 @@ import (
 // FileMetadataStore loads IdP metadata from a local file.
 // Supports both single EntityDescriptor and aggregate EntitiesDescriptor formats.
 type FileMetadataStore struct {
-	path                        string
-	idpFilter                   string
-	registrationAuthorityFilter string
-	entityCategoryFilter        string
+	path                         string
+	idpFilter                    string
+	registrationAuthorityFilter  string
+	entityCategoryFilter         string
 	assuranceCertificationFilter string
-	signatureVerifier           ports.SignatureVerifier
-	logger                      *zap.Logger
-	metricsRecorder             ports.MetricsRecorder
+	signatureVerifier            ports.SignatureVerifier
+	logger                       *zap.Logger
+	metricsRecorder              ports.MetricsRecorder
 
 	mu         sync.RWMutex
 	idps       []domain.IdPInfo // Supports multiple IdPs from aggregate metadata
@@ -39,14 +39,14 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		opt(options)
 	}
 	return &FileMetadataStore{
-		path:                        path,
-		idpFilter:                   options.idpFilter,
-		registrationAuthorityFilter: options.registrationAuthorityFilter,
-		entityCategoryFilter:        options.entityCategoryFilter,
+		path:                         path,
+		idpFilter:                    options.idpFilter,
+		registrationAuthorityFilter:  options.registrationAuthorityFilter,
+		entityCategoryFilter:         options.entityCategoryFilter,
 		assuranceCertificationFilter: options.assuranceCertificationFilter,
-		signatureVerifier:           options.signatureVerifier,
-		logger:                      options.logger,
-		metricsRecorder:             options.metricsRecorder,
+		signatureVerifier:            options.signatureVerifier,
+		logger:                       options.logger,
+		metricsRecorder:              options.metricsRecorder,
 	}
 }
 
@@ -376,16 +376,3 @@ func FilterIdPsByAssuranceCertification(idps []domain.IdPInfo, certifications st
 
 // Ensure FileMetadataStore implements ports.MetadataStore
 var _ ports.MetadataStore = (*FileMetadataStore)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -36,20 +36,20 @@ func TestSPConfig_Validate_DuplicateCookieName(t *testing.T) {
 	cfg1 := &SPConfig{
 		Hostname: "app1.com",
 		Config: Config{
-			EntityID:         "https://app1.com/saml",
-			MetadataFile:     "/path/to/metadata1.xml",
-			CertFile:         "/path/to/cert1.pem",
-			KeyFile:          "/path/to/key1.pem",
+			EntityID:          "https://app1.com/saml",
+			MetadataFile:      "/path/to/metadata1.xml",
+			CertFile:          "/path/to/cert1.pem",
+			KeyFile:           "/path/to/key1.pem",
 			SessionCookieName: "shared",
 		},
 	}
 	cfg2 := &SPConfig{
 		Hostname: "app2.com",
 		Config: Config{
-			EntityID:         "https://app2.com/saml",
-			MetadataFile:     "/path/to/metadata2.xml",
-			CertFile:         "/path/to/cert2.pem",
-			KeyFile:          "/path/to/key2.pem",
+			EntityID:          "https://app2.com/saml",
+			MetadataFile:      "/path/to/metadata2.xml",
+			CertFile:          "/path/to/cert2.pem",
+			KeyFile:           "/path/to/key2.pem",
 			SessionCookieName: "shared",
 		},
 	}
@@ -63,20 +63,20 @@ func TestSPConfig_Validate_UniqueCookieNames(t *testing.T) {
 	cfg1 := &SPConfig{
 		Hostname: "app1.com",
 		Config: Config{
-			EntityID:         "https://app1.com/saml",
-			MetadataFile:     "/path/to/metadata1.xml",
-			CertFile:         "/path/to/cert1.pem",
-			KeyFile:          "/path/to/key1.pem",
+			EntityID:          "https://app1.com/saml",
+			MetadataFile:      "/path/to/metadata1.xml",
+			CertFile:          "/path/to/cert1.pem",
+			KeyFile:           "/path/to/key1.pem",
 			SessionCookieName: "app1_session",
 		},
 	}
 	cfg2 := &SPConfig{
 		Hostname: "app2.com",
 		Config: Config{
-			EntityID:         "https://app2.com/saml",
-			MetadataFile:     "/path/to/metadata2.xml",
-			CertFile:         "/path/to/cert2.pem",
-			KeyFile:          "/path/to/key2.pem",
+			EntityID:          "https://app2.com/saml",
+			MetadataFile:      "/path/to/metadata2.xml",
+			CertFile:          "/path/to/cert2.pem",
+			KeyFile:           "/path/to/key2.pem",
 			SessionCookieName: "app2_session",
 		},
 	}
@@ -85,16 +85,3 @@ func TestSPConfig_Validate_UniqueCookieNames(t *testing.T) {
 		t.Errorf("unique cookie names should pass: %v", err)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

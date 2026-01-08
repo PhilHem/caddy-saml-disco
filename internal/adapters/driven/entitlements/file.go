@@ -133,16 +133,3 @@ func (s *FileEntitlementStore) Refresh(ctx context.Context) error {
 
 // Ensure FileEntitlementStore implements ports.EntitlementStore
 var _ ports.EntitlementStore = (*FileEntitlementStore)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

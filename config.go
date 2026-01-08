@@ -16,9 +16,9 @@ type PortAttributeMapping = ports.AttributeMapping
 type AttributeMapper = ports.AttributeMapper
 
 var (
-	IsValidHeaderName      = domain.IsValidHeaderName
-	ApplyHeaderPrefix      = domain.ApplyHeaderPrefix
-	MapAttributesToHeaders = domain.MapAttributesToHeaders
+	IsValidHeaderName       = domain.IsValidHeaderName
+	ApplyHeaderPrefix       = domain.ApplyHeaderPrefix
+	MapAttributesToHeaders  = domain.MapAttributesToHeaders
 	NewCaddyAttributeMapper = caddy.NewCaddyAttributeMapper
 )
 

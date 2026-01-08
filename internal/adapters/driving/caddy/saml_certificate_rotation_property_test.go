@@ -110,10 +110,10 @@ func TestCertificateRotation_Property_AnyValidCertWorks(t *testing.T) {
 
 		// Create IdPInfo with all certificates
 		idp := &domain.IdPInfo{
-			EntityID:    "https://idp.example.com",
-			DisplayName: "Test IdP",
-			SSOURL:      "https://idp.example.com/sso",
-			SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			EntityID:     "https://idp.example.com",
+			DisplayName:  "Test IdP",
+			SSOURL:       "https://idp.example.com/sso",
+			SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 			Certificates: certStrings,
 		}
 
@@ -188,19 +188,19 @@ func TestCertificateRotation_Property_OrderIndependent(t *testing.T) {
 
 	// Create IdP with cert1, cert2
 	idp1 := &domain.IdPInfo{
-		EntityID:    "https://idp.example.com",
-		DisplayName: "Test IdP",
-		SSOURL:      "https://idp.example.com/sso",
-		SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+		EntityID:     "https://idp.example.com",
+		DisplayName:  "Test IdP",
+		SSOURL:       "https://idp.example.com/sso",
+		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{cert1Str, cert2Str},
 	}
 
 	// Create IdP with cert2, cert1 (reversed order)
 	idp2 := &domain.IdPInfo{
-		EntityID:    "https://idp.example.com",
-		DisplayName: "Test IdP",
-		SSOURL:      "https://idp.example.com/sso",
-		SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+		EntityID:     "https://idp.example.com",
+		DisplayName:  "Test IdP",
+		SSOURL:       "https://idp.example.com/sso",
+		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{cert2Str, cert1Str},
 	}
 
@@ -278,7 +278,7 @@ func TestCertificateRotation_Property_ExpiryHandling(t *testing.T) {
 		expiredCert := generateIdPCert(
 			expiredKey,
 			now.Add(-time.Duration(expiredHoursAgo+365*24)*time.Hour), // Started long ago
-			now.Add(-time.Duration(expiredHoursAgo)*time.Hour),         // Expired hours ago
+			now.Add(-time.Duration(expiredHoursAgo)*time.Hour),        // Expired hours ago
 		)
 
 		// Generate valid certificate
@@ -288,8 +288,8 @@ func TestCertificateRotation_Property_ExpiryHandling(t *testing.T) {
 		}
 		validCert := generateIdPCert(
 			validKey,
-			now.Add(-24*time.Hour),                                    // Started yesterday
-			now.Add(time.Duration(validHoursFromNow)*time.Hour),       // Valid for hours from now
+			now.Add(-24*time.Hour), // Started yesterday
+			now.Add(time.Duration(validHoursFromNow)*time.Hour), // Valid for hours from now
 		)
 
 		// Create IdP with both expired and valid certificates
@@ -353,10 +353,10 @@ func TestCertificateRotation_Property_ExpiryHandling(t *testing.T) {
 // Property: Empty certificate list is handled gracefully (returns error, not panic).
 func TestCertificateRotation_Property_EmptyCertificates(t *testing.T) {
 	idp := &domain.IdPInfo{
-		EntityID:    "https://idp.example.com",
-		DisplayName: "Test IdP",
-		SSOURL:      "https://idp.example.com/sso",
-		SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+		EntityID:     "https://idp.example.com",
+		DisplayName:  "Test IdP",
+		SSOURL:       "https://idp.example.com/sso",
+		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{}, // Empty
 	}
 
@@ -396,10 +396,10 @@ func TestCertificateRotation_Property_InvalidCertificateFormat(t *testing.T) {
 		}
 
 		idp := &domain.IdPInfo{
-			EntityID:    "https://idp.example.com",
-			DisplayName: "Test IdP",
-			SSOURL:      "https://idp.example.com/sso",
-			SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			EntityID:     "https://idp.example.com",
+			DisplayName:  "Test IdP",
+			SSOURL:       "https://idp.example.com/sso",
+			SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 			Certificates: []string{invalidData}, // Invalid format
 		}
 
@@ -444,16 +444,3 @@ func TestCertificateRotation_Property_InvalidCertificateFormat(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

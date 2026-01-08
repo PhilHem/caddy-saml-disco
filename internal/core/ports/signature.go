@@ -19,16 +19,3 @@ type MetadataSigner interface {
 	// the signed XML bytes.
 	Sign(data []byte) ([]byte, error)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

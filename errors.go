@@ -23,10 +23,10 @@ const (
 
 // Re-export error constructors
 var (
-	ConfigError      = domain.ConfigError
-	IdPNotFoundError = domain.IdPNotFoundError
-	BadRequestError  = domain.BadRequestError
-	AuthError        = domain.AuthError
-	ServiceError     = domain.ServiceError
+	ConfigError          = domain.ConfigError
+	IdPNotFoundError     = domain.IdPNotFoundError
+	BadRequestError      = domain.BadRequestError
+	AuthError            = domain.AuthError
+	ServiceError         = domain.ServiceError
 	NewJSONErrorResponse = domain.NewJSONErrorResponse
 )

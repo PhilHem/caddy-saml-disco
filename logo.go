@@ -22,7 +22,7 @@ var (
 
 // Re-export logo errors
 var (
-	ErrLogoNotFound      = logo.ErrLogoNotFound
-	ErrLogoFetchFailed   = logo.ErrLogoFetchFailed
+	ErrLogoNotFound       = logo.ErrLogoNotFound
+	ErrLogoFetchFailed    = logo.ErrLogoFetchFailed
 	ErrInvalidContentType = logo.ErrInvalidContentType
 )

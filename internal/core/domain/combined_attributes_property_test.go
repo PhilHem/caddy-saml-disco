@@ -149,16 +149,3 @@ func TestCombineAttributes_Property_NoHeaderInjection(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

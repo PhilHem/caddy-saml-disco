@@ -22,15 +22,15 @@ func fuzzAttributeSeedsExtended() []struct {
 		header    string
 	}{
 		// === Valid SAML attribute OIDs ===
-		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.6", "user@example.com", "X-Remote-User"},           // eduPersonPrincipalName
-		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.7", "admin", "X-Entitlements"},                     // eduPersonEntitlement
-		{"urn:oid:0.9.2342.19200300.100.1.3", "user@example.com", "X-Mail"},                 // mail
-		{"urn:oid:2.5.4.42", "John", "X-Given-Name"},                                        // givenName
-		{"urn:oid:2.5.4.4", "Doe", "X-Surname"},                                             // sn
-		{"urn:oid:2.16.840.1.113730.3.1.241", "John Doe", "X-Display-Name"},                 // displayName
-		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.9", "staff@example.com", "X-Scoped-Affiliation"},   // eduPersonScopedAffiliation
-		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.10", "12345", "X-Targeted-ID"},                     // eduPersonTargetedID
-		{"urn:oid:1.3.6.1.4.1.25178.1.2.9", "https://example.com", "X-Home-Organization"},   // schacHomeOrganization
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.6", "user@example.com", "X-Remote-User"},         // eduPersonPrincipalName
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.7", "admin", "X-Entitlements"},                   // eduPersonEntitlement
+		{"urn:oid:0.9.2342.19200300.100.1.3", "user@example.com", "X-Mail"},               // mail
+		{"urn:oid:2.5.4.42", "John", "X-Given-Name"},                                      // givenName
+		{"urn:oid:2.5.4.4", "Doe", "X-Surname"},                                           // sn
+		{"urn:oid:2.16.840.1.113730.3.1.241", "John Doe", "X-Display-Name"},               // displayName
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.9", "staff@example.com", "X-Scoped-Affiliation"}, // eduPersonScopedAffiliation
+		{"urn:oid:1.3.6.1.4.1.5923.1.1.1.10", "12345", "X-Targeted-ID"},                   // eduPersonTargetedID
+		{"urn:oid:1.3.6.1.4.1.25178.1.2.9", "https://example.com", "X-Home-Organization"}, // schacHomeOrganization
 
 		// === Friendly names ===
 		{"eduPersonPrincipalName", "user@example.com", "X-EPPN"},
@@ -71,18 +71,18 @@ func fuzzAttributeSeedsExtended() []struct {
 		{"test", "value", "X-Header\nEvil: yes"},
 		{"test", "value", "X-Header: value\r\nEvil"},
 		{"test", "value", "X-\r\nEvil"},
-		{"test", "value", "X-Test Header"}, // Space
+		{"test", "value", "X-Test Header"},  // Space
 		{"test", "value", "X-Test\tHeader"}, // Tab
 		{"test", "value", "X-Test;Header"},  // Semicolon
 
 		// === Unicode normalization attacks ===
-		{"unicode", "admin\u200Buser", "X-Unicode"},           // Zero-width space
-		{"unicode", "admin\u00A0user", "X-Unicode"},           // Non-breaking space
-		{"unicode", "\uFEFFvalue", "X-Unicode"},               // BOM
-		{"unicode", "value\u2028newline", "X-Unicode"},        // Line separator
-		{"unicode", "value\u2029para", "X-Unicode"},           // Paragraph separator
-		{"unicode", "\u202Eevil", "X-Unicode"},                // RTL override
-		{"unicode", "value\u0000null", "X-Unicode"},           // Null in unicode form
+		{"unicode", "admin\u200Buser", "X-Unicode"},    // Zero-width space
+		{"unicode", "admin\u00A0user", "X-Unicode"},    // Non-breaking space
+		{"unicode", "\uFEFFvalue", "X-Unicode"},        // BOM
+		{"unicode", "value\u2028newline", "X-Unicode"}, // Line separator
+		{"unicode", "value\u2029para", "X-Unicode"},    // Paragraph separator
+		{"unicode", "\u202Eevil", "X-Unicode"},         // RTL override
+		{"unicode", "value\u0000null", "X-Unicode"},    // Null in unicode form
 
 		// === Very long values (DoS prevention) ===
 		{"long", strings.Repeat("a", 1000), "X-Long"},

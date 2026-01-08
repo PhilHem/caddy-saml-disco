@@ -36,16 +36,3 @@ func (s *InMemoryLogoStore) Set(entityID string, logo *ports.CachedLogo) {
 
 // Ensure InMemoryLogoStore implements ports.LogoStore
 var _ ports.LogoStore = (*InMemoryLogoStore)(nil)
-
-
-
-
-
-
-
-
-
-
-
-
-

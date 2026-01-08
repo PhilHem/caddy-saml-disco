@@ -230,16 +230,3 @@ func TestSAMLErrorCategory_AllValues(t *testing.T) {
 		seen[c] = true
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

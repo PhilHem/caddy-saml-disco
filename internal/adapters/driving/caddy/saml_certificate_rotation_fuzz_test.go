@@ -29,9 +29,9 @@ import (
 func FuzzParseIdPCertificates(f *testing.F) {
 	// Seed corpus: valid and invalid certificate formats
 	seeds := []string{
-		"",                                    // Empty
-		"invalid",                             // Invalid base64
-		"SGVsbG8gV29ybGQ=",                    // Valid base64 but not a certificate
+		"",                                     // Empty
+		"invalid",                              // Invalid base64
+		"SGVsbG8gV29ybGQ=",                     // Valid base64 but not a certificate
 		"LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t", // Base64 of "-----BEGIN CERTIFICATE-----"
 	}
 
@@ -71,10 +71,10 @@ func FuzzParseIdPCertificates(f *testing.F) {
 
 		// Create IdPInfo with fuzzed certificate data
 		idp := &domain.IdPInfo{
-			EntityID:    "https://idp.example.com",
-			DisplayName: "Test IdP",
-			SSOURL:      "https://idp.example.com/sso",
-			SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			EntityID:     "https://idp.example.com",
+			DisplayName:  "Test IdP",
+			SSOURL:       "https://idp.example.com/sso",
+			SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 			Certificates: []string{certData}, // Fuzzed certificate data
 		}
 
@@ -122,11 +122,11 @@ func FuzzHandleACS_CertificateRotation(f *testing.F) {
 		certCount int
 		certData  string
 	}{
-		{0, ""},                    // Empty
-		{1, "valid-cert"},          // Single cert
-		{2, "cert1"},               // Multiple certs
-		{5, "cert"},                // Many certs
-		{10, "cert"},               // Very many certs
+		{0, ""},           // Empty
+		{1, "valid-cert"}, // Single cert
+		{2, "cert1"},      // Multiple certs
+		{5, "cert"},       // Many certs
+		{10, "cert"},      // Very many certs
 	}
 
 	for _, seed := range seeds {
@@ -180,10 +180,10 @@ func FuzzHandleACS_CertificateRotation(f *testing.F) {
 		}
 
 		idp := &domain.IdPInfo{
-			EntityID:    "https://idp.example.com",
-			DisplayName: "Test IdP",
-			SSOURL:      "https://idp.example.com/sso",
-			SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+			EntityID:     "https://idp.example.com",
+			DisplayName:  "Test IdP",
+			SSOURL:       "https://idp.example.com/sso",
+			SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 			Certificates: certificates,
 		}
 
@@ -233,16 +233,3 @@ func truncateString(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

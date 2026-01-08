@@ -9,7 +9,7 @@ type AltLoginOption = caddy.AltLoginOption
 type ErrorData = caddy.ErrorData
 
 var (
-	NewTemplateRenderer            = caddy.NewTemplateRenderer
+	NewTemplateRenderer             = caddy.NewTemplateRenderer
 	NewTemplateRendererWithTemplate = caddy.NewTemplateRendererWithTemplate
-	NewTemplateRendererWithDir     = caddy.NewTemplateRendererWithDir
+	NewTemplateRendererWithDir      = caddy.NewTemplateRendererWithDir
 )

@@ -21,7 +21,7 @@ func TestFilterIdPsByEntityCategory_Property_Subset(t *testing.T) {
 		idps := make([]domain.IdPInfo, idpCount)
 		for i := range idps {
 			idps[i] = domain.IdPInfo{
-				EntityID:       domain.IdPInfo{}.EntityID, // Use zero value
+				EntityID:         domain.IdPInfo{}.EntityID, // Use zero value
 				EntityCategories: []string{"http://refeds.org/category/research-and-scholarship"},
 			}
 			idps[i].EntityID = "https://idp" + string(rune(i)) + ".example.com"
@@ -189,13 +189,3 @@ func TestFilterIdPsByAssuranceCertification_Property_EmptyFilter(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-
-
-
-
-
-
-
-
-

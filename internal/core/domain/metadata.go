@@ -434,16 +434,3 @@ func validateScopeRegex(scope, pattern string) (bool, error) {
 	// Match with anchored pattern (^...$)
 	return re.MatchString(scope), nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

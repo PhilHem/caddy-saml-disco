@@ -96,13 +96,3 @@ func TestAttributeMapper_Concurrency_ThreadSafetyViaPort(t *testing.T) {
 		t.Errorf("encountered %d errors during concurrent access", errorCount)
 	}
 }
-
-
-
-
-
-
-
-
-
-

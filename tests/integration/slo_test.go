@@ -169,16 +169,3 @@ func TestSLOFlow_LogoutEndpoint_RedirectsToSLO(t *testing.T) {
 		t.Errorf("SLOURL = %q, want %q", idps[0].SLOURL, idpInfo.SLOURL)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -80,7 +80,7 @@ type rawEntityDescriptorForEntityAttrs struct {
 
 // rawEntitiesDescriptorForEntityAttrs is used to parse EntityAttributes from aggregate metadata.
 type rawEntitiesDescriptorForEntityAttrsAggregate struct {
-	EntityDescriptors   []rawEntityDescriptorForEntityAttrs   `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
+	EntityDescriptors   []rawEntityDescriptorForEntityAttrs            `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntityDescriptor"`
 	EntitiesDescriptors []rawEntitiesDescriptorForEntityAttrsAggregate `xml:"urn:oasis:names:tc:SAML:2.0:metadata EntitiesDescriptor"`
 }
 
@@ -495,37 +495,24 @@ func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*dom
 	}
 
 	return &domain.IdPInfo{
-		EntityID:               ed.EntityID,
-		DisplayName:            displayName,
-		DisplayNames:           displayNames,
-		Description:            description,
-		Descriptions:           descriptions,
-		LogoURL:                logoURL,
-		InformationURL:         informationURL,
-		InformationURLs:        informationURLs,
-		SSOURL:                 ssoURL,
-		SSOBinding:             ssoBinding,
-		SLOURL:                 sloURL,
-		SLOBinding:             sloBinding,
-		Certificates:           certs,
-		RegistrationAuthority:  registrationAuthority,
-		RegistrationInstant:    registrationInstant,
-		RegistrationPolicies:   registrationPolicies,
-		AllowedScopes:          allowedScopes,
-		EntityCategories:       entityCategories,
+		EntityID:                ed.EntityID,
+		DisplayName:             displayName,
+		DisplayNames:            displayNames,
+		Description:             description,
+		Descriptions:            descriptions,
+		LogoURL:                 logoURL,
+		InformationURL:          informationURL,
+		InformationURLs:         informationURLs,
+		SSOURL:                  ssoURL,
+		SSOBinding:              ssoBinding,
+		SLOURL:                  sloURL,
+		SLOBinding:              sloBinding,
+		Certificates:            certs,
+		RegistrationAuthority:   registrationAuthority,
+		RegistrationInstant:     registrationInstant,
+		RegistrationPolicies:    registrationPolicies,
+		AllowedScopes:           allowedScopes,
+		EntityCategories:        entityCategories,
 		AssuranceCertifications: assuranceCertifications,
 	}, nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

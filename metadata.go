@@ -18,23 +18,23 @@ type ScopeInfo = domain.ScopeInfo
 
 // Re-export domain errors
 var (
-	ErrIdPNotFound    = domain.ErrIdPNotFound
+	ErrIdPNotFound     = domain.ErrIdPNotFound
 	ErrMetadataExpired = domain.ErrMetadataExpired
 )
 
 // Re-export domain functions
 var (
-	IsMetadataExpired     = domain.IsMetadataExpired
-	MatchesSearch         = domain.MatchesSearch
-	LocalizeIdPInfo      = domain.LocalizeIdPInfo
-	SelectLocalizedValue  = domain.SelectLocalizedValue
-	SelectFromMap         = domain.SelectFromMap
-	LocalizedValuesToMap  = domain.LocalizedValuesToMap
-	SelectBestLogo        = domain.SelectBestLogo
+	IsMetadataExpired      = domain.IsMetadataExpired
+	MatchesSearch          = domain.MatchesSearch
+	LocalizeIdPInfo        = domain.LocalizeIdPInfo
+	SelectLocalizedValue   = domain.SelectLocalizedValue
+	SelectFromMap          = domain.SelectFromMap
+	LocalizedValuesToMap   = domain.LocalizedValuesToMap
+	SelectBestLogo         = domain.SelectBestLogo
 	MatchesEntityIDPattern = domain.MatchesEntityIDPattern
-	ExtractScope          = domain.ExtractScope
-	ValidateScope         = domain.ValidateScope
-	IsScopedAttribute     = domain.IsScopedAttribute
+	ExtractScope           = domain.ExtractScope
+	ValidateScope          = domain.ValidateScope
+	IsScopedAttribute      = domain.IsScopedAttribute
 )
 
 // Re-export MetadataStore interface from ports
@@ -49,22 +49,22 @@ type FileMetadataStore = metadata.FileMetadataStore
 type URLMetadataStore = metadata.URLMetadataStore
 
 var (
-	WithIdPFilter                   = metadata.WithIdPFilter
-	WithRegistrationAuthorityFilter = metadata.WithRegistrationAuthorityFilter
-	WithEntityCategoryFilter        = metadata.WithEntityCategoryFilter
-	WithAssuranceCertificationFilter = metadata.WithAssuranceCertificationFilter
-	WithSignatureVerifier           = metadata.WithSignatureVerifier
-	WithLogger                      = metadata.WithLogger
-	WithMetricsRecorder             = metadata.WithMetricsRecorder
-	WithOnRefresh                   = metadata.WithOnRefresh
-	WithClock                       = metadata.WithClock
-	NewInMemoryMetadataStore        = metadata.NewInMemoryMetadataStore
+	WithIdPFilter                          = metadata.WithIdPFilter
+	WithRegistrationAuthorityFilter        = metadata.WithRegistrationAuthorityFilter
+	WithEntityCategoryFilter               = metadata.WithEntityCategoryFilter
+	WithAssuranceCertificationFilter       = metadata.WithAssuranceCertificationFilter
+	WithSignatureVerifier                  = metadata.WithSignatureVerifier
+	WithLogger                             = metadata.WithLogger
+	WithMetricsRecorder                    = metadata.WithMetricsRecorder
+	WithOnRefresh                          = metadata.WithOnRefresh
+	WithClock                              = metadata.WithClock
+	NewInMemoryMetadataStore               = metadata.NewInMemoryMetadataStore
 	NewInMemoryMetadataStoreWithValidUntil = metadata.NewInMemoryMetadataStoreWithValidUntil
-	NewFileMetadataStore            = metadata.NewFileMetadataStore
-	NewURLMetadataStore             = metadata.NewURLMetadataStore
-	NewURLMetadataStoreWithRefresh = metadata.NewURLMetadataStoreWithRefresh
-	FilterIdPsByEntityCategory     = metadata.FilterIdPsByEntityCategory
-	FilterIdPsByAssuranceCertification = metadata.FilterIdPsByAssuranceCertification
-	FilterIdPsByRegistrationAuthority = metadata.FilterIdPsByRegistrationAuthority
-	ParseMetadata                    = metadata.ParseMetadata
+	NewFileMetadataStore                   = metadata.NewFileMetadataStore
+	NewURLMetadataStore                    = metadata.NewURLMetadataStore
+	NewURLMetadataStoreWithRefresh         = metadata.NewURLMetadataStoreWithRefresh
+	FilterIdPsByEntityCategory             = metadata.FilterIdPsByEntityCategory
+	FilterIdPsByAssuranceCertification     = metadata.FilterIdPsByAssuranceCertification
+	FilterIdPsByRegistrationAuthority      = metadata.FilterIdPsByRegistrationAuthority
+	ParseMetadata                          = metadata.ParseMetadata
 )
