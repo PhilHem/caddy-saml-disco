@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-01-08
+
+### Added
+- **SAML auth error observability**:
+  - Prometheus metrics for authentication failures (`saml_disco_auth_failures_total` counter)
+  - Labels for error category (`reason`) and IdP entity ID (`idp`)
+  - Structured error logging with categories: `signature_verification`, `decryption_failed`, `time_constraint`, `idp_status`, `unknown`
+  - Time context in logs for time constraint failures
+  - IdP status code extraction from SAML responses
+- **BDD testing with godog**:
+  - Feature file for SAML auth error observability scenarios
+  - Step definitions using `zaptest/observer` and Prometheus testutil
+  - New `test-bdd` Makefile target
+- **Test Responsibility Anchors (TRA)**:
+  - Testing infrastructure for architectural test discipline
+  - Pre-commit hooks for TRA validation
+  - `tra.Require()` markers for test responsibility tracking
+- **Enhanced attribute testing**:
+  - Property-based tests for attribute mapping
+  - Concurrency tests for thread safety
+
+### Changed
+- Codebase reformatted with gofmt
+
+## [0.14.0] - 2026-01-07
+
+### Added
+- Internal improvements and refactoring
+
 ## [0.13.0] - 2025-12-16
 
 ### Added
