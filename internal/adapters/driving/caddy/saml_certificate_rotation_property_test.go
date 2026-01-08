@@ -450,3 +450,10 @@ func TestCertificateRotation_Property_InvalidCertificateFormat(t *testing.T) {
 
 
 
+
+
+
+
+
+
+

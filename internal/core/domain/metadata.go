@@ -440,3 +440,10 @@ func validateScopeRegex(scope, pattern string) (bool, error) {
 
 
 
+
+
+
+
+
+
+
