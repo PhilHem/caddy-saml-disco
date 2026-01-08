@@ -701,12 +701,31 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	result, err := s.samlService.HandleACS(r, acsURL, idp)
 	duration := time.Since(start)
 	if err != nil {
-		category := categorizeAuthError(err)
-		s.getLogger().Warn("saml authentication failed",
+		details := ParseSAMLError(err)
+		category := string(details.Category)
+
+		// Build structured log fields
+		// @tra: Adapter.SAMLAuthErrors
+		fields := []zap.Field{
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
 			zap.String("error_category", category),
-		)
+			zap.String("idp_entity_id", idp.EntityID),
+		}
+		if details.PrivateError != "" {
+			fields = append(fields, zap.String("private_error", details.PrivateError))
+		}
+		if details.IdPStatus != nil {
+			fields = append(fields, zap.String("idp_status_code", details.IdPStatus.StatusCode))
+			if details.IdPStatus.StatusMessage != "" {
+				fields = append(fields, zap.String("idp_status_message", details.IdPStatus.StatusMessage))
+			}
+		}
+		if details.TimeContext != nil {
+			fields = append(fields, zap.Time("server_time", details.TimeContext.ServerTime))
+		}
+		s.getLogger().Warn("saml authentication failed", fields...)
+
 		s.getMetricsRecorder().RecordAuthAttempt(idp.EntityID, false)
 		s.getMetricsRecorder().RecordAuthFailure(category, idp.EntityID)
 		s.getMetricsRecorder().RecordAuthDuration(idp.EntityID, "failure", duration)
@@ -1169,26 +1188,6 @@ func (s *SAMLDisco) getMetricsRecorder() ports.MetricsRecorder {
 		return s.metricsRecorder
 	}
 	return metrics.NewNoopMetricsRecorder()
-}
-
-// categorizeAuthError maps SAML authentication errors to SAMLErrorCategory.
-func categorizeAuthError(err error) string {
-	if err == nil {
-		return domain.SAMLErrUnknown.String()
-	}
-	msg := strings.ToLower(err.Error())
-	switch {
-	case strings.Contains(msg, "signature"):
-		return domain.SAMLErrSignatureVerification.String()
-	case strings.Contains(msg, "decrypt") || strings.Contains(msg, "encrypt"):
-		return domain.SAMLErrDecryptionFailed.String()
-	case strings.Contains(msg, "notonorafter") || strings.Contains(msg, "notbefore") || strings.Contains(msg, "expired"):
-		return domain.SAMLErrTimeConstraint.String()
-	case strings.Contains(msg, "status"):
-		return domain.SAMLErrIdPStatus.String()
-	default:
-		return domain.SAMLErrUnknown.String()
-	}
 }
 
 // renderDiscoveryHTML renders the IdP selection page using the template renderer.
@@ -2109,12 +2108,31 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 	result, err := spConfig.samlService.HandleACS(r, acsURL, idp)
 	duration := time.Since(start)
 	if err != nil {
-		category := categorizeAuthError(err)
-		s.getLogger().Warn("saml authentication failed",
+		details := ParseSAMLError(err)
+		category := string(details.Category)
+
+		// Build structured log fields
+		// @tra: Adapter.SAMLAuthErrors
+		fields := []zap.Field{
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
 			zap.String("error_category", category),
-		)
+			zap.String("idp_entity_id", idp.EntityID),
+		}
+		if details.PrivateError != "" {
+			fields = append(fields, zap.String("private_error", details.PrivateError))
+		}
+		if details.IdPStatus != nil {
+			fields = append(fields, zap.String("idp_status_code", details.IdPStatus.StatusCode))
+			if details.IdPStatus.StatusMessage != "" {
+				fields = append(fields, zap.String("idp_status_message", details.IdPStatus.StatusMessage))
+			}
+		}
+		if details.TimeContext != nil {
+			fields = append(fields, zap.Time("server_time", details.TimeContext.ServerTime))
+		}
+		s.getLogger().Warn("saml authentication failed", fields...)
+
 		s.getMetricsRecorder().RecordAuthAttempt(idp.EntityID, false)
 		s.getMetricsRecorder().RecordAuthFailure(category, idp.EntityID)
 		s.getMetricsRecorder().RecordAuthDuration(idp.EntityID, "failure", duration)
