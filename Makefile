@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration test-domain test-metrics lint fmt
+.PHONY: build test test-unit test-integration test-bdd test-domain test-metrics lint fmt pre-commit
 
 # Build all packages
 build:
@@ -16,6 +16,10 @@ test-unit:
 test-integration:
 	go test -tags=integration ./...
 
+# Run BDD tests only
+test-bdd:
+	go test -tags=bdd -v ./tests/features/...
+
 # Run domain tests only
 test-domain:
 	go test -tags=unit -v ./internal/core/domain/...
@@ -31,3 +35,7 @@ lint:
 # Format code
 fmt:
 	gofmt -w .
+
+# Run pre-commit checks
+pre-commit:
+	pre-commit run --all-files

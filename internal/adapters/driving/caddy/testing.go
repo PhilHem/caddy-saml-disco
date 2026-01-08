@@ -1,6 +1,8 @@
 package caddy
 
 import (
+	"go.uber.org/zap"
+
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
@@ -30,15 +32,7 @@ func NewSAMLDiscoForTest(
 	return s
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
+// SetLogger sets the logger for testing purposes.
+func (s *SAMLDisco) SetLogger(logger *zap.Logger) {
+	s.logger = logger
+}
