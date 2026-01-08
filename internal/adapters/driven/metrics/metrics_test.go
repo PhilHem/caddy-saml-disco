@@ -246,3 +246,188 @@ func TestPrometheusMetricsRecorder_RecordMetadataRefresh(t *testing.T) {
 		t.Errorf("idp_count gauge = %v, want 50", idpCount)
 	}
 }
+
+// TestPrometheusMetricsRecorder_RecordAuthFailure verifies auth failure recording with category.
+func TestPrometheusMetricsRecorder_RecordAuthFailure(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	recorder := NewPrometheusMetricsRecorderWithRegistry(registry)
+
+	// Record failures with different categories
+	recorder.RecordAuthFailure(domain.SAMLErrSignatureVerification.String(), "https://idp1.example.com")
+	recorder.RecordAuthFailure(domain.SAMLErrTimeConstraint.String(), "https://idp1.example.com")
+	recorder.RecordAuthFailure(domain.SAMLErrSignatureVerification.String(), "https://idp2.example.com")
+
+	// Gather metrics
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		t.Fatalf("failed to gather metrics: %v", err)
+	}
+
+	// Find the auth failures metric
+	var failureMetric *io_prometheus_client.MetricFamily
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "saml_disco_auth_failures_total" {
+			failureMetric = mf
+			break
+		}
+	}
+
+	if failureMetric == nil {
+		t.Fatal("saml_disco_auth_failures_total metric not found")
+	}
+
+	// Check we have 3 metric entries (different label combinations)
+	if len(failureMetric.GetMetric()) != 3 {
+		t.Errorf("expected 3 metric entries, got %d", len(failureMetric.GetMetric()))
+	}
+
+	// Verify counter values and labels
+	for _, m := range failureMetric.GetMetric() {
+		var reason, idp string
+		for _, label := range m.GetLabel() {
+			switch label.GetName() {
+			case "reason":
+				reason = label.GetValue()
+			case "idp":
+				idp = label.GetValue()
+			}
+		}
+
+		value := m.GetCounter().GetValue()
+		if idp == "https://idp1.example.com" && reason == domain.SAMLErrSignatureVerification.String() && value != 1 {
+			t.Errorf("idp1 signature_verification count = %v, want 1", value)
+		}
+		if idp == "https://idp1.example.com" && reason == domain.SAMLErrTimeConstraint.String() && value != 1 {
+			t.Errorf("idp1 time_constraint count = %v, want 1", value)
+		}
+		if idp == "https://idp2.example.com" && reason == domain.SAMLErrSignatureVerification.String() && value != 1 {
+			t.Errorf("idp2 signature_verification count = %v, want 1", value)
+		}
+	}
+}
+
+// TestPrometheusMetricsRecorder_RecordAuthSuccess verifies successful auth recording.
+func TestPrometheusMetricsRecorder_RecordAuthSuccess(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	recorder := NewPrometheusMetricsRecorderWithRegistry(registry)
+
+	// Record successes for different IdPs
+	recorder.RecordAuthSuccess("https://idp1.example.com")
+	recorder.RecordAuthSuccess("https://idp1.example.com")
+	recorder.RecordAuthSuccess("https://idp2.example.com")
+
+	// Gather metrics
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		t.Fatalf("failed to gather metrics: %v", err)
+	}
+
+	// Find the auth success metric
+	var successMetric *io_prometheus_client.MetricFamily
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "saml_disco_auth_success_total" {
+			successMetric = mf
+			break
+		}
+	}
+
+	if successMetric == nil {
+		t.Fatal("saml_disco_auth_success_total metric not found")
+	}
+
+	// Check we have 2 metric entries (one per IdP)
+	if len(successMetric.GetMetric()) != 2 {
+		t.Errorf("expected 2 metric entries, got %d", len(successMetric.GetMetric()))
+	}
+
+	// Verify counter values
+	for _, m := range successMetric.GetMetric() {
+		var idp string
+		for _, label := range m.GetLabel() {
+			if label.GetName() == "idp" {
+				idp = label.GetValue()
+			}
+		}
+
+		value := m.GetCounter().GetValue()
+		if idp == "https://idp1.example.com" && value != 2 {
+			t.Errorf("idp1 success count = %v, want 2", value)
+		}
+		if idp == "https://idp2.example.com" && value != 1 {
+			t.Errorf("idp2 success count = %v, want 1", value)
+		}
+	}
+}
+
+// TestPrometheusMetricsRecorder_RecordAuthDuration verifies auth duration histogram recording.
+func TestPrometheusMetricsRecorder_RecordAuthDuration(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	recorder := NewPrometheusMetricsRecorderWithRegistry(registry)
+
+	// Record durations for different IdPs and outcomes
+	recorder.RecordAuthDuration("https://idp1.example.com", "success", 100*time.Millisecond)
+	recorder.RecordAuthDuration("https://idp1.example.com", "success", 200*time.Millisecond)
+	recorder.RecordAuthDuration("https://idp1.example.com", "failure", 50*time.Millisecond)
+	recorder.RecordAuthDuration("https://idp2.example.com", "success", 150*time.Millisecond)
+
+	// Gather metrics
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		t.Fatalf("failed to gather metrics: %v", err)
+	}
+
+	// Find the auth duration metric
+	var durationMetric *io_prometheus_client.MetricFamily
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "saml_disco_auth_duration_seconds" {
+			durationMetric = mf
+			break
+		}
+	}
+
+	if durationMetric == nil {
+		t.Fatal("saml_disco_auth_duration_seconds metric not found")
+	}
+
+	// Check we have 3 metric entries (different label combinations)
+	if len(durationMetric.GetMetric()) != 3 {
+		t.Errorf("expected 3 metric entries, got %d", len(durationMetric.GetMetric()))
+	}
+
+	// Verify histogram values
+	for _, m := range durationMetric.GetMetric() {
+		var idp, outcome string
+		for _, label := range m.GetLabel() {
+			switch label.GetName() {
+			case "idp":
+				idp = label.GetValue()
+			case "outcome":
+				outcome = label.GetValue()
+			}
+		}
+
+		hist := m.GetHistogram()
+		count := hist.GetSampleCount()
+		sum := hist.GetSampleSum()
+
+		if idp == "https://idp1.example.com" && outcome == "success" {
+			if count != 2 {
+				t.Errorf("idp1 success count = %v, want 2", count)
+			}
+			// Sum should be approximately 0.3s (100ms + 200ms)
+			if sum < 0.29 || sum > 0.31 {
+				t.Errorf("idp1 success sum = %v, want ~0.3", sum)
+			}
+		}
+		if idp == "https://idp1.example.com" && outcome == "failure" {
+			if count != 1 {
+				t.Errorf("idp1 failure count = %v, want 1", count)
+			}
+		}
+		if idp == "https://idp2.example.com" && outcome == "success" {
+			if count != 1 {
+				t.Errorf("idp2 success count = %v, want 1", count)
+			}
+		}
+	}
+}

@@ -15,6 +15,9 @@ type PrometheusMetricsRecorder struct {
 	sessionValidationsTotal *prometheus.CounterVec
 	metadataRefreshTotal    *prometheus.CounterVec
 	metadataIdpCount        prometheus.Gauge
+	authFailuresTotal       *prometheus.CounterVec
+	authSuccessTotal        *prometheus.CounterVec
+	authDurationSeconds     *prometheus.HistogramVec
 }
 
 // NewPrometheusMetricsRecorder creates a new Prometheus metrics recorder
@@ -51,12 +54,31 @@ func NewPrometheusMetricsRecorderWithRegistry(reg prometheus.Registerer) *Promet
 		Help: "Current number of loaded IdPs",
 	})
 
+	authFailuresTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "saml_disco_auth_failures_total",
+		Help: "Total SAML authentication failures by reason",
+	}, []string{"reason", "idp"})
+
+	authSuccessTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "saml_disco_auth_success_total",
+		Help: "Total successful SAML authentications",
+	}, []string{"idp"})
+
+	authDurationSeconds := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "saml_disco_auth_duration_seconds",
+		Help:    "SAML authentication processing duration in seconds",
+		Buckets: []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+	}, []string{"idp", "outcome"})
+
 	reg.MustRegister(
 		authAttemptsTotal,
 		sessionsCreatedTotal,
 		sessionValidationsTotal,
 		metadataRefreshTotal,
 		metadataIdpCount,
+		authFailuresTotal,
+		authSuccessTotal,
+		authDurationSeconds,
 	)
 
 	return &PrometheusMetricsRecorder{
@@ -65,6 +87,9 @@ func NewPrometheusMetricsRecorderWithRegistry(reg prometheus.Registerer) *Promet
 		sessionValidationsTotal: sessionValidationsTotal,
 		metadataRefreshTotal:    metadataRefreshTotal,
 		metadataIdpCount:        metadataIdpCount,
+		authFailuresTotal:       authFailuresTotal,
+		authSuccessTotal:        authSuccessTotal,
+		authDurationSeconds:     authDurationSeconds,
 	}
 }
 
@@ -102,21 +127,18 @@ func (p *PrometheusMetricsRecorder) RecordMetadataRefresh(source string, success
 }
 
 // RecordAuthFailure records a SAML authentication failure with category.
-// TODO: Full Prometheus implementation in caddy-saml-disco-cva
 func (p *PrometheusMetricsRecorder) RecordAuthFailure(category string, idpEntityID string) {
-	// Stub - full implementation in downstream task
+	p.authFailuresTotal.WithLabelValues(category, idpEntityID).Inc()
 }
 
 // RecordAuthSuccess records a successful SAML authentication.
-// TODO: Full Prometheus implementation in caddy-saml-disco-cva
 func (p *PrometheusMetricsRecorder) RecordAuthSuccess(idpEntityID string) {
-	// Stub - full implementation in downstream task
+	p.authSuccessTotal.WithLabelValues(idpEntityID).Inc()
 }
 
 // RecordAuthDuration records authentication processing time.
-// TODO: Full Prometheus implementation in caddy-saml-disco-cva
 func (p *PrometheusMetricsRecorder) RecordAuthDuration(idpEntityID string, outcome string, duration time.Duration) {
-	// Stub - full implementation in downstream task
+	p.authDurationSeconds.WithLabelValues(idpEntityID, outcome).Observe(duration.Seconds())
 }
 
 // Ensure PrometheusMetricsRecorder implements ports.MetricsRecorder

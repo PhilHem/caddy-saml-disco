@@ -697,13 +697,19 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 	idp := &idps[0]
 
 	acsURL := s.resolveAcsURL(r)
+	start := time.Now()
 	result, err := s.samlService.HandleACS(r, acsURL, idp)
+	duration := time.Since(start)
 	if err != nil {
+		category := categorizeAuthError(err)
 		s.getLogger().Warn("saml authentication failed",
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("error_category", category),
 		)
 		s.getMetricsRecorder().RecordAuthAttempt(idp.EntityID, false)
+		s.getMetricsRecorder().RecordAuthFailure(category, idp.EntityID)
+		s.getMetricsRecorder().RecordAuthDuration(idp.EntityID, "failure", duration)
 		s.renderAppError(w, r, domain.AuthError("SAML authentication failed", err))
 		return nil
 	}
@@ -713,6 +719,8 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 		zap.String("idp_entity_id", result.IdPEntityID),
 	)
 	s.getMetricsRecorder().RecordAuthAttempt(result.IdPEntityID, true)
+	s.getMetricsRecorder().RecordAuthSuccess(result.IdPEntityID)
+	s.getMetricsRecorder().RecordAuthDuration(result.IdPEntityID, "success", duration)
 
 	// Create session
 	session := &domain.Session{
@@ -1161,6 +1169,26 @@ func (s *SAMLDisco) getMetricsRecorder() ports.MetricsRecorder {
 		return s.metricsRecorder
 	}
 	return metrics.NewNoopMetricsRecorder()
+}
+
+// categorizeAuthError maps SAML authentication errors to SAMLErrorCategory.
+func categorizeAuthError(err error) string {
+	if err == nil {
+		return domain.SAMLErrUnknown.String()
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "signature"):
+		return domain.SAMLErrSignatureVerification.String()
+	case strings.Contains(msg, "decrypt") || strings.Contains(msg, "encrypt"):
+		return domain.SAMLErrDecryptionFailed.String()
+	case strings.Contains(msg, "notonorafter") || strings.Contains(msg, "notbefore") || strings.Contains(msg, "expired"):
+		return domain.SAMLErrTimeConstraint.String()
+	case strings.Contains(msg, "status"):
+		return domain.SAMLErrIdPStatus.String()
+	default:
+		return domain.SAMLErrUnknown.String()
+	}
 }
 
 // renderDiscoveryHTML renders the IdP selection page using the template renderer.
@@ -2077,13 +2105,19 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 	idp := &idps[0]
 
 	acsURL := s.resolveAcsURLForSP(r, spConfig)
+	start := time.Now()
 	result, err := spConfig.samlService.HandleACS(r, acsURL, idp)
+	duration := time.Since(start)
 	if err != nil {
+		category := categorizeAuthError(err)
 		s.getLogger().Warn("saml authentication failed",
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("error_category", category),
 		)
 		s.getMetricsRecorder().RecordAuthAttempt(idp.EntityID, false)
+		s.getMetricsRecorder().RecordAuthFailure(category, idp.EntityID)
+		s.getMetricsRecorder().RecordAuthDuration(idp.EntityID, "failure", duration)
 		s.renderAppError(w, r, domain.AuthError("SAML authentication failed", err))
 		return nil
 	}
@@ -2093,6 +2127,8 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 		zap.String("idp_entity_id", result.IdPEntityID),
 	)
 	s.getMetricsRecorder().RecordAuthAttempt(result.IdPEntityID, true)
+	s.getMetricsRecorder().RecordAuthSuccess(result.IdPEntityID)
+	s.getMetricsRecorder().RecordAuthDuration(result.IdPEntityID, "success", duration)
 
 	// Create session
 	session := &domain.Session{
