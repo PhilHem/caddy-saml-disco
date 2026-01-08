@@ -189,6 +189,48 @@ func TestServiceError(t *testing.T) {
 	}
 }
 
+func TestSAMLErrorCategory_String(t *testing.T) {
+	tests := []struct {
+		category SAMLErrorCategory
+		want     string
+	}{
+		{SAMLErrSignatureVerification, "signature_verification"},
+		{SAMLErrDecryptionFailed, "decryption_failed"},
+		{SAMLErrTimeConstraint, "time_constraint"},
+		{SAMLErrIdPStatus, "idp_status"},
+		{SAMLErrUnknown, "unknown"},
+	}
+	for _, tt := range tests {
+		if got := tt.category.String(); got != tt.want {
+			t.Errorf("SAMLErrorCategory.String() = %q, want %q", got, tt.want)
+		}
+	}
+}
+
+func TestSAMLErrorCategory_AllValues(t *testing.T) {
+	// Verify all 5 categories are defined and distinct
+	categories := []SAMLErrorCategory{
+		SAMLErrSignatureVerification,
+		SAMLErrDecryptionFailed,
+		SAMLErrTimeConstraint,
+		SAMLErrIdPStatus,
+		SAMLErrUnknown,
+	}
+
+	if len(categories) != 5 {
+		t.Errorf("expected 5 categories, got %d", len(categories))
+	}
+
+	// Check all are distinct
+	seen := make(map[SAMLErrorCategory]bool)
+	for _, c := range categories {
+		if seen[c] {
+			t.Errorf("duplicate category: %s", c)
+		}
+		seen[c] = true
+	}
+}
+
 
 
 

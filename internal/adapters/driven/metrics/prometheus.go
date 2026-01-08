@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
@@ -97,6 +99,24 @@ func (p *PrometheusMetricsRecorder) RecordMetadataRefresh(source string, success
 	}
 	p.metadataRefreshTotal.WithLabelValues(source, result).Inc()
 	p.metadataIdpCount.Set(float64(idpCount))
+}
+
+// RecordAuthFailure records a SAML authentication failure with category.
+// TODO: Full Prometheus implementation in caddy-saml-disco-cva
+func (p *PrometheusMetricsRecorder) RecordAuthFailure(category string, idpEntityID string) {
+	// Stub - full implementation in downstream task
+}
+
+// RecordAuthSuccess records a successful SAML authentication.
+// TODO: Full Prometheus implementation in caddy-saml-disco-cva
+func (p *PrometheusMetricsRecorder) RecordAuthSuccess(idpEntityID string) {
+	// Stub - full implementation in downstream task
+}
+
+// RecordAuthDuration records authentication processing time.
+// TODO: Full Prometheus implementation in caddy-saml-disco-cva
+func (p *PrometheusMetricsRecorder) RecordAuthDuration(idpEntityID string, outcome string, duration time.Duration) {
+	// Stub - full implementation in downstream task
 }
 
 // Ensure PrometheusMetricsRecorder implements ports.MetricsRecorder

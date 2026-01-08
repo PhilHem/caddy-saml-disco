@@ -24,6 +24,23 @@ func (c ErrorCode) String() string {
 	return string(c)
 }
 
+// SAMLErrorCategory categorizes SAML authentication failures.
+// Used for metrics and structured logging.
+type SAMLErrorCategory string
+
+const (
+	SAMLErrSignatureVerification SAMLErrorCategory = "signature_verification"
+	SAMLErrDecryptionFailed      SAMLErrorCategory = "decryption_failed"
+	SAMLErrTimeConstraint        SAMLErrorCategory = "time_constraint"
+	SAMLErrIdPStatus             SAMLErrorCategory = "idp_status"
+	SAMLErrUnknown               SAMLErrorCategory = "unknown"
+)
+
+// String returns the category as a string.
+func (c SAMLErrorCategory) String() string {
+	return string(c)
+}
+
 // AppError is a structured error with code, message, and optional cause.
 type AppError struct {
 	Code    ErrorCode

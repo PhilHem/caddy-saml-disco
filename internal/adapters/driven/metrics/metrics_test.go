@@ -4,10 +4,12 @@ package metrics
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
@@ -28,6 +30,13 @@ func TestNoopMetricsRecorder_AllMethods(t *testing.T) {
 	recorder.RecordSessionValidation(false)
 	recorder.RecordMetadataRefresh("url", true, 10)
 	recorder.RecordMetadataRefresh("file", false, 0)
+
+	// New auth metrics methods - use .String() since interface takes string
+	recorder.RecordAuthFailure(domain.SAMLErrSignatureVerification.String(), "https://idp.example.com")
+	recorder.RecordAuthFailure(domain.SAMLErrUnknown.String(), "")
+	recorder.RecordAuthSuccess("https://idp.example.com")
+	recorder.RecordAuthDuration("https://idp.example.com", "success", 100*time.Millisecond)
+	recorder.RecordAuthDuration("https://idp.example.com", "failure", 50*time.Millisecond)
 }
 
 // TestPrometheusMetricsRecorder_Interface verifies the interface contract.

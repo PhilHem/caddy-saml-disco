@@ -197,20 +197,8 @@ type AltLoginConfig struct {
 }
 
 // AttributeMapping maps a SAML attribute to an HTTP header.
-type AttributeMapping struct {
-	// SAMLAttribute is the SAML attribute name or OID to match.
-	// Examples: "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", "eduPersonPrincipalName", "mail"
-	SAMLAttribute string `json:"saml_attribute"`
-
-	// HeaderName is the HTTP header name to set. Must start with "X-".
-	// Examples: "X-Remote-User", "X-Mail", "X-Entitlements"
-	HeaderName string `json:"header_name"`
-
-	// Separator is the string used to join multiple attribute values.
-	// Defaults to ";" if empty (Shibboleth convention).
-	// Common alternatives: "," (HTTP convention), "|"
-	Separator string `json:"separator,omitempty"`
-}
+// This is an alias for domain.AttributeMapping with JSON tags for Caddyfile parsing.
+type AttributeMapping = domain.AttributeMapping
 
 // EntitlementHeaderMapping maps an entitlement field to an HTTP header.
 type EntitlementHeaderMapping struct {
@@ -277,7 +265,7 @@ func (c *Config) Validate() error {
 		// If prefix is set, validate the final combined name
 		// Otherwise, validate the header name directly (must start with X-)
 		if c.HeaderPrefix != "" {
-			finalName := ApplyHeaderPrefix(c.HeaderPrefix, m.HeaderName)
+			finalName := domain.ApplyHeaderPrefix(c.HeaderPrefix, m.HeaderName)
 			if !domain.IsValidHeaderName(finalName) {
 				return fmt.Errorf("attribute_headers[%d]: header_name %q with prefix %q results in invalid name %q: must start with X- and contain only A-Za-z0-9-", i, m.HeaderName, c.HeaderPrefix, finalName)
 			}

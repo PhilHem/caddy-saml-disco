@@ -7,6 +7,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // Version information - set via ldflags at build time
@@ -22,7 +23,7 @@ type SAMLDisco = caddyadapter.SAMLDisco
 type HealthResponse = caddyadapter.HealthResponse
 
 var (
-	MapAttributesToHeadersWithPrefix = caddyadapter.MapAttributesToHeadersWithPrefix
+	MapAttributesToHeadersWithPrefix = domain.MapAttributesToHeadersWithPrefix
 	ValidateDenyRedirect             = caddyadapter.ValidateDenyRedirect
 	ValidateRelayState               = caddyadapter.ValidateRelayState
 	ParseAcceptLanguage              = caddyadapter.ParseAcceptLanguage

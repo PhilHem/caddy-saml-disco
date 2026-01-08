@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
@@ -24,6 +26,17 @@ func (n *NoopMetricsRecorder) RecordSessionValidation(valid bool) {}
 
 // RecordMetadataRefresh is a no-op.
 func (n *NoopMetricsRecorder) RecordMetadataRefresh(source string, success bool, idpCount int) {}
+
+// RecordAuthFailure is a no-op.
+func (n *NoopMetricsRecorder) RecordAuthFailure(category string, idpEntityID string) {
+}
+
+// RecordAuthSuccess is a no-op.
+func (n *NoopMetricsRecorder) RecordAuthSuccess(idpEntityID string) {}
+
+// RecordAuthDuration is a no-op.
+func (n *NoopMetricsRecorder) RecordAuthDuration(idpEntityID string, outcome string, duration time.Duration) {
+}
 
 // Ensure NoopMetricsRecorder implements ports.MetricsRecorder
 var _ ports.MetricsRecorder = (*NoopMetricsRecorder)(nil)

@@ -1,5 +1,9 @@
 package ports
 
+import (
+	"time"
+)
+
 // MetricsRecorder is the port interface for recording metrics.
 // Implementations are adapters (PrometheusMetricsRecorder for production,
 // NoopMetricsRecorder for disabled/testing).
@@ -15,6 +19,16 @@ type MetricsRecorder interface {
 
 	// RecordMetadataRefresh records a metadata refresh attempt.
 	RecordMetadataRefresh(source string, success bool, idpCount int)
+
+	// RecordAuthFailure records a SAML authentication failure with category.
+	// Use domain.SAMLErrorCategory constants for the category parameter.
+	RecordAuthFailure(category string, idpEntityID string)
+
+	// RecordAuthSuccess records a successful SAML authentication.
+	RecordAuthSuccess(idpEntityID string)
+
+	// RecordAuthDuration records authentication processing time.
+	RecordAuthDuration(idpEntityID string, outcome string, duration time.Duration)
 }
 
 

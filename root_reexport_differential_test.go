@@ -153,13 +153,13 @@ func TestRootReexport_Differential_VarReexportEquivalence(t *testing.T) {
 		{
 			name:        "MapAttributesToHeaders function",
 			rootVar:     MapAttributesToHeaders,
-			internalVar: caddyadapter.MapAttributesToHeaders,
+			internalVar: domain.MapAttributesToHeaders,
 			description: "Function pointer equality",
 		},
 		{
 			name:        "ApplyHeaderPrefix function",
 			rootVar:     ApplyHeaderPrefix,
-			internalVar: caddyadapter.ApplyHeaderPrefix,
+			internalVar: domain.ApplyHeaderPrefix,
 			description: "Function pointer equality",
 		},
 	}
@@ -264,7 +264,7 @@ func TestRootReexport_Differential_FunctionBehaviorEquivalence(t *testing.T) {
 		internalMappings := []caddyadapter.AttributeMapping{
 			{SAMLAttribute: "urn:oid:0.9.2342.19200300.100.1.3", HeaderName: "X-Mail"},
 		}
-		internalResult, internalErr := caddyadapter.MapAttributesToHeaders(attrs, internalMappings)
+		internalResult, internalErr := domain.MapAttributesToHeaders(attrs, internalMappings)
 
 		if (rootErr != nil) != (internalErr != nil) {
 			t.Errorf("Error mismatch: root=%v, internal=%v", rootErr, internalErr)
@@ -492,7 +492,7 @@ func TestRootReexport_PortContract_ErrorHandling(t *testing.T) {
 			internalMappings := []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: tc.headerName},
 			}
-			internalResult, internalErr := caddyadapter.MapAttributesToHeaders(attrs, internalMappings)
+			internalResult, internalErr := domain.MapAttributesToHeaders(attrs, internalMappings)
 
 			// Verify error presence matches
 			if (rootErr != nil) != (internalErr != nil) {
@@ -589,7 +589,7 @@ func TestRootReexport_PortContract_BehavioralGuarantees(t *testing.T) {
 		internalMappings := []caddyadapter.AttributeMapping{
 			{SAMLAttribute: "nonexistent-attr", HeaderName: "X-Missing"},
 		}
-		internalResult, internalErr := caddyadapter.MapAttributesToHeaders(attrs, internalMappings)
+		internalResult, internalErr := domain.MapAttributesToHeaders(attrs, internalMappings)
 
 		// Verify no errors
 		if rootErr != nil || internalErr != nil {
@@ -627,7 +627,7 @@ func TestRootReexport_PortContract_BehavioralGuarantees(t *testing.T) {
 		internalMappings := []caddyadapter.AttributeMapping{
 			{SAMLAttribute: "mail", HeaderName: "X-Mail", Separator: ";"},
 		}
-		internalResult, internalErr := caddyadapter.MapAttributesToHeaders(attrs, internalMappings)
+		internalResult, internalErr := domain.MapAttributesToHeaders(attrs, internalMappings)
 
 		// Verify no errors
 		if rootErr != nil || internalErr != nil {

@@ -99,7 +99,7 @@ func TestHeaderStripping_Property_SpoofedHeadersAlwaysRemoved(t *testing.T) {
 
 		// Create request with spoofed header
 		req := &http.Request{Header: make(http.Header)}
-		finalHeaderName := ApplyHeaderPrefix(prefix, headerName)
+		finalHeaderName := domain.ApplyHeaderPrefix(prefix, headerName)
 
 		// Set spoofed header with multiple values to test all are removed
 		req.Header.Add(finalHeaderName, spoofedValue)
@@ -133,7 +133,7 @@ func TestHeaderStripping_Property_SpoofedHeadersAlwaysRemoved(t *testing.T) {
 			got := req.Header.Get(finalHeaderName)
 			if attrValue != "" {
 				// Should have attribute value, not spoofed value
-				if got != sanitizeHeaderValue(attrValue) {
+				if got != domain.SanitizeHeaderValue(attrValue) {
 					return false
 				}
 			} else {
@@ -148,7 +148,7 @@ func TestHeaderStripping_Property_SpoofedHeadersAlwaysRemoved(t *testing.T) {
 			got := req.Header.Get(finalHeaderName)
 			if attrValue != "" {
 				// With strip disabled, Set() overwrites, so we get attribute value
-				if got != sanitizeHeaderValue(attrValue) {
+				if got != domain.SanitizeHeaderValue(attrValue) {
 					return false
 				}
 			}
@@ -209,7 +209,7 @@ func TestHeaderStripping_Property_CaseInsensitiveMatching(t *testing.T) {
 
 			if attrValue != "" {
 				// Should have attribute value, not spoofed value
-				if got != sanitizeHeaderValue(attrValue) {
+				if got != domain.SanitizeHeaderValue(attrValue) {
 					return false
 				}
 			} else {
@@ -275,7 +275,7 @@ func TestHeaderStripping_Property_MultipleValuesRemoved(t *testing.T) {
 		if len(values) != 1 {
 			return false
 		}
-		if values[0] != sanitizeHeaderValue("authentic-value") {
+		if values[0] != domain.SanitizeHeaderValue("authentic-value") {
 			return false
 		}
 
@@ -311,7 +311,7 @@ func TestHeaderStripping_Property_PrefixHandling(t *testing.T) {
 			return true
 		}
 
-		finalHeaderName := ApplyHeaderPrefix(prefix, headerName)
+		finalHeaderName := domain.ApplyHeaderPrefix(prefix, headerName)
 
 		req := &http.Request{Header: make(http.Header)}
 		req.Header.Set(finalHeaderName, spoofedValue)
@@ -338,7 +338,7 @@ func TestHeaderStripping_Property_PrefixHandling(t *testing.T) {
 		// Property: Prefixed header should be stripped correctly
 		got := req.Header.Get(finalHeaderName)
 		if attrValue != "" {
-			if got != sanitizeHeaderValue(attrValue) {
+			if got != domain.SanitizeHeaderValue(attrValue) {
 				return false
 			}
 		} else {
@@ -377,7 +377,7 @@ func TestHeaderStripping_Property_PrefixCaseCanonical(t *testing.T) {
 			}
 
 			// Calculate expected canonical form
-			combined := ApplyHeaderPrefix(prefixVar, headerNameVar)
+			combined := domain.ApplyHeaderPrefix(prefixVar, headerNameVar)
 			expectedCanonical := http.CanonicalHeaderKey(combined)
 
 			// Test with spoofed header using different case variation
@@ -387,7 +387,7 @@ func TestHeaderStripping_Property_PrefixCaseCanonical(t *testing.T) {
 						continue
 					}
 
-					spoofedCombined := ApplyHeaderPrefix(spoofedPrefixVar, spoofedHeaderNameVar)
+					spoofedCombined := domain.ApplyHeaderPrefix(spoofedPrefixVar, spoofedHeaderNameVar)
 					spoofedCanonical := http.CanonicalHeaderKey(spoofedCombined)
 
 					// Only test if spoofed header canonicalizes to same as config
@@ -425,11 +425,11 @@ func TestHeaderStripping_Property_PrefixCaseCanonical(t *testing.T) {
 					// Property: Header should be stripped and replaced at canonical name
 					// regardless of case used in config or spoofed header
 					got := req.Header.Get(expectedCanonical)
-					if got != sanitizeHeaderValue(attrValue) {
+					if got != domain.SanitizeHeaderValue(attrValue) {
 						t.Errorf("prefix=%q headerName=%q spoofedPrefix=%q spoofedHeaderName=%q: "+
 							"expected canonical header %q to have value %q, got %q",
 							prefixVar, headerNameVar, spoofedPrefixVar, spoofedHeaderNameVar,
-							expectedCanonical, sanitizeHeaderValue(attrValue), got)
+							expectedCanonical, domain.SanitizeHeaderValue(attrValue), got)
 						return
 					}
 				}
@@ -687,7 +687,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 		// Normal case: mapping succeeds, header replaced
 		disco.applyAttributeHeaders(req, session)
 		got := req.Header.Get(prefixedHeaderName)
-		if got != sanitizeHeaderValue("authentic-value") {
+		if got != domain.SanitizeHeaderValue("authentic-value") {
 			t.Errorf("expected header to be replaced with authentic value, got %q", got)
 		}
 
@@ -794,7 +794,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 		disco.applyAttributeHeadersForSP(req, session, spConfig)
 
 		got := req.Header.Get(headerName)
-		if got != sanitizeHeaderValue("authentic-value") {
+		if got != domain.SanitizeHeaderValue("authentic-value") {
 			t.Errorf("expected header to be replaced with authentic value, got %q", got)
 		}
 	})
@@ -988,8 +988,8 @@ func TestHeaderStripping_Property_NonASCIICharacters(t *testing.T) {
 			// differently. We verify the behavior.
 			if tc.valid {
 				// Valid ASCII headers should work correctly
-				if got != sanitizeHeaderValue(attrValue) {
-					t.Errorf("valid header %q: expected %q, got %q", tc.headerName, sanitizeHeaderValue(attrValue), got)
+				if got != domain.SanitizeHeaderValue(attrValue) {
+					t.Errorf("valid header %q: expected %q, got %q", tc.headerName, domain.SanitizeHeaderValue(attrValue), got)
 				}
 			} else {
 				// Invalid headers (non-ASCII) - document behavior
@@ -997,7 +997,7 @@ func TestHeaderStripping_Property_NonASCIICharacters(t *testing.T) {
 				// We test to see what happens
 				if got == spoofedValue {
 					t.Logf("non-ASCII header %q: spoofed value persisted (Go's http.Header may not handle non-ASCII)", tc.headerName)
-				} else if got != sanitizeHeaderValue(attrValue) && got != "" {
+				} else if got != domain.SanitizeHeaderValue(attrValue) && got != "" {
 					t.Logf("non-ASCII header %q: unexpected value %q", tc.headerName, got)
 				}
 			}
@@ -1053,9 +1053,9 @@ func TestHeaderStripping_Property_CaseInsensitiveMatching_NonASCII(t *testing.T)
 				got := req.Header.Get(canonical)
 
 				// Property: Header should be stripped regardless of case variation
-				if got != sanitizeHeaderValue(attrValue) && got != "" {
+				if got != domain.SanitizeHeaderValue(attrValue) && got != "" {
 					t.Errorf("header %q variation %q: expected %q or empty, got %q",
-						tc.headerName, variation, sanitizeHeaderValue(attrValue), got)
+						tc.headerName, variation, domain.SanitizeHeaderValue(attrValue), got)
 				}
 			}
 		})
@@ -1300,9 +1300,9 @@ func TestHeaderStripping_Concurrency_NoRaceCondition(t *testing.T) {
 
 				// Verify header was stripped and replaced
 				got := req.Header.Get("X-Role")
-				if got != sanitizeHeaderValue(attrValue) {
+				if got != domain.SanitizeHeaderValue(attrValue) {
 					errors <- fmt.Errorf("goroutine %d iteration %d: expected %q, got %q",
-						goroutineID, j, sanitizeHeaderValue(attrValue), got)
+						goroutineID, j, domain.SanitizeHeaderValue(attrValue), got)
 					return
 				}
 			}
@@ -1374,7 +1374,7 @@ func TestHeaderStripping_Concurrency_PropertyBased(t *testing.T) {
 				disco.applyAttributeHeaders(req, session)
 
 				got := req.Header.Get(headerName)
-				expected := sanitizeHeaderValue(attrValue)
+				expected := domain.SanitizeHeaderValue(attrValue)
 				if attrValue != "" {
 					if got != expected {
 						errors <- fmt.Errorf("goroutine %d: expected %q, got %q", id, expected, got)
@@ -1472,8 +1472,8 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 
 		// HEADER-015 fix: SAML attributes should be applied even when entitlement lookup fails
 		got := req.Header.Get(headerName)
-		if got != sanitizeHeaderValue(samlAttrValue) {
-			t.Errorf("expected SAML attribute value %q to be applied after lookup error, got %q", sanitizeHeaderValue(samlAttrValue), got)
+		if got != domain.SanitizeHeaderValue(samlAttrValue) {
+			t.Errorf("expected SAML attribute value %q to be applied after lookup error, got %q", domain.SanitizeHeaderValue(samlAttrValue), got)
 		}
 
 		// Entitlement headers should NOT be set (lookup failed)
@@ -1632,7 +1632,7 @@ func TestHeaderStripping_Concurrency_ConfigMutationInvariant(t *testing.T) {
 	attrValue := "authentic-value"
 
 	// Compute expected canonical header name at validation time
-	expectedHeaderName := ApplyHeaderPrefix(headerPrefix, headerName)
+	expectedHeaderName := domain.ApplyHeaderPrefix(headerPrefix, headerName)
 	expectedCanonical := http.CanonicalHeaderKey(expectedHeaderName)
 
 	// Create config and validate it
@@ -1695,9 +1695,9 @@ func TestHeaderStripping_Concurrency_ConfigMutationInvariant(t *testing.T) {
 
 				// Verify: header name used must match validation-time expectation
 				got := req.Header.Get(expectedCanonical)
-				if got != sanitizeHeaderValue(attrValue) {
+				if got != domain.SanitizeHeaderValue(attrValue) {
 					errors <- fmt.Errorf("goroutine %d iteration %d: expected header %q to have value %q, got %q",
-						goroutineID, j, expectedCanonical, sanitizeHeaderValue(attrValue), got)
+						goroutineID, j, expectedCanonical, domain.SanitizeHeaderValue(attrValue), got)
 					return
 				}
 
@@ -1958,8 +1958,8 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 
 		// Property: SAML attributes should be applied even when entitlement lookup fails
 		got := req.Header.Get(headerName)
-		if got != sanitizeHeaderValue(samlAttrValue) {
-			t.Errorf("expected SAML attribute value %q to be applied, got %q", sanitizeHeaderValue(samlAttrValue), got)
+		if got != domain.SanitizeHeaderValue(samlAttrValue) {
+			t.Errorf("expected SAML attribute value %q to be applied, got %q", domain.SanitizeHeaderValue(samlAttrValue), got)
 		}
 
 		// Entitlement headers should NOT be set (since lookup failed)
@@ -2021,7 +2021,7 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 			// Property: SAML attributes should always be applied
 			got := req.Header.Get(headerName)
 			if samlAttrValue != "" {
-				if got != sanitizeHeaderValue(samlAttrValue) {
+				if got != domain.SanitizeHeaderValue(samlAttrValue) {
 					return false // SAML attributes not applied
 				}
 			} else {
@@ -2100,8 +2100,8 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 		if samlValue1 != samlValue2 {
 			t.Errorf("SAML attributes should be same regardless of entitlement outcome: success=%q, failure=%q", samlValue1, samlValue2)
 		}
-		if samlValue1 != sanitizeHeaderValue(samlAttrValue) {
-			t.Errorf("expected SAML attribute value %q, got %q", sanitizeHeaderValue(samlAttrValue), samlValue1)
+		if samlValue1 != domain.SanitizeHeaderValue(samlAttrValue) {
+			t.Errorf("expected SAML attribute value %q, got %q", domain.SanitizeHeaderValue(samlAttrValue), samlValue1)
 		}
 	})
 }

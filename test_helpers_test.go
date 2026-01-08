@@ -5,6 +5,7 @@ package caddysamldisco
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 // MockMetricsRecorder is a thread-safe test double for MetricsRecorder.
@@ -56,6 +57,21 @@ func (m *MockMetricsRecorder) RecordMetadataRefresh(source string, success bool,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.metadataRefreshes = append(m.metadataRefreshes, MetadataRefreshCall{source, success, idpCount})
+}
+
+// RecordAuthFailure implements MetricsRecorder (no-op for mock).
+func (m *MockMetricsRecorder) RecordAuthFailure(category string, idpEntityID string) {
+	// No-op - not tracked in mock
+}
+
+// RecordAuthSuccess implements MetricsRecorder (no-op for mock).
+func (m *MockMetricsRecorder) RecordAuthSuccess(idpEntityID string) {
+	// No-op - not tracked in mock
+}
+
+// RecordAuthDuration implements MetricsRecorder (no-op for mock).
+func (m *MockMetricsRecorder) RecordAuthDuration(idpEntityID string, outcome string, duration time.Duration) {
+	// No-op - not tracked in mock
 }
 
 // GetAuthAttempts returns a copy of recorded auth attempts (thread-safe).

@@ -4,9 +4,23 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
-
-	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
+
+// AttributeMapping defines how a SAML attribute maps to an HTTP header.
+type AttributeMapping struct {
+	// SAMLAttribute is the SAML attribute name or OID to match.
+	// Examples: "urn:oid:1.3.6.1.4.1.5923.1.1.1.6", "eduPersonPrincipalName", "mail"
+	SAMLAttribute string `json:"saml_attribute"`
+
+	// HeaderName is the HTTP header name to set. Must start with "X-".
+	// Examples: "X-Remote-User", "X-Mail", "X-Entitlements"
+	HeaderName string `json:"header_name"`
+
+	// Separator is the string used to join multiple attribute values.
+	// Defaults to ";" if empty (Shibboleth convention).
+	// Common alternatives: "," (HTTP convention), "|"
+	Separator string `json:"separator,omitempty"`
+}
 
 // oidRegistry maps OIDs to their friendly names and vice versa.
 // This is a pure domain component with no external dependencies.
@@ -190,7 +204,7 @@ func ApplyHeaderPrefix(prefix, headerName string) string {
 //   - Missing attributes produce no header (not an empty string)
 //
 // Returns an error if any header name is invalid.
-func MapAttributesToHeaders(attrs map[string][]string, mappings []ports.AttributeMapping) (map[string]string, error) {
+func MapAttributesToHeaders(attrs map[string][]string, mappings []AttributeMapping) (map[string]string, error) {
 	result := make(map[string]string)
 
 	for _, m := range mappings {
@@ -266,7 +280,7 @@ func MapAttributesToHeaders(attrs map[string][]string, mappings []ports.Attribut
 // If prefix is empty, existing validation applies (headers must start with "X-").
 // This is a pure function with no side effects or I/O.
 // Thread-safe: pure function with no shared mutable state.
-func MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []ports.AttributeMapping, prefix string) (map[string]string, error) {
+func MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []AttributeMapping, prefix string) (map[string]string, error) {
 	// If prefix is set, validate that it starts with X- and is valid
 	if prefix != "" {
 		if !IsValidHeaderName(prefix) {
@@ -275,7 +289,7 @@ func MapAttributesToHeadersWithPrefix(attrs map[string][]string, mappings []port
 	}
 
 	// Create adjusted mappings for validation and processing
-	adjustedMappings := make([]ports.AttributeMapping, len(mappings))
+	adjustedMappings := make([]AttributeMapping, len(mappings))
 	for i, m := range mappings {
 		adjustedMappings[i] = m
 		if prefix != "" {
