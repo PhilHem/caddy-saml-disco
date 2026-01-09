@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metrics"
 	caddy "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
@@ -33,9 +35,14 @@ type testContext struct {
 	registry        *prometheus.Registry
 	metricsRecorder *metrics.PrometheusMetricsRecorder
 
-	// Test data
+	// Test data for SAML auth error scenarios
 	idpEntityID  string
 	errorDetails *caddy.SAMLErrorDetails
+
+	// Test data for filter failure scenarios
+	idps      []domain.IdPInfo // IdPs to load
+	idpFilter string           // Filter pattern to apply
+	loadError error            // Error from metadata loading
 }
 
 // ctxKey is the context key for testContext.
@@ -99,6 +106,16 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^metric "([^"]*)" should be incremented$`, metricShouldBeIncremented)
 	sc.Step(`^the metric should have label "([^"]*)" with value "([^"]*)"$`, theMetricShouldHaveLabelWithValue)
 	sc.Step(`^metric "([^"]*)" should have label "([^"]*)" with value "([^"]*)"$`, metricShouldHaveLabelWithValue)
+
+	// Filter failure scenario steps
+	sc.Step(`^metadata with IdPs:$`, metadataWithIdPs)
+	sc.Step(`^idp_filter configured as "([^"]*)"$`, idpFilterConfiguredAs)
+	sc.Step(`^metadata with (\d+) IdPs$`, metadataWithNIdPs)
+	sc.Step(`^structured logging is enabled$`, structuredLoggingIsEnabled)
+	sc.Step(`^metadata is loaded$`, metadataIsLoaded)
+	sc.Step(`^the error message should contain "([^"]*)"$`, errorMessageShouldContain)
+	sc.Step(`^the warning log field "([^"]*)" should have at most (\d+) entries$`, warningLogFieldShouldHaveAtMostEntries)
+	sc.Step(`^a warning log should contain field "([^"]*)" with value (\d+)$`, aWarningLogShouldContainFieldWithIntValue)
 }
 
 // Background step implementation
@@ -276,6 +293,56 @@ func theLogShouldContainField(ctx context.Context, fieldName string) error {
 	return nil
 }
 
+// aWarningLogShouldContainFieldWithIntValue asserts a field has an integer value.
+// Then step: Then a warning log should contain field "idps_before_filter" with value 2
+func aWarningLogShouldContainFieldWithIntValue(ctx context.Context, fieldName string, expectedValue int) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+	logs := tc.logObserver.All()
+	if len(logs) == 0 {
+		return errors.New("no logs captured")
+	}
+
+	// Find the most recent warning log
+	var targetLog *observer.LoggedEntry
+	for i := len(logs) - 1; i >= 0; i-- {
+		if logs[i].Level == zap.WarnLevel {
+			targetLog = &logs[i]
+			break
+		}
+	}
+
+	if targetLog == nil {
+		return errors.New("no warning log found")
+	}
+
+	fields := targetLog.ContextMap()
+	actualValue, ok := fields[fieldName]
+	if !ok {
+		return fmt.Errorf("expected field %q not found in log; available fields: %v", fieldName, getFieldNames(fields))
+	}
+
+	// Handle various numeric types that zap might use
+	var actualInt int64
+	switch v := actualValue.(type) {
+	case int:
+		actualInt = int64(v)
+	case int64:
+		actualInt = v
+	case int32:
+		actualInt = int64(v)
+	case float64:
+		actualInt = int64(v)
+	default:
+		return fmt.Errorf("field %q has non-numeric type %T, expected integer", fieldName, actualValue)
+	}
+
+	if actualInt != int64(expectedValue) {
+		return fmt.Errorf("field %q has value %d, expected %d", fieldName, actualInt, expectedValue)
+	}
+
+	return nil
+}
+
 // Then step implementations - metric assertions
 func metricShouldBeIncremented(ctx context.Context, metricName string) error {
 	tc := ctx.Value(ctxKey{}).(*testContext)
@@ -373,6 +440,157 @@ func getFieldNames(fields map[string]interface{}) []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// =============================================================================
+// Filter Failure Step Implementations
+// =============================================================================
+
+// metadataWithIdPs populates the test context with IdPs from a Gherkin table.
+// Background step: Given metadata with IdPs:
+func metadataWithIdPs(ctx context.Context, table *godog.Table) (context.Context, error) {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	// Parse table rows (skip header row)
+	for i, row := range table.Rows {
+		if i == 0 {
+			// Skip header row
+			continue
+		}
+		if len(row.Cells) < 1 {
+			return ctx, errors.New("table row missing entityID column")
+		}
+		entityID := row.Cells[0].Value
+		tc.idps = append(tc.idps, domain.IdPInfo{
+			EntityID:    entityID,
+			DisplayName: entityID, // Use entity ID as display name for simplicity
+		})
+	}
+
+	return ctx, nil
+}
+
+// idpFilterConfiguredAs sets the filter pattern for the scenario.
+// Given step: Given idp_filter configured as "*nomatch*"
+func idpFilterConfiguredAs(ctx context.Context, pattern string) (context.Context, error) {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+	tc.idpFilter = pattern
+	return ctx, nil
+}
+
+// metadataWithNIdPs generates N test IdPs for large dataset scenarios.
+// Given step: Given metadata with 100 IdPs
+func metadataWithNIdPs(ctx context.Context, count int) (context.Context, error) {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	// Clear any existing IdPs (this step overrides background)
+	tc.idps = nil
+
+	// Generate N IdPs with sequential entity IDs
+	for i := 1; i <= count; i++ {
+		tc.idps = append(tc.idps, domain.IdPInfo{
+			EntityID:    fmt.Sprintf("https://idp-%03d.example.com/shibboleth", i),
+			DisplayName: fmt.Sprintf("Test IdP %d", i),
+		})
+	}
+
+	return ctx, nil
+}
+
+// structuredLoggingIsEnabled is a no-op since logging is enabled in Before hook.
+// Given step: Given structured logging is enabled
+func structuredLoggingIsEnabled(ctx context.Context) (context.Context, error) {
+	// Already enabled via Before hook - this step exists for documentation
+	return ctx, nil
+}
+
+// metadataIsLoaded applies the filter and captures errors/logs.
+// When step: When metadata is loaded
+func metadataIsLoaded(ctx context.Context) (context.Context, error) {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	// Apply filter using the metadata package's exported function
+	// This simulates what happens during FileMetadataStore.Refresh()
+	filtered, filterFailures := metadata.ApplyFiltersAndCollectFailures(
+		tc.idps,
+		tc.idpFilter,
+		"",        // registrationAuthorityFilter
+		"",        // entityCategoryFilter
+		"",        // assuranceCertificationFilter
+		tc.logger, // Pass logger for structured logging
+	)
+
+	// If filter failures occurred, build the error
+	if len(filterFailures) > 0 {
+		tc.loadError = fmt.Errorf("no IdPs match filters: %s", strings.Join(filterFailures, ", "))
+	} else if len(filtered) == 0 {
+		tc.loadError = errors.New("no IdPs found in metadata")
+	}
+
+	return ctx, nil
+}
+
+// errorMessageShouldContain asserts that the load error contains the expected text.
+// Then step: Then the error message should contain "available:"
+func errorMessageShouldContain(ctx context.Context, expected string) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	if tc.loadError == nil {
+		return errors.New("expected an error but none occurred")
+	}
+
+	errMsg := tc.loadError.Error()
+	if !strings.Contains(errMsg, expected) {
+		return fmt.Errorf("error message %q does not contain %q", errMsg, expected)
+	}
+
+	return nil
+}
+
+// warningLogFieldShouldHaveAtMostEntries asserts that a log field array has at most N entries.
+// Then step: Then the warning log field "available_entity_ids" should have at most 10 entries
+func warningLogFieldShouldHaveAtMostEntries(ctx context.Context, fieldName string, maxEntries int) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+	logs := tc.logObserver.All()
+
+	if len(logs) == 0 {
+		return errors.New("no logs captured")
+	}
+
+	// Find the most recent warning log
+	var targetLog *observer.LoggedEntry
+	for i := len(logs) - 1; i >= 0; i-- {
+		if logs[i].Level == zap.WarnLevel {
+			targetLog = &logs[i]
+			break
+		}
+	}
+
+	if targetLog == nil {
+		return errors.New("no warning log found")
+	}
+
+	fields := targetLog.ContextMap()
+	fieldValue, ok := fields[fieldName]
+	if !ok {
+		return fmt.Errorf("field %q not found in log; available fields: %v", fieldName, getFieldNames(fields))
+	}
+
+	// Handle array type
+	switch v := fieldValue.(type) {
+	case []interface{}:
+		if len(v) > maxEntries {
+			return fmt.Errorf("field %q has %d entries, expected at most %d", fieldName, len(v), maxEntries)
+		}
+	case []string:
+		if len(v) > maxEntries {
+			return fmt.Errorf("field %q has %d entries, expected at most %d", fieldName, len(v), maxEntries)
+		}
+	default:
+		return fmt.Errorf("field %q is not an array type, got %T", fieldName, fieldValue)
+	}
+
+	return nil
 }
 
 // Ensure domain package is used (for SAMLErrorCategory reference in documentation)

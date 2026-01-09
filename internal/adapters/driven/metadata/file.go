@@ -163,17 +163,22 @@ func (s *FileMetadataStore) applyFiltersAndCollectFailures(idps []domain.IdPInfo
 	)
 }
 
-// applyFiltersAndCollectFailures is a shared helper that applies all configured filters
-// and collects which filters would reduce the IdP set to zero. Returns filtered IdPs
+// ApplyFiltersAndCollectFailures applies all configured filters and collects
+// which filters would reduce the IdP set to zero. Returns filtered IdPs
 // and a list of filter failure descriptions.
-func applyFiltersAndCollectFailures(
+//
+// The logger parameter is used for structured logging of filter failures.
+// If logger is nil, no logging is performed.
+func ApplyFiltersAndCollectFailures(
 	idps []domain.IdPInfo,
 	idpFilter string,
 	registrationAuthorityFilter string,
 	entityCategoryFilter string,
 	assuranceCertificationFilter string,
+	logger *zap.Logger,
 ) ([]domain.IdPInfo, []string) {
 	var failures []string
+	idpsBeforeFilter := len(idps)
 
 	// Apply IdP filter if configured
 	if idpFilter != "" {
@@ -215,7 +220,27 @@ func applyFiltersAndCollectFailures(
 		}
 	}
 
+	// Emit structured warning log if there are filter failures
+	// NOTE: Enhanced logging with available_entity_ids will be added in a future task
+	if len(failures) > 0 && logger != nil {
+		logger.Warn("idp filter matched no IdPs",
+			zap.Int("idps_before_filter", idpsBeforeFilter),
+			zap.Int("filter_failures", len(failures)),
+		)
+	}
+
 	return idps, failures
+}
+
+// applyFiltersAndCollectFailures is an internal wrapper for backward compatibility.
+func applyFiltersAndCollectFailures(
+	idps []domain.IdPInfo,
+	idpFilter string,
+	registrationAuthorityFilter string,
+	entityCategoryFilter string,
+	assuranceCertificationFilter string,
+) ([]domain.IdPInfo, []string) {
+	return ApplyFiltersAndCollectFailures(idps, idpFilter, registrationAuthorityFilter, entityCategoryFilter, assuranceCertificationFilter, nil)
 }
 
 // Health returns the health status of the file metadata store.
