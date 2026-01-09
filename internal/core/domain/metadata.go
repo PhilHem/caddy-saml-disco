@@ -458,25 +458,3 @@ func validateScopeRegex(scope, pattern string) (bool, error) {
 	// Match with anchored pattern (^...$)
 	return re.MatchString(scope), nil
 }
-
-// scopedAttributes is the set of attribute names that are scoped (have @scope format).
-// These attributes must have their scope validated against IdP metadata.
-var scopedAttributes = map[string]bool{
-	"eduPersonPrincipalName":           true,
-	"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": true, // eduPersonPrincipalName OID
-	"eduPersonScopedAffiliation":       true,
-	"urn:oid:1.3.6.1.4.1.5923.1.1.1.9": true, // eduPersonScopedAffiliation OID
-}
-
-// IsScopedAttribute returns true if the attribute name is a scoped attribute.
-// Scoped attributes have values in the format "user@scope" and must be validated
-// against the IdP's allowed scopes from shibmd:Scope metadata.
-//
-// This is a pure function with no side effects or I/O.
-func IsScopedAttribute(name string) bool {
-	if name == "" {
-		return false
-	}
-	return scopedAttributes[name]
-}
-

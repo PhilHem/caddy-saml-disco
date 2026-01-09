@@ -11,11 +11,6 @@ import (
 	"strings"
 	"testing"
 	"text/template"
-
-	// NOTE: Direct import of internal/adapters/driven/metadata is intentional for benchmarking.
-	// We benchmark the raw ParseMetadata function performance as an internal implementation detail.
-	// In production code, metadata parsing goes through the MetadataStore interface (re-exported in metadata.go).
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 )
 
 // Benchmark metadata parsing with various IdP counts.
@@ -176,7 +171,7 @@ func benchmarkParseMetadata(b *testing.B, data []byte, expectedCount int) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		idps, _, err = metadata.ParseMetadata(data)
+		idps, _, err = ParseMetadata(data)
 		if err != nil {
 			b.Fatalf("ParseMetadata failed: %v", err)
 		}
@@ -350,7 +345,7 @@ func setupBenchStore(b *testing.B, count int) *InMemoryMetadataStore {
 		data = fixture5000
 	}
 
-	idps, _, err := metadata.ParseMetadata(data)
+	idps, _, err := ParseMetadata(data)
 	if err != nil {
 		b.Fatalf("failed to parse fixture: %v", err)
 	}
@@ -388,7 +383,7 @@ func TestMemoryUsage(t *testing.T) {
 			}
 
 			// Parse the metadata
-			idps, _, err := metadata.ParseMetadata(fixture)
+			idps, _, err := ParseMetadata(fixture)
 			if err != nil {
 				t.Fatalf("ParseMetadata failed: %v", err)
 			}

@@ -29,8 +29,21 @@ func TestPackageBoundary_MixedImports(t *testing.T) {
 
 	mixedImportFiles := []string{}
 	internalPrefix := "github.com/philiph/caddy-saml-disco/internal/"
+	testUtilPrefix := "github.com/philiph/caddy-saml-disco/internal/testutil/"
+
+	// Files that intentionally import internal packages for testing re-exports
+	allowedFiles := map[string]bool{
+		"root_reexport_differential_test.go": true, // Tests re-exports match internal types
+		"root_reexport_edge_cases_test.go":   true, // Tests type alias edge cases
+		"type_alias_property_test.go":        true, // Tests type alias behavioral equivalence
+	}
 
 	for _, testFile := range testFiles {
+		// Skip allowed files
+		if allowedFiles[testFile] {
+			continue
+		}
+
 		imports, err := parseImports(testFile)
 		if err != nil {
 			t.Logf("Warning: Failed to parse %s: %v", testFile, err)
@@ -40,10 +53,11 @@ func TestPackageBoundary_MixedImports(t *testing.T) {
 		hasInternalImport := false
 
 		for _, imp := range imports {
-			// Check if it's an internal package import
+			// Check if it's an internal package import (excluding test utilities)
 			// Tests in root package ARE the root package, so they don't import it
 			// But they might import internal packages directly, which creates boundary confusion
-			if strings.HasPrefix(imp, internalPrefix) {
+			// Test utilities (internal/testutil/) are allowed as they're infrastructure, not production code
+			if strings.HasPrefix(imp, internalPrefix) && !strings.HasPrefix(imp, testUtilPrefix) {
 				hasInternalImport = true
 				break
 			}

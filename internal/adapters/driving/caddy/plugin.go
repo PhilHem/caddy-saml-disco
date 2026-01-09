@@ -1414,47 +1414,7 @@ func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error
 // Returns (pinnedIdPs, remainingIdPs). Pinned IdPs are returned in the order
 // specified in the configuration, not in their original order in the list.
 func (s *SAMLDisco) separatePinnedIdPs(idps []domain.IdPInfo) ([]domain.IdPInfo, []domain.IdPInfo) {
-	if len(s.PinnedIdPs) == 0 {
-		return nil, idps
-	}
-
-	// Create a map for quick lookup of pinned entity IDs
-	pinnedSet := make(map[string]bool, len(s.PinnedIdPs))
-	for _, entityID := range s.PinnedIdPs {
-		pinnedSet[entityID] = true
-	}
-
-	// Create a map to look up IdP info by entity ID
-	idpMap := make(map[string]domain.IdPInfo, len(idps))
-	for _, idp := range idps {
-		idpMap[idp.EntityID] = idp
-	}
-
-	// Build pinned list in configuration order
-	var pinnedIdPs []domain.IdPInfo
-	for _, entityID := range s.PinnedIdPs {
-		if idp, ok := idpMap[entityID]; ok {
-			pinnedIdPs = append(pinnedIdPs, idp)
-		}
-	}
-
-	// Build remaining list (excluding pinned)
-	var remainingIdPs []domain.IdPInfo
-	for _, idp := range idps {
-		if !pinnedSet[idp.EntityID] {
-			remainingIdPs = append(remainingIdPs, idp)
-		}
-	}
-
-	// Ensure we return empty slices instead of nil
-	if pinnedIdPs == nil {
-		pinnedIdPs = []domain.IdPInfo{}
-	}
-	if remainingIdPs == nil {
-		remainingIdPs = []domain.IdPInfo{}
-	}
-
-	return pinnedIdPs, remainingIdPs
+	return domain.SeparatePinnedIdPs(idps, s.PinnedIdPs)
 }
 
 // handleLogout handles the logout endpoint by clearing the session cookie
@@ -2367,17 +2327,35 @@ func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, 
 		return nil
 	}
 
-	idps, err := spConfig.metadataStore.ListIdPs("")
+	// Get optional search filter from query parameter
+	filter := r.URL.Query().Get("q")
+
+	idps, err := spConfig.metadataStore.ListIdPs(filter)
 	if err != nil {
 		s.renderAppError(w, r, domain.ServiceError("Failed to list identity providers"))
 		return err
 	}
 
+	// Return empty array instead of null for empty list
+	if idps == nil {
+		idps = []domain.IdPInfo{}
+	}
+
+	// Localize IdPs based on Accept-Language header
+	langPrefs := ParseAcceptLanguage(r.Header.Get("Accept-Language"))
+	idps = localizeIdPList(idps, langPrefs, spConfig.DefaultLanguage)
+
+	// Separate pinned IdPs from the main list
+	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(spConfig, idps)
+
+	response := idpListResponse{
+		IdPs:          filteredIdPs,
+		PinnedIdPs:    pinnedIdPs,
+		RememberedIdP: s.getRememberIdPCookieForSP(r, spConfig),
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"idps": idps,
-	})
-	return nil
+	return json.NewEncoder(w).Encode(response)
 }
 
 func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
@@ -2799,27 +2777,7 @@ func (s *SAMLDisco) getRememberIdPCookieForSP(r *http.Request, spConfig *SPConfi
 
 // separatePinnedIdPsForSP separates pinned IdPs from the main list for a specific SP config.
 func (s *SAMLDisco) separatePinnedIdPsForSP(spConfig *SPConfig, idps []domain.IdPInfo) ([]domain.IdPInfo, []domain.IdPInfo) {
-	if len(spConfig.PinnedIdPs) == 0 {
-		return nil, idps
-	}
-
-	pinnedMap := make(map[string]bool)
-	for _, entityID := range spConfig.PinnedIdPs {
-		pinnedMap[entityID] = true
-	}
-
-	var pinned []domain.IdPInfo
-	var filtered []domain.IdPInfo
-
-	for _, idp := range idps {
-		if pinnedMap[idp.EntityID] {
-			pinned = append(pinned, idp)
-		} else {
-			filtered = append(filtered, idp)
-		}
-	}
-
-	return pinned, filtered
+	return domain.SeparatePinnedIdPs(idps, spConfig.PinnedIdPs)
 }
 
 func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.Session, spConfig *SPConfig) {
