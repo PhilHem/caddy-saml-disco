@@ -3,6 +3,7 @@ package caddy
 import (
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -232,6 +233,32 @@ func idpInfoToEntityDescriptor(idp *domain.IdPInfo) (*saml.EntityDescriptor, err
 	}
 
 	return ed, nil
+}
+
+// ExtractResponseIssuer extracts the Issuer entity ID from a base64-encoded SAML Response.
+// This allows looking up the correct IdP before full response validation.
+func ExtractResponseIssuer(samlResponseB64 string) (string, error) {
+	if samlResponseB64 == "" {
+		return "", fmt.Errorf("empty SAMLResponse")
+	}
+
+	// Base64 decode
+	responseXML, err := base64.StdEncoding.DecodeString(samlResponseB64)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode: %w", err)
+	}
+
+	// Parse just enough XML to extract Issuer
+	var response saml.Response
+	if err := xml.Unmarshal(responseXML, &response); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+
+	if response.Issuer == nil || response.Issuer.Value == "" {
+		return "", fmt.Errorf("response has no issuer")
+	}
+
+	return response.Issuer.Value, nil
 }
 
 // HandleACS processes a SAML Response from the IdP.

@@ -703,13 +703,34 @@ func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	// For Phase 1 with single IdP, get the first IdP from metadata store
-	idps, err := s.metadataStore.ListIdPs("")
-	if err != nil || len(idps) == 0 {
-		s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
+	// Parse form to get SAMLResponse
+	if err := r.ParseForm(); err != nil {
+		s.renderAppError(w, r, domain.BadRequestError("Invalid form data"))
 		return err
 	}
-	idp := &idps[0]
+
+	// Extract Issuer from SAML response to find the correct IdP
+	issuer, err := ExtractResponseIssuer(r.PostForm.Get("SAMLResponse"))
+	if err != nil {
+		s.getLogger().Warn("failed to extract issuer from SAML response",
+			zap.Error(err),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+		s.renderAppError(w, r, domain.BadRequestError("Invalid SAML response"))
+		return err
+	}
+
+	// Look up IdP by Issuer entity ID
+	idp, err := s.metadataStore.GetIdP(issuer)
+	if err != nil {
+		s.getLogger().Warn("unknown IdP issuer in SAML response",
+			zap.String("issuer", issuer),
+			zap.Error(err),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+		s.renderAppError(w, r, domain.AuthError("Unknown identity provider", err))
+		return err
+	}
 
 	acsURL := s.resolveAcsURL(r)
 	start := time.Now()
@@ -2066,17 +2087,39 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 		return nil
 	}
 
-	// For Phase 1 with single IdP, get the first IdP from metadata store
 	if spConfig.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return nil
 	}
-	idps, err := spConfig.metadataStore.ListIdPs("")
-	if err != nil || len(idps) == 0 {
-		s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
+
+	// Parse form to get SAMLResponse
+	if err := r.ParseForm(); err != nil {
+		s.renderAppError(w, r, domain.BadRequestError("Invalid form data"))
 		return err
 	}
-	idp := &idps[0]
+
+	// Extract Issuer from SAML response to find the correct IdP
+	issuer, err := ExtractResponseIssuer(r.PostForm.Get("SAMLResponse"))
+	if err != nil {
+		s.getLogger().Warn("failed to extract issuer from SAML response",
+			zap.Error(err),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+		s.renderAppError(w, r, domain.BadRequestError("Invalid SAML response"))
+		return err
+	}
+
+	// Look up IdP by Issuer entity ID
+	idp, err := spConfig.metadataStore.GetIdP(issuer)
+	if err != nil {
+		s.getLogger().Warn("unknown IdP issuer in SAML response",
+			zap.String("issuer", issuer),
+			zap.Error(err),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+		s.renderAppError(w, r, domain.AuthError("Unknown identity provider", err))
+		return err
+	}
 
 	acsURL := s.resolveAcsURLForSP(r, spConfig)
 	start := time.Now()
