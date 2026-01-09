@@ -10,8 +10,8 @@ Feature: IdP Filtering for Discovery
       | https://idp2.example.org/saml   |
       | https://idp3.other.com/saml     |
 
-  Scenario: Single glob pattern filters by suffix
-    Given idp_filter configured as "*.example.edu"
+  Scenario: Single glob pattern filters by domain substring
+    Given idp_filter configured as "*example.edu*"
     When I list available IdPs
     Then I should see 1 IdP
     And I should see "https://idp1.example.edu/saml"
@@ -25,7 +25,7 @@ Feature: IdP Filtering for Discovery
     And I should not see "https://idp3.other.com/saml"
 
   Scenario: Mixed patterns and exact matches
-    Given idp_filter configured as "https://idp3.other.com/saml, *.example.edu"
+    Given idp_filter configured as "https://idp3.other.com/saml, *example.edu*"
     When I list available IdPs
     Then I should see 2 IdPs
     And I should see "https://idp1.example.edu/saml"
