@@ -75,27 +75,6 @@ func ResolveAttributeName(name string) (oid, friendlyName string) {
 	return name, name
 }
 
-// scopedAttributes is the set of attribute names that are scoped (have @scope format).
-// These attributes must have their scope validated against IdP metadata.
-var scopedAttributes = map[string]bool{
-	"eduPersonPrincipalName":           true,
-	"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": true, // eduPersonPrincipalName OID
-	"eduPersonScopedAffiliation":       true,
-	"urn:oid:1.3.6.1.4.1.5923.1.1.1.9": true, // eduPersonScopedAffiliation OID
-}
-
-// IsScopedAttribute returns true if the attribute name is a scoped attribute.
-// Scoped attributes have values in the format "user@scope" and must be validated
-// against the IdP's allowed scopes from shibmd:Scope metadata.
-//
-// This is a pure function with no side effects or I/O.
-func IsScopedAttribute(name string) bool {
-	if name == "" {
-		return false
-	}
-	return scopedAttributes[name]
-}
-
 // IsValidHeaderName checks if a header name is valid for attribute mapping.
 // Valid names must:
 //   - Start with "X-" or "x-" (case-insensitive prefix)
@@ -136,7 +115,7 @@ func IsValidHeaderName(name string) bool {
 // MaxHeaderValueLength is the maximum length for HTTP header values.
 const MaxHeaderValueLength = 8192
 
-// @tra: Domain.SanitizeHeaderValue
+// @tra: Domain.Policy.SanitizeHeaderValue
 // SanitizeHeaderValue removes dangerous characters and enforces length limits.
 // This is a pure function with no side effects or I/O.
 // Thread-safe: pure function with no shared mutable state.
@@ -180,7 +159,7 @@ func SanitizeHeaderValue(v string) string {
 	return result.String()
 }
 
-// @tra: Domain.ApplyHeaderPrefix
+// @tra: Domain.Policy.ApplyHeaderPrefix
 // ApplyHeaderPrefix prepends prefix to header name.
 // If prefix is empty, returns headerName unchanged.
 // This is a pure function with no side effects or I/O.
@@ -192,7 +171,7 @@ func ApplyHeaderPrefix(prefix, headerName string) string {
 	return prefix + headerName
 }
 
-// @tra: Domain.MapAttributesToHeaders
+// @tra: Domain.Policy.MapAttributesToHeaders
 // MapAttributesToHeaders transforms SAML attributes to HTTP headers.
 // This is a pure function with no side effects or I/O.
 // Thread-safe: pure function with no shared mutable state.
@@ -273,7 +252,7 @@ func MapAttributesToHeaders(attrs map[string][]string, mappings []AttributeMappi
 	return result, nil
 }
 
-// @tra: Domain.MapAttributesToHeadersWithPrefix
+// @tra: Domain.Policy.MapAttributesToHeadersWithPrefix
 // MapAttributesToHeadersWithPrefix transforms SAML attributes to HTTP headers with optional prefix.
 // This is a wrapper around MapAttributesToHeaders that applies a prefix to header names.
 // If prefix is set, header names don't need to start with "X-" (the final combined name must be valid).
