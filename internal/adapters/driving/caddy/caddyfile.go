@@ -64,307 +64,15 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			s.SPConfigs = append(s.SPConfigs, spCfg)
 
-		case "entity_id":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.EntityID = d.Val()
-
-		case "metadata_url":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.MetadataURL = d.Val()
-
-		case "metadata_file":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.MetadataFile = d.Val()
-
-		case "cert_file":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.CertFile = d.Val()
-
-		case "key_file":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.KeyFile = d.Val()
-
-		case "acs_url":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.AcsURL = d.Val()
-
-		case "metadata_refresh_interval":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.MetadataRefreshInterval = d.Val()
-
-		case "background_refresh":
-			s.BackgroundRefresh = true
-
-		case "session_cookie_name":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.SessionCookieName = d.Val()
-
-		case "session_duration":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.SessionDuration = d.Val()
-
-		case "remember_idp_cookie_name":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.RememberIdPCookieName = d.Val()
-
-		case "remember_idp_duration":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.RememberIdPDuration = d.Val()
-
-		case "templates_dir":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.TemplatesDir = d.Val()
-
-		case "login_redirect":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.LoginRedirect = d.Val()
-
-		case "idp_filter":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.IdPFilter = d.Val()
-
-		case "registration_authority_filter":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.RegistrationAuthorityFilter = d.Val()
-
-		case "entity_category_filter":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.EntityCategoryFilter = d.Val()
-
-		case "assurance_certification_filter":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.AssuranceCertificationFilter = d.Val()
-
-		case "discovery_template":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.DiscoveryTemplate = d.Val()
-
-		case "service_name":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.ServiceName = d.Val()
-
-		case "pinned_idps":
-			s.PinnedIdPs = d.RemainingArgs()
-			if len(s.PinnedIdPs) == 0 {
-				return d.ArgErr()
-			}
-
-		case "alt_login":
-			args := d.RemainingArgs()
-			if len(args) < 2 {
-				return d.ArgErr()
-			}
-			s.AltLogins = append(s.AltLogins, AltLoginConfig{
-				URL:   args[0],
-				Label: args[1],
-			})
-
-		case "cors_origins":
-			s.CORSAllowedOrigins = d.RemainingArgs()
-			if len(s.CORSAllowedOrigins) == 0 {
-				return d.ArgErr()
-			}
-
-		case "cors_allow_credentials":
-			s.CORSAllowCredentials = true
-
-		case "default_language":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.DefaultLanguage = d.Val()
-
-		case "verify_metadata_signature":
-			s.VerifyMetadataSignature = true
-
-		case "metadata_signing_cert":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.MetadataSigningCert = d.Val()
-
-		case "sign_metadata":
-			s.SignMetadata = true
-
-		case "metrics":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			switch d.Val() {
-			case "enabled", "on":
-				s.MetricsEnabled = true
-			case "disabled", "off":
-				s.MetricsEnabled = false
-			default:
-				return d.Errf("metrics must be 'enabled' or 'off', got %q", d.Val())
-			}
-
-		case "attribute_headers":
-			// Parse the attribute_headers block
-			// Syntax:
-			//   attribute_headers {
-			//       <saml_attribute> <header_name> [<separator>]
-			//   }
-			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				args := []string{d.Val()}
-				args = append(args, d.RemainingArgs()...)
-
-				if len(args) < 2 || len(args) > 3 {
-					return d.Errf("attribute_headers: expected 2-3 arguments (saml_attribute header_name [separator]), got %d", len(args))
-				}
-
-				mapping := AttributeMapping{
-					SAMLAttribute: args[0],
-					HeaderName:    args[1],
-				}
-				if len(args) == 3 {
-					mapping.Separator = args[2]
-				}
-
-				// Validate header name at parse time
-				if !domain.IsValidHeaderName(mapping.HeaderName) {
-					return d.Errf("attribute_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
-				}
-
-				s.AttributeHeaders = append(s.AttributeHeaders, mapping)
-			}
-
-		case "strip_attribute_headers":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			val := strings.ToLower(d.Val())
-			switch val {
-			case "on", "true", "enabled":
-				s.StripAttributeHeaders = boolPtr(true)
-			case "off", "false", "disabled":
-				s.StripAttributeHeaders = boolPtr(false)
-			default:
-				return d.Errf("strip_attribute_headers must be on/off, got %q", d.Val())
-			}
-
-		case "header_prefix":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.HeaderPrefix = d.Val()
-
-		case "force_authn":
-			s.ForceAuthn = true
-
-		case "force_authn_paths":
-			s.ForceAuthnPaths = d.RemainingArgs()
-			if len(s.ForceAuthnPaths) == 0 {
-				return d.Err("force_authn_paths requires at least one path pattern")
-			}
-
-		case "authn_context":
-			args := d.RemainingArgs()
-			if len(args) == 0 {
-				return d.ArgErr()
-			}
-			s.AuthnContext = append(s.AuthnContext, args...)
-
-		case "authn_context_comparison":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.AuthnContextComparison = d.Val()
-
-		case "entitlements_file":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.EntitlementsFile = d.Val()
-
-		case "entitlements_refresh_interval":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.EntitlementsRefreshInterval = d.Val()
-
-		case "entitlement_headers":
-			// Parse the entitlement_headers block
-			// Syntax:
-			//   entitlement_headers {
-			//       <field> <header_name> [<separator>]
-			//   }
-			for nesting := d.Nesting(); d.NextBlock(nesting); {
-				args := []string{d.Val()}
-				args = append(args, d.RemainingArgs()...)
-
-				if len(args) < 2 || len(args) > 3 {
-					return d.Errf("entitlement_headers: expected 2-3 arguments (field header_name [separator]), got %d", len(args))
-				}
-
-				mapping := EntitlementHeaderMapping{
-					Field:      args[0],
-					HeaderName: args[1],
-				}
-				if len(args) == 3 {
-					mapping.Separator = args[2]
-				}
-
-				// Validate header name at parse time
-				if !domain.IsValidHeaderName(mapping.HeaderName) {
-					return d.Errf("entitlement_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
-				}
-
-				s.EntitlementHeaders = append(s.EntitlementHeaders, mapping)
-			}
-
-		case "require_entitlement":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.RequireEntitlement = d.Val()
-
-		case "entitlement_deny_redirect":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			s.EntitlementDenyRedirect = d.Val()
-
 		default:
-			return d.Errf("unrecognized subdirective: %s", d.Val())
+			// Try to parse as a Config directive (single-SP mode)
+			handled, err := parseConfigDirective(d, &s.Config)
+			if err != nil {
+				return err
+			}
+			if !handled {
+				return d.Errf("unrecognized subdirective: %s", d.Val())
+			}
 		}
 	}
 
@@ -373,189 +81,210 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // parseSPConfigField parses a single field within an SP config block.
-func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, nesting int) error {
+// nesting parameter is kept for API compatibility but unused after refactoring.
+func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, _ int) error {
+	handled, err := parseConfigDirective(d, &spCfg.Config)
+	if err != nil {
+		return err
+	}
+	if !handled {
+		return d.Errf("unrecognized subdirective in sp block: %s", d.Val())
+	}
+	return nil
+}
+
+// parseConfigDirective parses a single Config field directive.
+// Returns (true, nil) if the directive was handled successfully.
+// Returns (false, nil) if the directive is not a Config field (caller should handle).
+// Returns (true, error) if the directive was recognized but had a parsing error.
+func parseConfigDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 	switch d.Val() {
 	case "entity_id":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.EntityID = d.Val()
+		entityID := d.Val()
+		if err := domain.ValidateEntityID(entityID); err != nil {
+			return true, d.Errf("entity_id: %v", err)
+		}
+		cfg.EntityID = entityID
 
 	case "metadata_url":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.MetadataURL = d.Val()
+		cfg.MetadataURL = d.Val()
 
 	case "metadata_file":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.MetadataFile = d.Val()
+		cfg.MetadataFile = d.Val()
 
 	case "cert_file":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.CertFile = d.Val()
+		cfg.CertFile = d.Val()
 
 	case "key_file":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.KeyFile = d.Val()
+		cfg.KeyFile = d.Val()
 
 	case "acs_url":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.AcsURL = d.Val()
+		cfg.AcsURL = d.Val()
 
 	case "metadata_refresh_interval":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.MetadataRefreshInterval = d.Val()
+		cfg.MetadataRefreshInterval = d.Val()
 
 	case "background_refresh":
-		spCfg.BackgroundRefresh = true
+		cfg.BackgroundRefresh = true
 
 	case "session_cookie_name":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.SessionCookieName = d.Val()
+		cfg.SessionCookieName = d.Val()
 
 	case "session_duration":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.SessionDuration = d.Val()
+		cfg.SessionDuration = d.Val()
 
 	case "remember_idp_cookie_name":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.RememberIdPCookieName = d.Val()
+		cfg.RememberIdPCookieName = d.Val()
 
 	case "remember_idp_duration":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.RememberIdPDuration = d.Val()
+		cfg.RememberIdPDuration = d.Val()
 
 	case "templates_dir":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.TemplatesDir = d.Val()
+		cfg.TemplatesDir = d.Val()
 
 	case "login_redirect":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.LoginRedirect = d.Val()
+		cfg.LoginRedirect = d.Val()
 
 	case "idp_filter":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.IdPFilter = d.Val()
+		cfg.IdPFilter = d.Val()
 
 	case "registration_authority_filter":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.RegistrationAuthorityFilter = d.Val()
+		cfg.RegistrationAuthorityFilter = d.Val()
 
 	case "entity_category_filter":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.EntityCategoryFilter = d.Val()
+		cfg.EntityCategoryFilter = d.Val()
 
 	case "assurance_certification_filter":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.AssuranceCertificationFilter = d.Val()
+		cfg.AssuranceCertificationFilter = d.Val()
 
 	case "discovery_template":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.DiscoveryTemplate = d.Val()
+		cfg.DiscoveryTemplate = d.Val()
 
 	case "service_name":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.ServiceName = d.Val()
+		cfg.ServiceName = d.Val()
 
 	case "pinned_idps":
-		spCfg.PinnedIdPs = d.RemainingArgs()
-		if len(spCfg.PinnedIdPs) == 0 {
-			return d.ArgErr()
+		cfg.PinnedIdPs = d.RemainingArgs()
+		if len(cfg.PinnedIdPs) == 0 {
+			return true, d.ArgErr()
 		}
 
 	case "alt_login":
 		args := d.RemainingArgs()
 		if len(args) < 2 {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.AltLogins = append(spCfg.AltLogins, AltLoginConfig{
+		cfg.AltLogins = append(cfg.AltLogins, AltLoginConfig{
 			URL:   args[0],
 			Label: args[1],
 		})
 
 	case "cors_origins":
-		spCfg.CORSAllowedOrigins = d.RemainingArgs()
-		if len(spCfg.CORSAllowedOrigins) == 0 {
-			return d.ArgErr()
+		cfg.CORSAllowedOrigins = d.RemainingArgs()
+		if len(cfg.CORSAllowedOrigins) == 0 {
+			return true, d.ArgErr()
 		}
 
 	case "cors_allow_credentials":
-		spCfg.CORSAllowCredentials = true
+		cfg.CORSAllowCredentials = true
 
 	case "default_language":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.DefaultLanguage = d.Val()
+		cfg.DefaultLanguage = d.Val()
 
 	case "verify_metadata_signature":
-		spCfg.VerifyMetadataSignature = true
+		cfg.VerifyMetadataSignature = true
 
 	case "metadata_signing_cert":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.MetadataSigningCert = d.Val()
+		cfg.MetadataSigningCert = d.Val()
 
 	case "sign_metadata":
-		spCfg.SignMetadata = true
+		cfg.SignMetadata = true
 
 	case "metrics":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
 		switch d.Val() {
 		case "enabled", "on":
-			spCfg.MetricsEnabled = true
+			cfg.MetricsEnabled = true
 		case "disabled", "off":
-			spCfg.MetricsEnabled = false
+			cfg.MetricsEnabled = false
 		default:
-			return d.Errf("metrics must be 'enabled' or 'off', got %q", d.Val())
+			return true, d.Errf("metrics must be 'enabled' or 'off', got %q", d.Val())
 		}
 
 	case "attribute_headers":
 		// Parse the attribute_headers block
-		for attrNesting := d.Nesting(); d.NextBlock(attrNesting); {
+		// Header validation is deferred to Config.Validate()
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			args := []string{d.Val()}
 			args = append(args, d.RemainingArgs()...)
 
 			if len(args) < 2 || len(args) > 3 {
-				return d.Errf("attribute_headers: expected 2-3 arguments (saml_attribute header_name [separator]), got %d", len(args))
+				return true, d.Errf("attribute_headers: expected 2-3 arguments (saml_attribute header_name [separator]), got %d", len(args))
 			}
 
 			mapping := AttributeMapping{
@@ -566,76 +295,72 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 				mapping.Separator = args[2]
 			}
 
-			// Validate header name at parse time
-			if !domain.IsValidHeaderName(mapping.HeaderName) {
-				return d.Errf("attribute_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
-			}
-
-			spCfg.AttributeHeaders = append(spCfg.AttributeHeaders, mapping)
+			cfg.AttributeHeaders = append(cfg.AttributeHeaders, mapping)
 		}
 
 	case "strip_attribute_headers":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
 		val := strings.ToLower(d.Val())
 		switch val {
 		case "on", "true", "enabled":
-			spCfg.StripAttributeHeaders = boolPtr(true)
+			cfg.StripAttributeHeaders = boolPtr(true)
 		case "off", "false", "disabled":
-			spCfg.StripAttributeHeaders = boolPtr(false)
+			cfg.StripAttributeHeaders = boolPtr(false)
 		default:
-			return d.Errf("strip_attribute_headers must be on/off, got %q", d.Val())
+			return true, d.Errf("strip_attribute_headers must be on/off, got %q", d.Val())
 		}
 
 	case "header_prefix":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.HeaderPrefix = d.Val()
+		cfg.HeaderPrefix = d.Val()
 
 	case "force_authn":
-		spCfg.ForceAuthn = true
+		cfg.ForceAuthn = true
 
 	case "force_authn_paths":
-		spCfg.ForceAuthnPaths = d.RemainingArgs()
-		if len(spCfg.ForceAuthnPaths) == 0 {
-			return d.Err("force_authn_paths requires at least one path pattern")
+		cfg.ForceAuthnPaths = d.RemainingArgs()
+		if len(cfg.ForceAuthnPaths) == 0 {
+			return true, d.Err("force_authn_paths requires at least one path pattern")
 		}
 
 	case "authn_context":
 		args := d.RemainingArgs()
 		if len(args) == 0 {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.AuthnContext = append(spCfg.AuthnContext, args...)
+		cfg.AuthnContext = append(cfg.AuthnContext, args...)
 
 	case "authn_context_comparison":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.AuthnContextComparison = d.Val()
+		cfg.AuthnContextComparison = d.Val()
 
 	case "entitlements_file":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.EntitlementsFile = d.Val()
+		cfg.EntitlementsFile = d.Val()
 
 	case "entitlements_refresh_interval":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.EntitlementsRefreshInterval = d.Val()
+		cfg.EntitlementsRefreshInterval = d.Val()
 
 	case "entitlement_headers":
 		// Parse the entitlement_headers block
-		for entNesting := d.Nesting(); d.NextBlock(entNesting); {
+		// Header validation is deferred to Config.Validate()
+		for nesting := d.Nesting(); d.NextBlock(nesting); {
 			args := []string{d.Val()}
 			args = append(args, d.RemainingArgs()...)
 
 			if len(args) < 2 || len(args) > 3 {
-				return d.Errf("entitlement_headers: expected 2-3 arguments (field header_name [separator]), got %d", len(args))
+				return true, d.Errf("entitlement_headers: expected 2-3 arguments (field header_name [separator]), got %d", len(args))
 			}
 
 			mapping := EntitlementHeaderMapping{
@@ -646,28 +371,23 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 				mapping.Separator = args[2]
 			}
 
-			// Validate header name at parse time
-			if !domain.IsValidHeaderName(mapping.HeaderName) {
-				return d.Errf("entitlement_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
-			}
-
-			spCfg.EntitlementHeaders = append(spCfg.EntitlementHeaders, mapping)
+			cfg.EntitlementHeaders = append(cfg.EntitlementHeaders, mapping)
 		}
 
 	case "require_entitlement":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.RequireEntitlement = d.Val()
+		cfg.RequireEntitlement = d.Val()
 
 	case "entitlement_deny_redirect":
 		if !d.NextArg() {
-			return d.ArgErr()
+			return true, d.ArgErr()
 		}
-		spCfg.EntitlementDenyRedirect = d.Val()
+		cfg.EntitlementDenyRedirect = d.Val()
 
 	default:
-		return d.Errf("unrecognized subdirective in sp block: %s", d.Val())
+		return false, nil // Not a Config directive
 	}
-	return nil
+	return true, nil
 }

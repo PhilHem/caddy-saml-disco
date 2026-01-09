@@ -588,3 +588,48 @@ func TestCaddyfile_RememberIdPDuration_RequiresArg(t *testing.T) {
 		t.Error("UnmarshalCaddyfile should error on remember_idp_duration without argument")
 	}
 }
+
+func TestCaddyfile_InvalidEntityID_RejectsAtParseTime(t *testing.T) {
+	// Test that invalid entity_id values are rejected at parse time.
+	// Note: Missing entity_id is validated in Config.Validate(), not parse time.
+	tests := []struct {
+		name     string
+		entityID string
+		wantErr  string
+	}{
+		{
+			name:     "missing scheme",
+			entityID: "sp.example.com/saml",
+			wantErr:  "must have a scheme",
+		},
+		{
+			name:     "invalid scheme",
+			entityID: "ftp://sp.example.com/saml",
+			wantErr:  "scheme must be http, https, or urn",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := `saml_disco {
+				entity_id ` + tt.entityID + `
+				metadata_file /path/to/metadata.xml
+			}`
+
+			d := caddyfile.NewTestDispenser(input)
+			var s SAMLDisco
+			err := s.UnmarshalCaddyfile(d)
+
+			// The test expects errors to be caught at parse time,
+			// not deferred to Validate()
+			if err == nil {
+				t.Errorf("UnmarshalCaddyfile should reject invalid entity_id at parse time")
+				return
+			}
+
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
