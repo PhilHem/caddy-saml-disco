@@ -1451,8 +1451,12 @@ func TestMapAttributesToHeadersWithPrefix_Property_OrderDependencyConsistent(t *
 			return true
 		}
 
-		// Skip if values are same (we need different values to test order dependency)
-		if attrVal1 == attrVal2 {
+		// Sanitize values (MapAttributesToHeaders sanitizes all values)
+		sanitizedVal1 := SanitizeHeaderValue(attrVal1)
+		sanitizedVal2 := SanitizeHeaderValue(attrVal2)
+
+		// Skip if sanitized values are same or empty (can't test order dependency)
+		if sanitizedVal1 == sanitizedVal2 || sanitizedVal1 == "" || sanitizedVal2 == "" {
 			return true
 		}
 
@@ -1499,13 +1503,13 @@ func TestMapAttributesToHeadersWithPrefix_Property_OrderDependencyConsistent(t *
 			return false
 		}
 
-		// Property: Order 1 (attrKey2 last) should have attrVal2
-		if val1 != attrVal2 {
+		// Property: Order 1 (attrKey2 last) should have sanitizedVal2
+		if val1 != sanitizedVal2 {
 			return false
 		}
 
-		// Property: Order 2 (attrKey1 last) should have attrVal1
-		if val2 != attrVal1 {
+		// Property: Order 2 (attrKey1 last) should have sanitizedVal1
+		if val2 != sanitizedVal1 {
 			return false
 		}
 

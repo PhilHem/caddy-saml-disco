@@ -19,11 +19,9 @@ var (
 	IsValidHeaderName       = domain.IsValidHeaderName
 	ApplyHeaderPrefix       = domain.ApplyHeaderPrefix
 	MapAttributesToHeaders  = domain.MapAttributesToHeaders
+	SanitizeHeaderValue     = domain.SanitizeHeaderValue
 	NewCaddyAttributeMapper = caddy.NewCaddyAttributeMapper
 )
-
-// Note: SanitizeHeaderValue is exported from domain package
-// Tests that need it should import domain package directly
 
 const (
 	MaxHeaderValueLength = domain.MaxHeaderValueLength

@@ -2110,11 +2110,11 @@ func TestDiscoveryAPI_SelectIdP_RememberTrue_SetsCookie(t *testing.T) {
 		Config: Config{
 			EntityID:              "https://sp.example.com",
 			RememberIdPCookieName: "saml_last_idp",
+			RememberIdPDuration:   "720h", // 30 days - needed for SPConfig path
 		},
 	}
 	s.SetSAMLService(samlService)
 	s.SetMetadataStore(metadataStore)
-	s.SetRememberIdPDuration(30 * 24 * time.Hour) // 30 days
 
 	// POST with remember=true
 	body := strings.NewReader(`{"entity_id": "https://idp.example.com/saml", "remember": true}`)
