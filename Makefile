@@ -6,7 +6,7 @@ build:
 
 # Run all tests
 test:
-	go test ./...
+	go test -timeout 30s -failfast ./...
 
 # Run unit tests only
 test-unit:
