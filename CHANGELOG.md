@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-01-09
+
+### Added
+- **Configuration schema validation**: Validate plugin configuration at startup with clear error messages
+- **SAMLDisco factory with functional options**: Cleaner initialization API for the SAMLDisco service
+- **BDD testing improvements**:
+  - Step definitions for discovery feature tests
+  - Step definitions for IdP filter failure scenarios
+  - Feature file for IdP filtering behavior
+- **Enhanced observability**: WARN logging and improved error messages for filter failures
+- **Domain helpers**: `ExtractEntityIDs` and `FormatEntityIDList` utility functions
+
+### Fixed
+- **Discovery redirect**: Correctly redirect to discovery page when multiple IdPs are configured
+- **Architectural improvements**: Addressed test config smells and improved domain layer cohesion
+- **Test infrastructure**: Decoupled test infrastructure and extracted domain logic
+
+### Changed
+- **Refactored scope functions**: Consolidated into single domain file for better organization
+- **Caddyfile parsing**: Extracted shared `parseConfigDirective` function to reduce duplication
+
 ## [0.15.1] - 2026-01-08
 
 ### Fixed
