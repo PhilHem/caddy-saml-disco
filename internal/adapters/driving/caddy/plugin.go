@@ -1492,20 +1492,6 @@ func (s *SAMLDisco) handleLogout(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// clearSessionCookies clears both session and remember IdP cookies.
-func (s *SAMLDisco) clearSessionCookies(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     s.SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1, // Delete cookie
-	})
-	s.clearRememberIdPCookie(w, r)
-}
-
 // handleSLO handles the Single Logout endpoint.
 // It processes both SP-initiated (SAMLResponse) and IdP-initiated (SAMLRequest) logout flows.
 func (s *SAMLDisco) handleSLO(w http.ResponseWriter, r *http.Request) error {
@@ -1609,26 +1595,6 @@ func (s *SAMLDisco) handleSLO(w http.ResponseWriter, r *http.Request) error {
 	// Neither SAMLRequest nor SAMLResponse present
 	s.renderAppError(w, r, domain.AuthError("Missing SAMLRequest or SAMLResponse", nil))
 	return nil
-}
-
-// resolveSLOURL determines the SLO URL for the current request.
-func (s *SAMLDisco) resolveSLOURL(r *http.Request) *url.URL {
-	// Compute from request (similar to resolveAcsURL)
-	scheme := "https"
-	if r.TLS == nil {
-		// Check X-Forwarded-Proto header
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		} else {
-			scheme = "http"
-		}
-	}
-
-	return &url.URL{
-		Scheme: scheme,
-		Host:   r.Host,
-		Path:   "/saml/slo",
-	}
 }
 
 // ParseDuration parses a duration string, supporting "d" suffix for days.
@@ -1765,63 +1731,6 @@ func ValidateDenyRedirect(redirectURL string) string {
 	return redirectURL
 }
 
-// setSessionCookie sets the session cookie on the response.
-func (s *SAMLDisco) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     s.SessionCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(s.sessionDuration.Seconds()),
-	})
-}
-
-// setRememberIdPCookie sets a cookie to remember the user's last-used IdP.
-func (s *SAMLDisco) setRememberIdPCookie(w http.ResponseWriter, r *http.Request, entityID string) {
-	if s.RememberIdPCookieName == "" || s.rememberIdPDuration == 0 {
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     s.RememberIdPCookieName,
-		Value:    entityID,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(s.rememberIdPDuration.Seconds()),
-	})
-}
-
-// getRememberIdPCookie reads the remembered IdP entity ID from the cookie.
-func (s *SAMLDisco) getRememberIdPCookie(r *http.Request) string {
-	if s.RememberIdPCookieName == "" {
-		return ""
-	}
-	cookie, err := r.Cookie(s.RememberIdPCookieName)
-	if err != nil || cookie.Value == "" {
-		return ""
-	}
-	return cookie.Value
-}
-
-// clearRememberIdPCookie deletes the remembered IdP cookie.
-func (s *SAMLDisco) clearRememberIdPCookie(w http.ResponseWriter, r *http.Request) {
-	if s.RememberIdPCookieName == "" {
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     s.RememberIdPCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1, // Delete cookie
-	})
-}
-
 // applyCORSHeaders sets CORS headers if the request origin is allowed.
 // Returns true if CORS headers were applied.
 func (s *SAMLDisco) applyCORSHeaders(w http.ResponseWriter, r *http.Request) bool {
@@ -1864,31 +1773,6 @@ func (s *SAMLDisco) applyCORSHeaders(w http.ResponseWriter, r *http.Request) boo
 	}
 
 	return true
-}
-
-// resolveAcsURL computes the ACS URL from the request and configuration.
-func (s *SAMLDisco) resolveAcsURL(r *http.Request) *url.URL {
-	if s.AcsURL != "" {
-		u, _ := url.Parse(s.AcsURL)
-		return u
-	}
-
-	// Compute from request
-	scheme := "https"
-	if r.TLS == nil {
-		// Check X-Forwarded-Proto header
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		} else {
-			scheme = "http"
-		}
-	}
-
-	return &url.URL{
-		Scheme: scheme,
-		Host:   r.Host,
-		Path:   "/saml/acs",
-	}
 }
 
 // SetMetadataStore sets the metadata store for testing.
@@ -2652,112 +2536,6 @@ func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, s
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 
-func (s *SAMLDisco) resolveAcsURLForSP(r *http.Request, spConfig *SPConfig) *url.URL {
-	if spConfig.AcsURL != "" {
-		acsURL, err := url.Parse(spConfig.AcsURL)
-		if err == nil {
-			return acsURL
-		}
-	}
-
-	// Default: construct from request
-	scheme := "https"
-	if r.TLS == nil {
-		scheme = "http"
-	}
-	return &url.URL{
-		Scheme: scheme,
-		Host:   r.Host,
-		Path:   "/saml/acs",
-	}
-}
-
-// resolveSLOURLForSP computes the SLO URL from the request and SP config.
-func (s *SAMLDisco) resolveSLOURLForSP(r *http.Request, spConfig *SPConfig) *url.URL {
-	// Compute from request (similar to resolveAcsURLForSP)
-	scheme := "https"
-	if r.TLS == nil {
-		// Check X-Forwarded-Proto header
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		} else {
-			scheme = "http"
-		}
-	}
-
-	return &url.URL{
-		Scheme: scheme,
-		Host:   r.Host,
-		Path:   "/saml/slo",
-	}
-}
-
-// setSessionCookieForSP sets the session cookie on the response for a specific SP config.
-func (s *SAMLDisco) setSessionCookieForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig, token string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     spConfig.SessionCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(spConfig.sessionDuration.Seconds()),
-	})
-}
-
-// clearSessionCookiesForSP clears both session and remember IdP cookies for a specific SP config.
-func (s *SAMLDisco) clearSessionCookiesForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     spConfig.SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1, // Delete cookie
-	})
-	s.clearRememberIdPCookieForSP(w, r, spConfig)
-}
-
-// setRememberIdPCookieForSP sets a cookie to remember the user's last-used IdP for a specific SP config.
-func (s *SAMLDisco) setRememberIdPCookieForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig, entityID string) {
-	if spConfig.RememberIdPCookieName == "" || spConfig.RememberIdPDuration == "" {
-		return
-	}
-	duration, err := ParseDuration(spConfig.RememberIdPDuration)
-	if err != nil {
-		s.getLogger().Warn("invalid remember IdP duration, skipping cookie",
-			zap.String("duration", spConfig.RememberIdPDuration),
-			zap.Error(err))
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     spConfig.RememberIdPCookieName,
-		Value:    entityID,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(duration.Seconds()),
-	})
-}
-
-// clearRememberIdPCookieForSP deletes the remembered IdP cookie for a specific SP config.
-func (s *SAMLDisco) clearRememberIdPCookieForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
-	if spConfig.RememberIdPCookieName == "" {
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     spConfig.RememberIdPCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1, // Delete cookie
-	})
-}
-
 // handleDeniedForSP handles access denied responses for a specific SP config.
 func (s *SAMLDisco) handleDeniedForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig, subject string) {
 	redirect := ValidateDenyRedirect(spConfig.EntitlementDenyRedirect)
@@ -2829,18 +2607,6 @@ func (s *SAMLDisco) renderDiscoveryHTMLForSP(w http.ResponseWriter, r *http.Requ
 		AltLogins:       altLogins,
 		ServiceName:     spConfig.ServiceName,
 	})
-}
-
-// getRememberIdPCookieForSP reads the remembered IdP entity ID from the cookie for a specific SP config.
-func (s *SAMLDisco) getRememberIdPCookieForSP(r *http.Request, spConfig *SPConfig) string {
-	if spConfig.RememberIdPCookieName == "" {
-		return ""
-	}
-	cookie, err := r.Cookie(spConfig.RememberIdPCookieName)
-	if err != nil || cookie.Value == "" {
-		return ""
-	}
-	return cookie.Value
 }
 
 // separatePinnedIdPsForSP separates pinned IdPs from the main list for a specific SP config.
