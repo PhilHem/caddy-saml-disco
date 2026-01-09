@@ -625,20 +625,29 @@ func (s *SAMLDisco) redirectToIdP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if required services are configured
+	// Check if metadata store is configured
 	if s.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return
 	}
-	if s.samlService == nil {
-		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
-		return
-	}
 
-	// Get single IdP from metadata store (Phase 1: only one IdP)
+	// Get IdPs from metadata store
 	idps, err := s.metadataStore.ListIdPs("")
 	if err != nil || len(idps) == 0 {
 		s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
+		return
+	}
+
+	// Multiple IdPs - redirect to discovery page for user selection
+	if len(idps) > 1 {
+		redirectURL := "/saml/disco?return_url=" + url.QueryEscape(r.URL.RequestURI())
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+		return
+	}
+
+	// Single IdP - check SAML service and redirect directly
+	if s.samlService == nil {
+		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return
 	}
 	idp := &idps[0]
@@ -2547,20 +2556,29 @@ func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	// Check if required services are configured
+	// Check if metadata store is configured
 	if spConfig.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return
 	}
-	if spConfig.samlService == nil {
-		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
-		return
-	}
 
-	// Get single IdP from metadata store
+	// Get IdPs from metadata store
 	idps, err := spConfig.metadataStore.ListIdPs("")
 	if err != nil || len(idps) == 0 {
 		s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
+		return
+	}
+
+	// Multiple IdPs - redirect to discovery page for user selection
+	if len(idps) > 1 {
+		redirectURL := "/saml/disco?return_url=" + url.QueryEscape(r.URL.RequestURI())
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+		return
+	}
+
+	// Single IdP - check SAML service and redirect directly
+	if spConfig.samlService == nil {
+		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return
 	}
 	idp := &idps[0]

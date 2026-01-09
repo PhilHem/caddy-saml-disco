@@ -2558,6 +2558,150 @@ func TestServeHTTP_NoLoginRedirect_SingleIdP_DirectRedirect(t *testing.T) {
 	}
 }
 
+// TestServeHTTP_NoSession_MultipleIdPs_RedirectsToDiscovery verifies that when
+// multiple IdPs are configured, unauthenticated requests redirect to /saml/disco
+// instead of directly to an IdP.
+func TestServeHTTP_NoSession_MultipleIdPs_RedirectsToDiscovery(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	// Multiple IdPs configured
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{
+				EntityID:    "https://idp1.example.com/saml",
+				DisplayName: "IdP One",
+				SSOURL:      "https://idp1.example.com/saml/sso",
+			},
+			{
+				EntityID:    "https://idp2.example.com/saml",
+				DisplayName: "IdP Two",
+				SSOURL:      "https://idp2.example.com/saml/sso",
+			},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:          "https://sp.example.com",
+			SessionCookieName: "saml_session",
+			// LoginRedirect is NOT set - should use discovery page
+		},
+	}
+	s.SetSessionStore(store)
+	s.SetMetadataStore(metadataStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/protected/resource", nil)
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+
+	location := rec.Header().Get("Location")
+	// Should redirect to discovery page, not directly to IdP
+	if !strings.HasPrefix(location, "/saml/disco") {
+		t.Errorf("Location = %q, should redirect to /saml/disco", location)
+	}
+
+	// Should contain return_url with original path
+	redirectURL, _ := url.Parse(location)
+	returnURL := redirectURL.Query().Get("return_url")
+	if returnURL != "/protected/resource" {
+		t.Errorf("return_url = %q, want %q", returnURL, "/protected/resource")
+	}
+}
+
+// TestServeHTTP_NoSession_MultipleIdPs_WithQueryString_PreservesReturnURL verifies
+// that the full request URI (including query string) is preserved in return_url.
+func TestServeHTTP_NoSession_MultipleIdPs_WithQueryString_PreservesReturnURL(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp1.example.com/saml", SSOURL: "https://idp1.example.com/sso"},
+			{EntityID: "https://idp2.example.com/saml", SSOURL: "https://idp2.example.com/sso"},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:          "https://sp.example.com",
+			SessionCookieName: "saml_session",
+		},
+	}
+	s.SetSessionStore(store)
+	s.SetMetadataStore(metadataStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/protected?foo=bar&baz=qux", nil)
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	location := rec.Header().Get("Location")
+	redirectURL, _ := url.Parse(location)
+	returnURL := redirectURL.Query().Get("return_url")
+	if returnURL != "/protected?foo=bar&baz=qux" {
+		t.Errorf("return_url = %q, want %q", returnURL, "/protected?foo=bar&baz=qux")
+	}
+}
+
+// TestServeHTTP_NoSession_MultipleIdPs_LoginRedirectTakesPrecedence verifies that
+// when LoginRedirect is configured, it takes precedence over discovery redirect.
+func TestServeHTTP_NoSession_MultipleIdPs_LoginRedirectTakesPrecedence(t *testing.T) {
+	key := loadTestKey(t)
+	store := NewCookieSessionStore(key, 8*time.Hour)
+
+	metadataStore := &mockMetadataStore{
+		idps: []IdPInfo{
+			{EntityID: "https://idp1.example.com/saml", SSOURL: "https://idp1.example.com/sso"},
+			{EntityID: "https://idp2.example.com/saml", SSOURL: "https://idp2.example.com/sso"},
+		},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:          "https://sp.example.com",
+			SessionCookieName: "saml_session",
+			LoginRedirect:     "/custom-login",
+		},
+	}
+	s.SetSessionStore(store)
+	s.SetMetadataStore(metadataStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Host = "sp.example.com"
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	location := rec.Header().Get("Location")
+	// LoginRedirect should take precedence
+	if !strings.HasPrefix(location, "/custom-login") {
+		t.Errorf("Location = %q, should start with /custom-login", location)
+	}
+}
+
 // TestDiscoveryUI_PreservesReturnURL verifies that return_url is preserved
 // when showing the discovery page.
 func TestDiscoveryUI_PreservesReturnURL(t *testing.T) {
