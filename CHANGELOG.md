@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-01-09
+
+### Fixed
+- **ACS Issuer validation**: ACS handler now validates SAML response against the Issuer IdP instead of always using the first IdP in the metadata store. This fixes multi-IdP scenarios where responses from non-first IdPs would fail validation.
+
+### Changed
+- **Plugin code organization**: Refactored `plugin.go` god file (2787→1659 lines) by extracting:
+  - `rendering.go` - HTML/JSON response rendering
+  - `headers.go` - SAML attribute to HTTP header mapping
+  - `handlers_sp.go` - Multi-SP endpoint handlers
+  - `cookies.go` - Session cookie management
+  - `urls.go` - SAML callback URL resolution
+
 ## [0.16.0] - 2026-01-09
 
 ### Added
