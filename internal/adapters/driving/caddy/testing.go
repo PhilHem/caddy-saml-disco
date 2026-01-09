@@ -8,6 +8,15 @@ import (
 
 // NewSAMLDiscoForTest creates a SAMLDisco instance with injected dependencies.
 // This constructor is intended for testing purposes only.
+//
+// Deprecated: Use NewSAMLDisco with functional options instead:
+//
+//	s := NewSAMLDisco(
+//	    WithConfig(config),
+//	    WithSessionStore(sessionStore),
+//	    WithSAMLService(samlService),
+//	    WithMetadataStore(metadataStore),
+//	)
 func NewSAMLDiscoForTest(
 	config Config,
 	sessionStore ports.SessionStore,
@@ -21,15 +30,13 @@ func NewSAMLDiscoForTest(
 		panic("failed to load embedded templates: " + err.Error())
 	}
 
-	s := &SAMLDisco{
-		Config: config,
-	}
-	s.SetSessionStore(sessionStore)
-	s.SetSAMLService(samlService)
-	s.SetMetadataStore(metadataStore)
-	s.SetTemplateRenderer(renderer)
-
-	return s
+	return NewSAMLDisco(
+		WithConfig(config),
+		WithSessionStore(sessionStore),
+		WithSAMLService(samlService),
+		WithMetadataStore(metadataStore),
+		WithTemplateRenderer(renderer),
+	)
 }
 
 // SetLogger sets the logger for testing purposes.

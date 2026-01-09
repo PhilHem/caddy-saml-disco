@@ -15,11 +15,11 @@ func TestSeparatePinnedIdPs(t *testing.T) {
 	}
 
 	tests := []struct {
-		name              string
-		pinnedEntityIDs   []string
-		wantPinnedCount   int
+		name               string
+		pinnedEntityIDs    []string
+		wantPinnedCount    int
 		wantRemainingCount int
-		wantPinnedOrder   []string
+		wantPinnedOrder    []string
 	}{
 		{
 			name:               "no pinned",

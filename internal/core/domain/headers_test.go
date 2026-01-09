@@ -20,9 +20,9 @@ func TestASCIIToLower(t *testing.T) {
 		{"123", "123"},
 		{"A-B-C", "a-b-c"},
 		// Non-ASCII unchanged
-		{"Über", "Über"},          // Ü stays uppercase (non-ASCII)
-		{"NAÏVE", "naÏve"},        // Ï stays uppercase (non-ASCII)
-		{"日本語", "日本語"},        // Japanese unchanged
+		{"Über", "Über"},   // Ü stays uppercase (non-ASCII)
+		{"NAÏVE", "naÏve"}, // Ï stays uppercase (non-ASCII)
+		{"日本語", "日本語"},     // Japanese unchanged
 	}
 
 	for _, tc := range tests {
