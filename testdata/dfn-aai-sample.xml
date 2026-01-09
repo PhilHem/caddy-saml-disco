@@ -21,7 +21,7 @@
                        xmlns:remd="http://refeds.org/metadata"
                        ID="_dfn-aai-sample"
                        Name="https://www.aai.dfn.de"
-                       validUntil="2025-12-31T23:59:59Z">
+                       validUntil="2030-12-31T23:59:59Z">
 
     <!-- XML Signature (simplified - real metadata has full signature) -->
     <ds:Signature>

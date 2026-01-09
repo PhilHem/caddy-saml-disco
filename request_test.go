@@ -369,7 +369,7 @@ func TestInMemoryRequestStore_Property_Expiry(t *testing.T) {
 // Cycle 11: Property-Based Test - Replay Attack Prevention
 // Property: After Valid() returns true, subsequent calls return false (replay prevention)
 func TestInMemoryRequestStore_Property_ReplayPrevention(t *testing.T) {
-	f := func(requestID string, expiryOffset int64, waitOffset int64) bool {
+	f := func(requestID string, expiryOffset int64) bool {
 		if requestID == "" {
 			return true
 		}
@@ -379,12 +379,8 @@ func TestInMemoryRequestStore_Property_ReplayPrevention(t *testing.T) {
 
 		store.Store(requestID, expiry)
 
-		// Simulate waiting (for time-based tests)
-		if waitOffset > 0 {
-			time.Sleep(time.Duration(waitOffset) * time.Millisecond)
-		}
-
 		// Use helper to check invariant
+		// Note: We don't need time.Sleep - replay prevention works synchronously
 		return checkReplayPreventionInvariant(store, requestID)
 	}
 

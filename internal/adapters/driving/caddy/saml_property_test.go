@@ -222,6 +222,14 @@ func decryptAssertion(encryptedData []byte, spKey *rsa.PrivateKey) (*saml.Assert
 // - SessionIndex is preserved
 // - Multi-valued attributes are handled correctly
 func TestAssertionDecryption_Property_RoundTrip(t *testing.T) {
+	// Generate SP keys ONCE outside the property function to avoid timeout.
+	// RSA key generation is slow; we only need one key to test the property.
+	spKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	spCert := generateTestCert(spKey)
+
 	f := func(subject string, attrCount int) bool {
 		// Skip empty subjects
 		if subject == "" {
@@ -232,13 +240,6 @@ func TestAssertionDecryption_Property_RoundTrip(t *testing.T) {
 		if attrCount < 0 || attrCount > 10 {
 			return true
 		}
-
-		// Generate SP keys
-		spKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
-		if err != nil {
-			return false
-		}
-		spCert := generateTestCert(spKey)
 
 		// Create assertion with attributes
 		attributes := make(map[string]string)
@@ -332,15 +333,17 @@ func TestAssertionDecryption_Property_WrongKeyFails(t *testing.T) {
 // This property ensures robust error handling: malformed data should return
 // errors, not panic or succeed silently.
 func TestAssertionDecryption_Property_MalformedDataFails(t *testing.T) {
+	// Generate key ONCE outside the property function to avoid timeout.
+	// RSA key generation is slow; we only need one key to test the property.
+	spKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+
 	f := func(malformedData []byte) bool {
 		// Skip empty data
 		if len(malformedData) == 0 {
 			return true
-		}
-
-		spKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
-		if err != nil {
-			return false
 		}
 
 		// Try to decrypt malformed data
@@ -386,18 +389,19 @@ func TestAssertionDecryption_Property_MalformedDataFails(t *testing.T) {
 // This property ensures that no attributes are lost during the encryption
 // and decryption process, including multi-valued attributes.
 func TestAssertionDecryption_Property_AttributePreservation(t *testing.T) {
+	// Generate SP keys ONCE outside the property function to avoid timeout.
+	// RSA key generation is slow; we only need one key to test the property.
+	spKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	spCert := generateTestCert(spKey)
+
 	f := func(attrName, attrValue string) bool {
 		// Skip empty attributes
 		if attrName == "" || attrValue == "" {
 			return true
 		}
-
-		// Generate SP keys
-		spKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
-		if err != nil {
-			return false
-		}
-		spCert := generateTestCert(spKey)
 
 		// Create assertion with single attribute
 		attributes := map[string]string{attrName: attrValue}
@@ -438,3 +442,4 @@ func TestAssertionDecryption_Property_AttributePreservation(t *testing.T) {
 		t.Error(err)
 	}
 }
+

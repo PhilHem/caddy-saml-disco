@@ -4331,3 +4331,140 @@ func TestURLMetadataStore_Concurrency_RefreshInProgress(t *testing.T) {
 		t.Errorf("expected at most 2 requests (initial + 1 refresh), got %d (suggests missing synchronization)", finalCount)
 	}
 }
+
+// Tests for ExtractEntityIDs helper function
+
+func TestExtractEntityIDs_Empty(t *testing.T) {
+	result := ExtractEntityIDs(nil)
+	if result != nil {
+		t.Errorf("ExtractEntityIDs(nil) = %v, want nil", result)
+	}
+
+	result = ExtractEntityIDs([]IdPInfo{})
+	if result != nil {
+		t.Errorf("ExtractEntityIDs([]) = %v, want nil", result)
+	}
+}
+
+func TestExtractEntityIDs_Single(t *testing.T) {
+	idps := []IdPInfo{
+		{EntityID: "https://idp.example.org/saml"},
+	}
+	result := ExtractEntityIDs(idps)
+	if len(result) != 1 {
+		t.Fatalf("ExtractEntityIDs returned %d items, want 1", len(result))
+	}
+	if result[0] != "https://idp.example.org/saml" {
+		t.Errorf("ExtractEntityIDs()[0] = %q, want %q", result[0], "https://idp.example.org/saml")
+	}
+}
+
+func TestExtractEntityIDs_Multiple(t *testing.T) {
+	idps := []IdPInfo{
+		{EntityID: "https://idp1.example.org"},
+		{EntityID: "https://idp2.example.org"},
+		{EntityID: "https://idp3.example.org"},
+	}
+	result := ExtractEntityIDs(idps)
+	if len(result) != 3 {
+		t.Fatalf("ExtractEntityIDs returned %d items, want 3", len(result))
+	}
+	expected := []string{
+		"https://idp1.example.org",
+		"https://idp2.example.org",
+		"https://idp3.example.org",
+	}
+	for i, want := range expected {
+		if result[i] != want {
+			t.Errorf("ExtractEntityIDs()[%d] = %q, want %q", i, result[i], want)
+		}
+	}
+}
+
+func TestExtractEntityIDs_PreservesOrder(t *testing.T) {
+	// Create IdPs in reverse alphabetical order to verify no sorting happens
+	idps := []IdPInfo{
+		{EntityID: "https://z.example.org"},
+		{EntityID: "https://a.example.org"},
+		{EntityID: "https://m.example.org"},
+	}
+	result := ExtractEntityIDs(idps)
+	if len(result) != 3 {
+		t.Fatalf("ExtractEntityIDs returned %d items, want 3", len(result))
+	}
+	// Order must match input order exactly
+	if result[0] != "https://z.example.org" {
+		t.Errorf("ExtractEntityIDs()[0] = %q, want https://z.example.org", result[0])
+	}
+	if result[1] != "https://a.example.org" {
+		t.Errorf("ExtractEntityIDs()[1] = %q, want https://a.example.org", result[1])
+	}
+	if result[2] != "https://m.example.org" {
+		t.Errorf("ExtractEntityIDs()[2] = %q, want https://m.example.org", result[2])
+	}
+}
+
+// Tests for FormatEntityIDList helper function
+
+func TestFormatEntityIDList_Empty(t *testing.T) {
+	result := FormatEntityIDList(nil)
+	if result != "(none)" {
+		t.Errorf("FormatEntityIDList(nil) = %q, want \"(none)\"", result)
+	}
+
+	result = FormatEntityIDList([]string{})
+	if result != "(none)" {
+		t.Errorf("FormatEntityIDList([]) = %q, want \"(none)\"", result)
+	}
+}
+
+func TestFormatEntityIDList_Single(t *testing.T) {
+	result := FormatEntityIDList([]string{"https://idp.example.org"})
+	expected := "1 IdPs: [https://idp.example.org]"
+	if result != expected {
+		t.Errorf("FormatEntityIDList = %q, want %q", result, expected)
+	}
+}
+
+func TestFormatEntityIDList_Multiple(t *testing.T) {
+	ids := []string{
+		"https://idp1.example.org",
+		"https://idp2.example.org",
+		"https://idp3.example.org",
+	}
+	result := FormatEntityIDList(ids)
+	expected := "3 IdPs: [https://idp1.example.org, https://idp2.example.org, https://idp3.example.org]"
+	if result != expected {
+		t.Errorf("FormatEntityIDList = %q, want %q", result, expected)
+	}
+}
+
+// Property-based test for ExtractEntityIDs
+func TestExtractEntityIDs_Property_LengthPreserved(t *testing.T) {
+	// Test with various sizes
+	for _, n := range []int{0, 1, 5, 10, 100} {
+		idps := make([]IdPInfo, n)
+		for i := 0; i < n; i++ {
+			idps[i] = IdPInfo{EntityID: fmt.Sprintf("https://idp%d.example.org", i)}
+		}
+		result := ExtractEntityIDs(idps)
+
+		// Property: length of result equals length of input (or both are nil for empty)
+		if n == 0 {
+			if result != nil {
+				t.Errorf("n=%d: ExtractEntityIDs returned non-nil for empty input", n)
+			}
+		} else {
+			if len(result) != n {
+				t.Errorf("n=%d: len(ExtractEntityIDs) = %d, want %d", n, len(result), n)
+			}
+		}
+
+		// Property: all IDs in result exist in input
+		for i, id := range result {
+			if id != idps[i].EntityID {
+				t.Errorf("n=%d, i=%d: result[%d] = %q, want %q", n, i, i, id, idps[i].EntityID)
+			}
+		}
+	}
+}

@@ -330,6 +330,30 @@ func MatchesSearch(idp *IdPInfo, query string) bool {
 	return false
 }
 
+// ExtractEntityIDs returns a slice of entity IDs from the given IdP list.
+// This is a pure function for extracting identifiers for logging/debugging.
+// Returns nil for empty input (Go convention for "no data").
+func ExtractEntityIDs(idps []IdPInfo) []string {
+	if len(idps) == 0 {
+		return nil
+	}
+	ids := make([]string, len(idps))
+	for i, idp := range idps {
+		ids[i] = idp.EntityID
+	}
+	return ids
+}
+
+// FormatEntityIDList formats a slice of entity IDs for human-readable logging.
+// Returns "(none)" for empty lists, otherwise comma-separated with count.
+// Example: "3 IdPs: [https://idp1.example.org, https://idp2.example.org, https://idp3.example.org]"
+func FormatEntityIDList(entityIDs []string) string {
+	if len(entityIDs) == 0 {
+		return "(none)"
+	}
+	return fmt.Sprintf("%d IdPs: [%s]", len(entityIDs), strings.Join(entityIDs, ", "))
+}
+
 // safeArea calculates the area of a logo, treating negative dimensions as zero.
 // Uses int64 to prevent integer overflow when multiplying Height × Width.
 func safeArea(height, width int) int64 {
@@ -434,3 +458,25 @@ func validateScopeRegex(scope, pattern string) (bool, error) {
 	// Match with anchored pattern (^...$)
 	return re.MatchString(scope), nil
 }
+
+// scopedAttributes is the set of attribute names that are scoped (have @scope format).
+// These attributes must have their scope validated against IdP metadata.
+var scopedAttributes = map[string]bool{
+	"eduPersonPrincipalName":           true,
+	"urn:oid:1.3.6.1.4.1.5923.1.1.1.6": true, // eduPersonPrincipalName OID
+	"eduPersonScopedAffiliation":       true,
+	"urn:oid:1.3.6.1.4.1.5923.1.1.1.9": true, // eduPersonScopedAffiliation OID
+}
+
+// IsScopedAttribute returns true if the attribute name is a scoped attribute.
+// Scoped attributes have values in the format "user@scope" and must be validated
+// against the IdP's allowed scopes from shibmd:Scope metadata.
+//
+// This is a pure function with no side effects or I/O.
+func IsScopedAttribute(name string) bool {
+	if name == "" {
+		return false
+	}
+	return scopedAttributes[name]
+}
+
