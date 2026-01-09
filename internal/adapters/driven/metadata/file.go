@@ -128,14 +128,17 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		return fmt.Errorf("parse metadata: %w", err)
 	}
 
+	// Capture original entity IDs before filtering (for error messages)
+	originalEntityIDs := domain.ExtractEntityIDs(idps)
+
 	// Apply all filters and collect failures
 	idps, filterFailures := s.applyFiltersAndCollectFailures(idps)
 	if len(filterFailures) > 0 {
 		if s.metricsRecorder != nil {
 			s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
 		}
-		// Build comprehensive error message with all failing filters
-		return fmt.Errorf("no IdPs match filters: %s", strings.Join(filterFailures, ", "))
+		// Build comprehensive error message with all failing filters and available IdPs
+		return fmt.Errorf("%s", domain.FormatFilterError(filterFailures, originalEntityIDs))
 	}
 
 	s.mu.Lock()
@@ -179,6 +182,8 @@ func ApplyFiltersAndCollectFailures(
 ) ([]domain.IdPInfo, []string) {
 	var failures []string
 	idpsBeforeFilter := len(idps)
+	// Capture original entity IDs for logging (before any filtering)
+	originalEntityIDs := domain.ExtractEntityIDs(idps)
 
 	// Apply IdP filter if configured
 	if idpFilter != "" {
@@ -221,11 +226,16 @@ func ApplyFiltersAndCollectFailures(
 	}
 
 	// Emit structured warning log if there are filter failures
-	// NOTE: Enhanced logging with available_entity_ids will be added in a future task
 	if len(failures) > 0 && logger != nil {
+		// Truncate entity IDs to max 10 for structured logging
+		logEntityIDs := originalEntityIDs
+		if len(logEntityIDs) > 10 {
+			logEntityIDs = logEntityIDs[:10]
+		}
 		logger.Warn("idp filter matched no IdPs",
 			zap.Int("idps_before_filter", idpsBeforeFilter),
 			zap.Int("filter_failures", len(failures)),
+			zap.Strings("available_entity_ids", logEntityIDs),
 		)
 	}
 

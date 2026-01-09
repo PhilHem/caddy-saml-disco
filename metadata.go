@@ -37,6 +37,7 @@ var (
 	IsScopedAttribute      = domain.IsScopedAttribute
 	ExtractEntityIDs       = domain.ExtractEntityIDs
 	FormatEntityIDList     = domain.FormatEntityIDList
+	FormatFilterError      = domain.FormatFilterError
 )
 
 // Re-export MetadataStore interface from ports

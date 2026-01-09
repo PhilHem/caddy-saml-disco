@@ -509,6 +509,9 @@ func structuredLoggingIsEnabled(ctx context.Context) (context.Context, error) {
 func metadataIsLoaded(ctx context.Context) (context.Context, error) {
 	tc := ctx.Value(ctxKey{}).(*testContext)
 
+	// Capture original entity IDs before filtering (mirrors FileMetadataStore.Refresh behavior)
+	originalEntityIDs := domain.ExtractEntityIDs(tc.idps)
+
 	// Apply filter using the metadata package's exported function
 	// This simulates what happens during FileMetadataStore.Refresh()
 	filtered, filterFailures := metadata.ApplyFiltersAndCollectFailures(
@@ -520,9 +523,10 @@ func metadataIsLoaded(ctx context.Context) (context.Context, error) {
 		tc.logger, // Pass logger for structured logging
 	)
 
-	// If filter failures occurred, build the error
+	// If filter failures occurred, build the error using FormatFilterError
+	// (mirrors FileMetadataStore.Refresh behavior)
 	if len(filterFailures) > 0 {
-		tc.loadError = fmt.Errorf("no IdPs match filters: %s", strings.Join(filterFailures, ", "))
+		tc.loadError = fmt.Errorf("%s", domain.FormatFilterError(filterFailures, originalEntityIDs))
 	} else if len(filtered) == 0 {
 		tc.loadError = errors.New("no IdPs found in metadata")
 	}

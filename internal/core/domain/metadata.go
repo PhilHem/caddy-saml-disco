@@ -354,6 +354,23 @@ func FormatEntityIDList(entityIDs []string) string {
 	return fmt.Sprintf("%d IdPs: [%s]", len(entityIDs), strings.Join(entityIDs, ", "))
 }
 
+// FormatFilterError builds a comprehensive error message for filter failures.
+// Includes available IdPs with truncation (first 5, then "and X more").
+// Example: "no IdPs match filters: filter pattern \"*foo*\"; available: https://a.example.org, https://b.example.org and 3 more"
+func FormatFilterError(filterFailures []string, availableEntityIDs []string) string {
+	base := fmt.Sprintf("no IdPs match filters: %s", strings.Join(filterFailures, ", "))
+	if len(availableEntityIDs) == 0 {
+		return base + "; available: (none)"
+	}
+	const maxShow = 5
+	if len(availableEntityIDs) <= maxShow {
+		return fmt.Sprintf("%s; available: %s", base, strings.Join(availableEntityIDs, ", "))
+	}
+	shown := strings.Join(availableEntityIDs[:maxShow], ", ")
+	remaining := len(availableEntityIDs) - maxShow
+	return fmt.Sprintf("%s; available: %s and %d more", base, shown, remaining)
+}
+
 // safeArea calculates the area of a logo, treating negative dimensions as zero.
 // Uses int64 to prevent integer overflow when multiplying Height × Width.
 func safeArea(height, width int) int64 {

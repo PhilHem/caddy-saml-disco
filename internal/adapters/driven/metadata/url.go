@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -336,10 +335,14 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		return refreshErr
 	}
 
+	// Capture original entity IDs before filtering (for error messages)
+	originalEntityIDs := domain.ExtractEntityIDs(idps)
+
 	// Apply all filters and collect failures
 	idps, filterFailures := s.applyFiltersAndCollectFailures(idps)
 	if len(filterFailures) > 0 {
-		refreshErr := fmt.Errorf("no IdPs match filters: %s", strings.Join(filterFailures, ", "))
+		// Build comprehensive error message with all failing filters and available IdPs
+		refreshErr := fmt.Errorf("%s", domain.FormatFilterError(filterFailures, originalEntityIDs))
 		s.markRefreshFailed(refreshErr)
 		return refreshErr
 	}
