@@ -215,8 +215,8 @@ type EntitlementHeaderMapping struct {
 
 // Validate checks if the configuration is valid.
 func (c *Config) Validate() error {
-	if c.EntityID == "" {
-		return fmt.Errorf("entity_id is required")
+	if err := domain.ValidateEntityID(c.EntityID); err != nil {
+		return err
 	}
 
 	if c.MetadataURL == "" && c.MetadataFile == "" {

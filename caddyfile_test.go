@@ -520,3 +520,71 @@ func TestCaddyfile_HeaderPrefix_Default(t *testing.T) {
 		t.Errorf("HeaderPrefix = %q, want empty string", s.HeaderPrefix)
 	}
 }
+
+func TestCaddyfile_RememberIdPCookieName(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		remember_idp_cookie_name my_remember_idp
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if s.RememberIdPCookieName != "my_remember_idp" {
+		t.Errorf("RememberIdPCookieName = %q, want %q", s.RememberIdPCookieName, "my_remember_idp")
+	}
+}
+
+func TestCaddyfile_RememberIdPCookieName_RequiresArg(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		remember_idp_cookie_name
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Error("UnmarshalCaddyfile should error on remember_idp_cookie_name without argument")
+	}
+}
+
+func TestCaddyfile_RememberIdPDuration(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		remember_idp_duration 60d
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if s.RememberIdPDuration != "60d" {
+		t.Errorf("RememberIdPDuration = %q, want %q", s.RememberIdPDuration, "60d")
+	}
+}
+
+func TestCaddyfile_RememberIdPDuration_RequiresArg(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		remember_idp_duration
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Error("UnmarshalCaddyfile should error on remember_idp_duration without argument")
+	}
+}

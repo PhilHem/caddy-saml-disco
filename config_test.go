@@ -168,7 +168,7 @@ func TestConfig_CORSValidation(t *testing.T) {
 
 func TestConfig_Validate_HeaderPrefixMustStartWithX(t *testing.T) {
 	c := &Config{
-		EntityID:     "test",
+		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "Saml-", // Missing X-
 		AttributeHeaders: []AttributeMapping{
@@ -183,7 +183,7 @@ func TestConfig_Validate_HeaderPrefixMustStartWithX(t *testing.T) {
 
 func TestConfig_Validate_HeaderPrefixAllowsSimpleNames(t *testing.T) {
 	c := &Config{
-		EntityID:     "test",
+		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "X-Saml-",
 		AttributeHeaders: []AttributeMapping{
@@ -198,7 +198,7 @@ func TestConfig_Validate_HeaderPrefixAllowsSimpleNames(t *testing.T) {
 
 func TestConfig_Validate_HeaderPrefixValidatesFinalName(t *testing.T) {
 	c := &Config{
-		EntityID:     "test",
+		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "X-Saml-",
 		AttributeHeaders: []AttributeMapping{
@@ -214,7 +214,7 @@ func TestConfig_Validate_HeaderPrefixValidatesFinalName(t *testing.T) {
 func TestConfig_Validate_HeaderPrefixEmpty_RequiresXPrefix(t *testing.T) {
 	// Without prefix, headers must start with X-
 	c := &Config{
-		EntityID:     "test",
+		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "", // Empty prefix
 		AttributeHeaders: []AttributeMapping{

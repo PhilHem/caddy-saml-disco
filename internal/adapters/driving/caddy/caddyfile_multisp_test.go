@@ -84,3 +84,87 @@ func TestCaddyfile_MultiSP_BackwardCompatibility(t *testing.T) {
 		t.Errorf("EntityID = %q, want https://sp.example.com/saml", s.EntityID)
 	}
 }
+
+func TestCaddyfile_MultiSP_RememberIdP(t *testing.T) {
+	input := `saml_disco {
+		sp app.example.com {
+			entity_id https://app/saml
+			metadata_file /path/to/metadata.xml
+			remember_idp_cookie_name app_remember
+			remember_idp_duration 90d
+		}
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if len(s.SPConfigs) != 1 {
+		t.Fatalf("SPConfigs length = %d, want 1", len(s.SPConfigs))
+	}
+
+	if s.SPConfigs[0].RememberIdPCookieName != "app_remember" {
+		t.Errorf("SPConfigs[0].RememberIdPCookieName = %q, want app_remember", s.SPConfigs[0].RememberIdPCookieName)
+	}
+
+	if s.SPConfigs[0].RememberIdPDuration != "90d" {
+		t.Errorf("SPConfigs[0].RememberIdPDuration = %q, want 90d", s.SPConfigs[0].RememberIdPDuration)
+	}
+}
+
+func TestCaddyfile_MultiSP_Entitlements(t *testing.T) {
+	input := `saml_disco {
+		sp app.example.com {
+			entity_id https://app/saml
+			metadata_file /path/to/metadata.xml
+			entitlements_file /path/to/entitlements.json
+			entitlements_refresh_interval 10m
+			require_entitlement admin
+			entitlement_deny_redirect /access-denied
+			entitlement_headers {
+				roles X-User-Roles
+				department X-User-Dept
+			}
+		}
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if len(s.SPConfigs) != 1 {
+		t.Fatalf("SPConfigs length = %d, want 1", len(s.SPConfigs))
+	}
+
+	sp := s.SPConfigs[0]
+
+	if sp.EntitlementsFile != "/path/to/entitlements.json" {
+		t.Errorf("EntitlementsFile = %q, want /path/to/entitlements.json", sp.EntitlementsFile)
+	}
+
+	if sp.EntitlementsRefreshInterval != "10m" {
+		t.Errorf("EntitlementsRefreshInterval = %q, want 10m", sp.EntitlementsRefreshInterval)
+	}
+
+	if sp.RequireEntitlement != "admin" {
+		t.Errorf("RequireEntitlement = %q, want admin", sp.RequireEntitlement)
+	}
+
+	if sp.EntitlementDenyRedirect != "/access-denied" {
+		t.Errorf("EntitlementDenyRedirect = %q, want /access-denied", sp.EntitlementDenyRedirect)
+	}
+
+	if len(sp.EntitlementHeaders) != 2 {
+		t.Fatalf("EntitlementHeaders length = %d, want 2", len(sp.EntitlementHeaders))
+	}
+
+	if sp.EntitlementHeaders[0].Field != "roles" || sp.EntitlementHeaders[0].HeaderName != "X-User-Roles" {
+		t.Errorf("EntitlementHeaders[0] = %+v, want roles->X-User-Roles", sp.EntitlementHeaders[0])
+	}
+}

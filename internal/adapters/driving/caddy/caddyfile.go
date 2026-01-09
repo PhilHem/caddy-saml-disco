@@ -121,6 +121,18 @@ func (s *SAMLDisco) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			s.SessionDuration = d.Val()
 
+		case "remember_idp_cookie_name":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.RememberIdPCookieName = d.Val()
+
+		case "remember_idp_duration":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			s.RememberIdPDuration = d.Val()
+
 		case "templates_dir":
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -420,6 +432,18 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 		}
 		spCfg.SessionDuration = d.Val()
 
+	case "remember_idp_cookie_name":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.RememberIdPCookieName = d.Val()
+
+	case "remember_idp_duration":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.RememberIdPDuration = d.Val()
+
 	case "templates_dir":
 		if !d.NextArg() {
 			return d.ArgErr()
@@ -591,6 +615,56 @@ func (s *SAMLDisco) parseSPConfigField(d *caddyfile.Dispenser, spCfg *SPConfig, 
 			return d.ArgErr()
 		}
 		spCfg.AuthnContextComparison = d.Val()
+
+	case "entitlements_file":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.EntitlementsFile = d.Val()
+
+	case "entitlements_refresh_interval":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.EntitlementsRefreshInterval = d.Val()
+
+	case "entitlement_headers":
+		// Parse the entitlement_headers block
+		for entNesting := d.Nesting(); d.NextBlock(entNesting); {
+			args := []string{d.Val()}
+			args = append(args, d.RemainingArgs()...)
+
+			if len(args) < 2 || len(args) > 3 {
+				return d.Errf("entitlement_headers: expected 2-3 arguments (field header_name [separator]), got %d", len(args))
+			}
+
+			mapping := EntitlementHeaderMapping{
+				Field:      args[0],
+				HeaderName: args[1],
+			}
+			if len(args) == 3 {
+				mapping.Separator = args[2]
+			}
+
+			// Validate header name at parse time
+			if !domain.IsValidHeaderName(mapping.HeaderName) {
+				return d.Errf("entitlement_headers: header name %q must start with X- and contain only A-Za-z0-9-", mapping.HeaderName)
+			}
+
+			spCfg.EntitlementHeaders = append(spCfg.EntitlementHeaders, mapping)
+		}
+
+	case "require_entitlement":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.RequireEntitlement = d.Val()
+
+	case "entitlement_deny_redirect":
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+		spCfg.EntitlementDenyRedirect = d.Val()
 
 	default:
 		return d.Errf("unrecognized subdirective in sp block: %s", d.Val())
