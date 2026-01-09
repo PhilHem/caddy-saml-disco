@@ -1102,7 +1102,8 @@ func TestURLMetadataStore_UserAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	store := NewURLMetadataStore(server.URL, time.Hour)
+	// Pass version option to set User-Agent header
+	store := NewURLMetadataStore(server.URL, time.Hour, WithVersion(Version))
 	if err := store.Load(); err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
@@ -2900,7 +2901,7 @@ func TestURLMetadataStore_Load_ExpiredMetadata_Logs(t *testing.T) {
 // =============================================================================
 
 func TestURLMetadataStore_Health_ReturnsValidUntil(t *testing.T) {
-	// Use dfn-aai-sample.xml which has validUntil="2025-12-31T23:59:59Z"
+	// Use dfn-aai-sample.xml which has validUntil="2030-12-31T23:59:59Z"
 	metadata, err := os.ReadFile("testdata/dfn-aai-sample.xml")
 	if err != nil {
 		t.Fatalf("read test metadata: %v", err)
@@ -2922,7 +2923,7 @@ func TestURLMetadataStore_Health_ReturnsValidUntil(t *testing.T) {
 		t.Fatal("Health.MetadataValidUntil should be set for metadata with validUntil")
 	}
 
-	expected := time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)
+	expected := time.Date(2030, 12, 31, 23, 59, 59, 0, time.UTC)
 	if !health.MetadataValidUntil.Equal(expected) {
 		t.Errorf("MetadataValidUntil = %v, want %v", *health.MetadataValidUntil, expected)
 	}
@@ -2953,7 +2954,7 @@ func TestURLMetadataStore_Health_NoValidUntil(t *testing.T) {
 }
 
 func TestFileMetadataStore_Health_ReturnsValidUntil(t *testing.T) {
-	// Use dfn-aai-sample.xml which has validUntil="2025-12-31T23:59:59Z"
+	// Use dfn-aai-sample.xml which has validUntil="2030-12-31T23:59:59Z"
 	store := NewFileMetadataStore("testdata/dfn-aai-sample.xml")
 	if err := store.Load(); err != nil {
 		t.Fatalf("Load() failed: %v", err)
@@ -2965,7 +2966,7 @@ func TestFileMetadataStore_Health_ReturnsValidUntil(t *testing.T) {
 		t.Fatal("Health.MetadataValidUntil should be set for metadata with validUntil")
 	}
 
-	expected := time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)
+	expected := time.Date(2030, 12, 31, 23, 59, 59, 0, time.UTC)
 	if !health.MetadataValidUntil.Equal(expected) {
 		t.Errorf("MetadataValidUntil = %v, want %v", *health.MetadataValidUntil, expected)
 	}

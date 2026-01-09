@@ -74,8 +74,8 @@ func TestCaddyfile_ForceAuthn(t *testing.T) {
 func TestCaddyfile_AuthnContext(t *testing.T) {
 	input := `saml_disco {
 		entity_id https://sp.example.com
-		sp_key testdata/sp-key.pem
-		sp_cert testdata/sp-cert.pem
+		key_file testdata/sp-key.pem
+		cert_file testdata/sp-cert.pem
 		metadata_url https://idp.example.com/metadata
 		authn_context urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract
 		authn_context_comparison exact

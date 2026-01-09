@@ -61,6 +61,7 @@ var (
 	WithMetricsRecorder                    = metadata.WithMetricsRecorder
 	WithOnRefresh                          = metadata.WithOnRefresh
 	WithClock                              = metadata.WithClock
+	WithVersion                            = metadata.WithVersion
 	NewInMemoryMetadataStore               = metadata.NewInMemoryMetadataStore
 	NewInMemoryMetadataStoreWithValidUntil = metadata.NewInMemoryMetadataStoreWithValidUntil
 	NewFileMetadataStore                   = metadata.NewFileMetadataStore

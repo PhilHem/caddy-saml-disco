@@ -3,10 +3,7 @@
 package caddysamldisco
 
 import (
-	"compress/flate"
-	"encoding/base64"
 	"encoding/xml"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -463,36 +460,8 @@ func TestStartAuth_WithForceAuthn_SetsFlag(t *testing.T) {
 		t.Fatal("StartAuthWithOptions() returned nil URL")
 	}
 
-	// Decode SAMLRequest and verify ForceAuthn="true"
-	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
-	if samlReqEncoded == "" {
-		t.Fatal("redirect URL should contain SAMLRequest parameter")
-	}
-
-	// Decode: URL decode -> base64 decode -> inflate
-	samlReqDecoded, err := url.QueryUnescape(samlReqEncoded)
-	if err != nil {
-		t.Fatalf("URL decode SAMLRequest: %v", err)
-	}
-
-	samlReqBytes, err := base64.StdEncoding.DecodeString(samlReqDecoded)
-	if err != nil {
-		t.Fatalf("base64 decode SAMLRequest: %v", err)
-	}
-
-	// Inflate the deflated SAMLRequest
-	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
-	defer inflatedReader.Close()
-	inflatedBytes, err := io.ReadAll(inflatedReader)
-	if err != nil {
-		t.Fatalf("inflate SAMLRequest: %v", err)
-	}
-
-	// Parse XML and verify ForceAuthn attribute
-	var authnReq saml.AuthnRequest
-	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
-		t.Fatalf("parse AuthnRequest XML: %v", err)
-	}
+	// Use domain function for decoding and verify ForceAuthn
+	authnReq := decodeAuthnRequest(t, redirectURL)
 
 	if authnReq.ForceAuthn == nil || !*authnReq.ForceAuthn {
 		t.Error("ForceAuthn should be true in AuthnRequest")
@@ -514,22 +483,8 @@ func TestStartAuth_WithoutForceAuthn_NotSet(t *testing.T) {
 		t.Fatalf("StartAuthWithOptions() failed: %v", err)
 	}
 
-	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
-	if samlReqEncoded == "" {
-		t.Fatal("redirect URL should contain SAMLRequest parameter")
-	}
-
-	// Decode SAMLRequest
-	samlReqDecoded, _ := url.QueryUnescape(samlReqEncoded)
-	samlReqBytes, _ := base64.StdEncoding.DecodeString(samlReqDecoded)
-	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
-	defer inflatedReader.Close()
-	inflatedBytes, _ := io.ReadAll(inflatedReader)
-
-	var authnReq saml.AuthnRequest
-	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
-		t.Fatalf("parse AuthnRequest XML: %v", err)
-	}
+	// Use domain function for decoding and verify ForceAuthn is not set
+	authnReq := decodeAuthnRequest(t, redirectURL)
 
 	if authnReq.ForceAuthn != nil && *authnReq.ForceAuthn {
 		t.Error("ForceAuthn should be false or nil when not requested")
@@ -537,31 +492,28 @@ func TestStartAuth_WithoutForceAuthn_NotSet(t *testing.T) {
 }
 
 // decodeAuthnRequest is a helper function to decode a SAML AuthnRequest from a redirect URL.
+// Uses domain.DecodeSAMLRequest for consistent decoding logic.
 func decodeAuthnRequest(t *testing.T, redirectURL *url.URL) *saml.AuthnRequest {
 	t.Helper()
 
-	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
+	// Get the raw SAMLRequest value from the query string (before URL decoding)
+	// domain.DecodeSAMLRequest expects the URL-encoded value
+	rawQuery := redirectURL.RawQuery
+	var samlReqEncoded string
+	for _, part := range strings.Split(rawQuery, "&") {
+		if strings.HasPrefix(part, "SAMLRequest=") {
+			samlReqEncoded = strings.TrimPrefix(part, "SAMLRequest=")
+			break
+		}
+	}
 	if samlReqEncoded == "" {
 		t.Fatal("redirect URL should contain SAMLRequest parameter")
 	}
 
-	// Decode: URL decode -> base64 decode -> inflate
-	samlReqDecoded, err := url.QueryUnescape(samlReqEncoded)
+	// Use root package re-export for decoding (URL decode -> base64 decode -> inflate)
+	inflatedBytes, err := DecodeSAMLRequest(samlReqEncoded)
 	if err != nil {
-		t.Fatalf("URL decode SAMLRequest: %v", err)
-	}
-
-	samlReqBytes, err := base64.StdEncoding.DecodeString(samlReqDecoded)
-	if err != nil {
-		t.Fatalf("base64 decode SAMLRequest: %v", err)
-	}
-
-	// Inflate the deflated SAMLRequest
-	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
-	defer inflatedReader.Close()
-	inflatedBytes, err := io.ReadAll(inflatedReader)
-	if err != nil {
-		t.Fatalf("inflate SAMLRequest: %v", err)
+		t.Fatalf("decode SAMLRequest: %v", err)
 	}
 
 	// Parse XML

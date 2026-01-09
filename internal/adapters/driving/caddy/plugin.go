@@ -215,6 +215,9 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	// Pass metrics recorder to metadata store for refresh metrics
 	metadataOpts = append(metadataOpts, metadata.WithMetricsRecorder(s.getMetricsRecorder()))
 
+	// Pass version for User-Agent header
+	metadataOpts = append(metadataOpts, metadata.WithVersion(getVersion()))
+
 	// Initialize metadata store based on config
 	if s.MetadataFile != "" {
 		store := metadata.NewFileMetadataStore(s.MetadataFile, metadataOpts...)
@@ -388,6 +391,9 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 
 	// Pass metrics recorder to metadata store for refresh metrics
 	metadataOpts = append(metadataOpts, metadata.WithMetricsRecorder(s.getMetricsRecorder()))
+
+	// Pass version for User-Agent header
+	metadataOpts = append(metadataOpts, metadata.WithVersion(getVersion()))
 
 	// Initialize metadata store based on config
 	if spCfg.MetadataFile != "" {
@@ -2462,18 +2468,19 @@ func (s *SAMLDisco) handleSessionInfoForSP(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *SAMLDisco) handleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	health := HealthResponse{
-		Version:   getVersion(),
-		GitCommit: getGitCommit(),
-		BuildTime: getBuildTime(),
+	if spConfig.metadataStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("metadata store not configured"))
+		return nil
 	}
-
-	if spConfig.metadataStore != nil {
-		health.MetadataHealth = spConfig.metadataStore.Health()
+	health := spConfig.metadataStore.Health()
+	resp := HealthResponse{
+		Version:        getVersion(),
+		GitCommit:      getGitCommit(),
+		BuildTime:      getBuildTime(),
+		MetadataHealth: health,
 	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(health)
+	json.NewEncoder(w).Encode(resp)
 	return nil
 }
 

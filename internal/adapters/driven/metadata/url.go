@@ -29,6 +29,7 @@ type URLMetadataStore struct {
 	metricsRecorder              ports.MetricsRecorder
 	onRefresh                    func(error) // callback after background refresh (for testing)
 	clock                        Clock       // for time operations (defaults to RealClock)
+	version                      string      // version for User-Agent header
 
 	mu              sync.RWMutex
 	idps            []domain.IdPInfo
@@ -75,6 +76,7 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		metricsRecorder:              options.metricsRecorder,
 		onRefresh:                    options.onRefresh,
 		clock:                        clock,
+		version:                      options.version,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -268,8 +270,11 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	}
 
 	// Set User-Agent header for identification
-	// Version will be injected by the caller if needed
-	req.Header.Set("User-Agent", "caddy-saml-disco/unknown")
+	version := s.version
+	if version == "" {
+		version = "unknown"
+	}
+	req.Header.Set("User-Agent", "caddy-saml-disco/"+version)
 
 	// Add conditional request headers if we have cached values
 	if etag != "" {

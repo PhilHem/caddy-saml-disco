@@ -14,4 +14,5 @@ var (
 	NewSAMLService                 = caddy.NewSAMLService
 	NewSAMLServiceWithStore        = caddy.NewSAMLServiceWithStore
 	ValidateAuthnContextComparison = domain.ValidateAuthnContextComparison
+	DecodeSAMLRequest              = domain.DecodeSAMLRequest
 )

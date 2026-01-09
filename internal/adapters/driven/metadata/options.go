@@ -32,6 +32,7 @@ type metadataOptions struct {
 	metricsRecorder              ports.MetricsRecorder
 	onRefresh                    func(error)
 	clock                        Clock
+	version                      string
 }
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
@@ -110,5 +111,13 @@ func WithOnRefresh(fn func(error)) MetadataOption {
 func WithClock(clock Clock) MetadataOption {
 	return func(o *metadataOptions) {
 		o.clock = clock
+	}
+}
+
+// WithVersion returns an option that sets the version for User-Agent headers.
+// When set, HTTP requests will include "caddy-saml-disco/{version}" in User-Agent.
+func WithVersion(version string) MetadataOption {
+	return func(o *metadataOptions) {
+		o.version = version
 	}
 }
