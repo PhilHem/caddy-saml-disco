@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+- **Remember IdP cookie**: The `/saml/api/select` endpoint now only sets the remember-IdP cookie when `remember: true` is explicitly passed in the request body. Previously, the cookie was always set on IdP selection.
+
 ## [0.16.1] - 2026-01-09
 
 ### Fixed

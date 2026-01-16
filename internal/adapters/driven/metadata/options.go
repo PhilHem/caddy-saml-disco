@@ -122,3 +122,16 @@ func WithVersion(version string) MetadataOption {
 		o.version = version
 	}
 }
+
+// processMetadataOptions applies functional options and returns a configured metadataOptions.
+// Defaults clock to RealClock if not provided.
+func processMetadataOptions(opts []MetadataOption) *metadataOptions {
+	options := &metadataOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	if options.clock == nil {
+		options.clock = RealClock{}
+	}
+	return options
+}

@@ -9,7 +9,8 @@ import (
 // NewSAMLDiscoForTest creates a SAMLDisco instance with injected dependencies.
 // This constructor is intended for testing purposes only.
 //
-// Deprecated: Use NewSAMLDisco with functional options instead:
+// Deprecated: Use NewSAMLDisco with functional options instead.
+// This function will be removed in v0.18.
 //
 //	s := NewSAMLDisco(
 //	    WithConfig(config),

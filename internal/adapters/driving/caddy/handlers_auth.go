@@ -46,8 +46,15 @@ func (s *SAMLDisco) handleACSInternal(w http.ResponseWriter, r *http.Request, cf
 		return err
 	}
 
+	// Check for empty SAMLResponse
+	samlResponse := r.PostForm.Get("SAMLResponse")
+	if samlResponse == "" {
+		s.renderAppError(w, r, domain.BadRequestError("Invalid SAML response"))
+		return domain.BadRequestError("missing SAMLResponse parameter")
+	}
+
 	// Extract Issuer from SAML response to find the correct IdP
-	issuer, err := ExtractResponseIssuer(r.PostForm.Get("SAMLResponse"))
+	issuer, err := ExtractResponseIssuer(samlResponse)
 	if err != nil {
 		s.getLogger().Warn("failed to extract issuer from SAML response",
 			zap.Error(err),

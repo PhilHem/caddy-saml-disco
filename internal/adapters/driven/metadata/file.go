@@ -34,14 +34,7 @@ type FileMetadataStore struct {
 
 // NewFileMetadataStore creates a new FileMetadataStore.
 func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStore {
-	options := &metadataOptions{}
-	for _, opt := range opts {
-		opt(options)
-	}
-	clock := options.clock
-	if clock == nil {
-		clock = RealClock{}
-	}
+	options := processMetadataOptions(opts)
 	return &FileMetadataStore{
 		path:                         path,
 		idpFilter:                    options.idpFilter,
@@ -51,7 +44,7 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		signatureVerifier:            options.signatureVerifier,
 		logger:                       options.logger,
 		metricsRecorder:              options.metricsRecorder,
-		clock:                        clock,
+		clock:                        options.clock,
 	}
 }
 

@@ -56,14 +56,7 @@ type URLMetadataStore struct {
 // Passive refresh means metadata is only fetched when Refresh() is called
 // and the cache has expired (based on cacheTTL).
 func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOption) *URLMetadataStore {
-	options := &metadataOptions{}
-	for _, opt := range opts {
-		opt(options)
-	}
-	clock := options.clock
-	if clock == nil {
-		clock = RealClock{}
-	}
+	options := processMetadataOptions(opts)
 	return &URLMetadataStore{
 		url:                          url,
 		cacheTTL:                     cacheTTL,
@@ -75,7 +68,7 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 		logger:                       options.logger,
 		metricsRecorder:              options.metricsRecorder,
 		onRefresh:                    options.onRefresh,
-		clock:                        clock,
+		clock:                        options.clock,
 		version:                      options.version,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
