@@ -18,14 +18,34 @@ func filterEmptyStrings(ss []string) []string {
 }
 
 // filterIdPs returns only IdPs whose entity ID matches the pattern.
+// Supports comma-separated patterns (OR logic - IdP must match at least one).
 func filterIdPs(idps []domain.IdPInfo, pattern string) []domain.IdPInfo {
 	if pattern == "" {
 		return idps
 	}
+
+	// Parse comma-separated patterns
+	patterns := strings.Split(pattern, ",")
+	for i := range patterns {
+		patterns[i] = strings.TrimSpace(patterns[i])
+	}
+
+	// Filter out empty patterns
+	patterns = filterEmptyStrings(patterns)
+
+	// If all patterns were empty, return no matches
+	if len(patterns) == 0 {
+		return nil
+	}
+
 	var filtered []domain.IdPInfo
 	for _, idp := range idps {
-		if domain.MatchesEntityIDPattern(idp.EntityID, pattern) {
-			filtered = append(filtered, idp)
+		// Check if entity ID matches any pattern
+		for _, p := range patterns {
+			if domain.MatchesEntityIDPattern(idp.EntityID, p) {
+				filtered = append(filtered, idp)
+				break
+			}
 		}
 	}
 	return filtered

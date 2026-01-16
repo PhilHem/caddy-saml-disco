@@ -37,7 +37,8 @@ type metadataOptions struct {
 
 // WithIdPFilter returns an option that filters IdPs by entity ID pattern.
 // Only IdPs whose entity ID matches the pattern will be loaded.
-// Supports glob-like patterns: "*substring*", "prefix*", "*suffix".
+// Supports comma-separated patterns (e.g., "*university*,*college*") with OR logic.
+// Each pattern supports glob-like patterns: "*substring*", "prefix*", "*suffix".
 func WithIdPFilter(pattern string) MetadataOption {
 	return func(o *metadataOptions) {
 		o.idpFilter = pattern

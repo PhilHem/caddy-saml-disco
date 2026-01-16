@@ -478,6 +478,111 @@ func TestFilterIdPsByAssuranceCertification(t *testing.T) {
 	}
 }
 
+// TestFilterIdPs_CommaSeparated tests comma-separated pattern support in filterIdPs.
+// @tra: Adapter.Metadata.FilterCommaSeparated
+func TestFilterIdPs_CommaSeparated(t *testing.T) {
+	tests := []struct {
+		name     string
+		idps     []domain.IdPInfo
+		pattern  string
+		expected []string // EntityIDs of expected results
+	}{
+		{
+			name:    "comma-separated patterns with OR logic",
+			pattern: "*alpha*,*beta*",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+				{EntityID: "https://beta.example.com"},
+				{EntityID: "https://gamma.example.com"},
+			},
+			expected: []string{"https://alpha.example.com", "https://beta.example.com"},
+		},
+		{
+			name:    "whitespace trimmed around patterns",
+			pattern: " *alpha* , *beta* ",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+				{EntityID: "https://beta.example.com"},
+				{EntityID: "https://gamma.example.com"},
+			},
+			expected: []string{"https://alpha.example.com", "https://beta.example.com"},
+		},
+		{
+			name:    "empty patterns ignored",
+			pattern: "*alpha*,,*beta*",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+				{EntityID: "https://beta.example.com"},
+			},
+			expected: []string{"https://alpha.example.com", "https://beta.example.com"},
+		},
+		{
+			name:    "only empty patterns returns empty",
+			pattern: ", , ",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+				{EntityID: "https://beta.example.com"},
+			},
+			expected: []string{},
+		},
+		{
+			name:    "single pattern still works",
+			pattern: "*alpha*",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+				{EntityID: "https://beta.example.com"},
+			},
+			expected: []string{"https://alpha.example.com"},
+		},
+		{
+			name:    "trailing comma handled",
+			pattern: "*alpha*,",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+				{EntityID: "https://beta.example.com"},
+			},
+			expected: []string{"https://alpha.example.com"},
+		},
+		{
+			name:    "leading comma handled",
+			pattern: ",*alpha*",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+				{EntityID: "https://beta.example.com"},
+			},
+			expected: []string{"https://alpha.example.com"},
+		},
+		{
+			name:    "no duplicates in result when IdP matches multiple patterns",
+			pattern: "*example*,*alpha*",
+			idps: []domain.IdPInfo{
+				{EntityID: "https://alpha.example.com"},
+			},
+			expected: []string{"https://alpha.example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterIdPs(tt.idps, tt.pattern)
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d results, got %d", len(tt.expected), len(result))
+			}
+			for i, expected := range tt.expected {
+				if i >= len(result) || result[i].EntityID != expected {
+					t.Errorf("expected EntityID %q at index %d, got %q", expected, i,
+						func() string {
+							if i >= len(result) {
+								return "<missing>"
+							}
+							return result[i].EntityID
+						}())
+				}
+			}
+		})
+	}
+}
+
 // TestFilterIdPs_EdgeCases tests edge cases and boundary conditions across all filters.
 // @tra: Adapter.Metadata.FilterEdgeCases
 func TestFilterIdPs_EdgeCases(t *testing.T) {
