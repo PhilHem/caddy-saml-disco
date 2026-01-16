@@ -20,7 +20,7 @@ func TestSAMLDisco_MultiSP_Structure(t *testing.T) {
 				Config: Config{
 					EntityID:     "https://app1/saml",
 					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "testdata/sp-cert.pem",
+					CertFile:     "../../../../testdata/sp-cert.pem",
 					KeyFile:      "testdata/sp-key.pem",
 				},
 			},
@@ -45,7 +45,7 @@ func TestSAMLDisco_MultiSP_RegistrySetup(t *testing.T) {
 				Config: Config{
 					EntityID:     "https://app1/saml",
 					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "testdata/sp-cert.pem",
+					CertFile:     "../../../../testdata/sp-cert.pem",
 					KeyFile:      "testdata/sp-key.pem",
 				},
 			},
@@ -54,7 +54,7 @@ func TestSAMLDisco_MultiSP_RegistrySetup(t *testing.T) {
 				Config: Config{
 					EntityID:     "https://app2/saml",
 					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "testdata/sp-cert.pem",
+					CertFile:     "../../../../testdata/sp-cert.pem",
 					KeyFile:      "testdata/sp-key.pem",
 				},
 			},
@@ -92,7 +92,7 @@ func TestSAMLDisco_SingleSP_BackwardCompatibility(t *testing.T) {
 		Config: Config{
 			EntityID:     "https://sp.example.com/saml",
 			MetadataFile: "testdata/idp-metadata.xml",
-			CertFile:     "testdata/sp-cert.pem",
+			CertFile:     "../../../../testdata/sp-cert.pem",
 			KeyFile:      "testdata/sp-key.pem",
 		},
 		// SPConfigs is empty, so should use single-SP mode
@@ -114,7 +114,7 @@ func TestSAMLDisco_ServeHTTP_MultiSP_RoutesByHostname(t *testing.T) {
 				Config: Config{
 					EntityID:     "https://app1/saml",
 					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "testdata/sp-cert.pem",
+					CertFile:     "../../../../testdata/sp-cert.pem",
 					KeyFile:      "testdata/sp-key.pem",
 				},
 			},
@@ -123,7 +123,7 @@ func TestSAMLDisco_ServeHTTP_MultiSP_RoutesByHostname(t *testing.T) {
 				Config: Config{
 					EntityID:     "https://app2/saml",
 					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "testdata/sp-cert.pem",
+					CertFile:     "../../../../testdata/sp-cert.pem",
 					KeyFile:      "testdata/sp-key.pem",
 				},
 			},
@@ -162,7 +162,7 @@ func TestSAMLDisco_ServeHTTP_MultiSP_UnknownHostname(t *testing.T) {
 				Config: Config{
 					EntityID:     "https://app1/saml",
 					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "testdata/sp-cert.pem",
+					CertFile:     "../../../../testdata/sp-cert.pem",
 					KeyFile:      "testdata/sp-key.pem",
 				},
 			},

@@ -3,7 +3,6 @@
 package domain
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -57,79 +56,6 @@ func TestAppError_Unwrap_Nil(t *testing.T) {
 	}
 	if err.Unwrap() != nil {
 		t.Error("AppError.Unwrap() should return nil when no cause")
-	}
-}
-
-func TestErrorCode_HTTPStatus(t *testing.T) {
-	tests := []struct {
-		code   ErrorCode
-		status int
-	}{
-		{ErrCodeConfigMissing, 500},
-		{ErrCodeIdPNotFound, 404},
-		{ErrCodeAuthFailed, 401},
-		{ErrCodeSessionInvalid, 401},
-		{ErrCodeServiceError, 500},
-		{ErrCodeBadRequest, 400},
-	}
-	for _, tt := range tests {
-		if got := tt.code.HTTPStatus(); got != tt.status {
-			t.Errorf("%s.HTTPStatus() = %d, want %d", tt.code, got, tt.status)
-		}
-	}
-}
-
-func TestErrorCode_Title(t *testing.T) {
-	tests := []struct {
-		code  ErrorCode
-		title string
-	}{
-		{ErrCodeConfigMissing, "Configuration Error"},
-		{ErrCodeIdPNotFound, "Not Found"},
-		{ErrCodeAuthFailed, "Authentication Failed"},
-		{ErrCodeSessionInvalid, "Session Invalid"},
-		{ErrCodeServiceError, "Service Error"},
-		{ErrCodeBadRequest, "Invalid Request"},
-	}
-	for _, tt := range tests {
-		if got := tt.code.Title(); got != tt.title {
-			t.Errorf("%s.Title() = %q, want %q", tt.code, got, tt.title)
-		}
-	}
-}
-
-func TestJSONErrorResponse_Marshal(t *testing.T) {
-	resp := JSONErrorResponse{
-		Error: JSONErrorDetail{
-			Code:    "idp_not_found",
-			Message: "The requested identity provider was not found",
-		},
-	}
-
-	data, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("json.Marshal error: %v", err)
-	}
-
-	want := `{"error":{"code":"idp_not_found","message":"The requested identity provider was not found"}}`
-	if string(data) != want {
-		t.Errorf("json = %s, want %s", data, want)
-	}
-}
-
-func TestNewJSONErrorResponse(t *testing.T) {
-	appErr := &AppError{
-		Code:    ErrCodeIdPNotFound,
-		Message: "IdP xyz not found",
-	}
-
-	resp := NewJSONErrorResponse(appErr)
-
-	if resp.Error.Code != "idp_not_found" {
-		t.Errorf("Code = %q, want %q", resp.Error.Code, "idp_not_found")
-	}
-	if resp.Error.Message != "IdP xyz not found" {
-		t.Errorf("Message = %q, want %q", resp.Error.Message, "IdP xyz not found")
 	}
 }
 

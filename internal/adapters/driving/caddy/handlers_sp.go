@@ -12,16 +12,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// ForSP wrapper methods - these delegate to SP config-specific stores/services
+// Internal handlers - shared implementation for both single-SP and multi-SP modes
 
-func (s *SAMLDisco) handleMetadataForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.samlService == nil {
+func (s *SAMLDisco) handleMetadataInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.samlService == nil {
 		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return nil
 	}
 
-	acsURL := s.resolveAcsURLForSP(r, spConfig)
-	metadata, err := spConfig.samlService.GenerateSPMetadata(acsURL)
+	acsURL := s.resolveAcsURLForSP(r, cfg)
+	metadata, err := cfg.samlService.GenerateSPMetadata(acsURL)
 	if err != nil {
 		s.renderAppError(w, r, domain.ServiceError("Failed to generate metadata"))
 		return err
@@ -32,13 +32,13 @@ func (s *SAMLDisco) handleMetadataForSP(w http.ResponseWriter, r *http.Request, 
 	return nil
 }
 
-func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.samlService == nil {
+func (s *SAMLDisco) handleACSInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.samlService == nil {
 		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return nil
 	}
 
-	if spConfig.metadataStore == nil {
+	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return nil
 	}
@@ -61,7 +61,7 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 	}
 
 	// Look up IdP by Issuer entity ID
-	idp, err := spConfig.metadataStore.GetIdP(issuer)
+	idp, err := cfg.metadataStore.GetIdP(issuer)
 	if err != nil {
 		s.getLogger().Warn("unknown IdP issuer in SAML response",
 			zap.String("issuer", issuer),
@@ -72,9 +72,9 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 		return err
 	}
 
-	acsURL := s.resolveAcsURLForSP(r, spConfig)
+	acsURL := s.resolveAcsURLForSP(r, cfg)
 	start := time.Now()
-	result, err := spConfig.samlService.HandleACS(r, acsURL, idp)
+	result, err := cfg.samlService.HandleACS(r, acsURL, idp)
 	duration := time.Since(start)
 	if err != nil {
 		details := ParseSAMLError(err)
@@ -125,14 +125,14 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 		NameIDFormat: result.NameIDFormat,
 		SessionIndex: result.SessionIndex,
 		IssuedAt:     time.Now(),
-		ExpiresAt:    time.Now().Add(spConfig.sessionDuration),
+		ExpiresAt:    time.Now().Add(cfg.sessionDuration),
 	}
 
-	if spConfig.sessionStore == nil {
+	if cfg.sessionStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Session store is not configured"))
 		return nil
 	}
-	token, err := spConfig.sessionStore.Create(session)
+	token, err := cfg.sessionStore.Create(session)
 	if err != nil {
 		s.renderAppError(w, r, domain.ServiceError("Failed to create session"))
 		return err
@@ -140,15 +140,15 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 	s.getMetricsRecorder().RecordSessionCreated()
 
 	// Set session cookie
-	s.setSessionCookieForSP(w, r, spConfig, token)
+	s.setSessionCookieForSP(w, r, cfg, token)
 
 	// Check entitlements if configured
-	if spConfig.entitlementStore != nil {
-		entitlementResult, err := spConfig.entitlementStore.Lookup(session.Subject)
+	if cfg.entitlementStore != nil {
+		entitlementResult, err := cfg.entitlementStore.Lookup(session.Subject)
 		if err != nil {
 			// ErrEntitlementNotFound means user is not authorized
 			if errors.Is(err, domain.ErrEntitlementNotFound) {
-				s.handleDeniedForSP(w, r, spConfig, session.Subject)
+				s.handleDeniedForSP(w, r, cfg, session.Subject)
 				return nil
 			}
 			// Other errors are unexpected
@@ -160,16 +160,16 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 		}
 
 		// Check require_entitlement if configured
-		if spConfig.RequireEntitlement != "" {
+		if cfg.RequireEntitlement != "" {
 			hasRole := false
 			for _, role := range entitlementResult.Roles {
-				if role == spConfig.RequireEntitlement {
+				if role == cfg.RequireEntitlement {
 					hasRole = true
 					break
 				}
 			}
 			if !hasRole {
-				s.handleDeniedForSP(w, r, spConfig, session.Subject)
+				s.handleDeniedForSP(w, r, cfg, session.Subject)
 				return nil
 			}
 		}
@@ -181,10 +181,10 @@ func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spCon
 	return nil
 }
 
-func (s *SAMLDisco) handleLogoutForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.samlService == nil {
+func (s *SAMLDisco) handleLogoutInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.samlService == nil {
 		// Fall back to local-only logout
-		s.clearSessionCookiesForSP(w, r, spConfig)
+		s.clearSessionCookiesForSP(w, r, cfg)
 		returnTo := ValidateRelayState(r.URL.Query().Get("return_to"))
 		http.Redirect(w, r, returnTo, http.StatusFound)
 		return nil
@@ -194,12 +194,12 @@ func (s *SAMLDisco) handleLogoutForSP(w http.ResponseWriter, r *http.Request, sp
 	returnTo := ValidateRelayState(r.URL.Query().Get("return_to"))
 
 	// If we have a session, try SP-initiated SLO
-	if session != nil && spConfig.metadataStore != nil {
-		idp, err := spConfig.metadataStore.GetIdP(session.IdPEntityID)
+	if session != nil && cfg.metadataStore != nil {
+		idp, err := cfg.metadataStore.GetIdP(session.IdPEntityID)
 		if err == nil && idp != nil && idp.SLOURL != "" {
 			// IdP supports SLO - redirect to IdP SLO
-			sloURL := s.resolveSLOURLForSP(r, spConfig)
-			logoutURL, err := spConfig.samlService.CreateLogoutRequest(session, idp, sloURL, returnTo)
+			sloURL := s.resolveSLOURLForSP(r, cfg)
+			logoutURL, err := cfg.samlService.CreateLogoutRequest(session, idp, sloURL, returnTo)
 			if err == nil {
 				http.Redirect(w, r, logoutURL.String(), http.StatusFound)
 				return nil
@@ -212,18 +212,18 @@ func (s *SAMLDisco) handleLogoutForSP(w http.ResponseWriter, r *http.Request, sp
 	}
 
 	// Fall back to local-only logout (no SLO or SLO failed)
-	s.clearSessionCookiesForSP(w, r, spConfig)
+	s.clearSessionCookiesForSP(w, r, cfg)
 	http.Redirect(w, r, returnTo, http.StatusFound)
 	return nil
 }
 
-func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.samlService == nil {
+func (s *SAMLDisco) handleSLOInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.samlService == nil {
 		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return nil
 	}
 
-	sloURL := s.resolveSLOURLForSP(r, spConfig)
+	sloURL := s.resolveSLOURLForSP(r, cfg)
 
 	// Check if this is a LogoutResponse (SP-initiated return) or LogoutRequest (IdP-initiated)
 	samlResponse := r.URL.Query().Get("SAMLResponse")
@@ -240,18 +240,18 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 			return nil
 		}
 
-		if spConfig.metadataStore == nil {
+		if cfg.metadataStore == nil {
 			s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 			return nil
 		}
-		idp, err := spConfig.metadataStore.GetIdP(session.IdPEntityID)
+		idp, err := cfg.metadataStore.GetIdP(session.IdPEntityID)
 		if err != nil {
 			s.renderAppError(w, r, domain.ServiceError("Failed to get IdP metadata"))
 			return nil
 		}
 
 		// Validate LogoutResponse
-		err = spConfig.samlService.HandleLogoutResponse(r, sloURL, idp)
+		err = cfg.samlService.HandleLogoutResponse(r, sloURL, idp)
 		if err != nil {
 			s.getLogger().Warn("logout response validation failed",
 				zap.Error(err),
@@ -262,7 +262,7 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 
 		// Clear session
 		http.SetCookie(w, &http.Cookie{
-			Name:     spConfig.Config.SessionCookieName,
+			Name:     cfg.Config.SessionCookieName,
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
@@ -270,7 +270,7 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 		})
-		s.clearRememberIdPCookieForSP(w, r, spConfig)
+		s.clearRememberIdPCookieForSP(w, r, cfg)
 
 		returnTo := ValidateRelayState(r.URL.Query().Get("RelayState"))
 		http.Redirect(w, r, returnTo, http.StatusFound)
@@ -279,12 +279,12 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 
 	if samlRequest != "" {
 		// IdP-initiated: IdP is requesting logout
-		if spConfig.metadataStore == nil {
+		if cfg.metadataStore == nil {
 			s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 			return nil
 		}
 		// Get first IdP from metadata store (for IdP-initiated logout, we need to identify the IdP)
-		idps, err := spConfig.metadataStore.ListIdPs("")
+		idps, err := cfg.metadataStore.ListIdPs("")
 		if err != nil || len(idps) == 0 {
 			s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
 			return nil
@@ -292,7 +292,7 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 		idp := &idps[0]
 
 		// Parse LogoutRequest
-		result, err := spConfig.samlService.HandleLogoutRequest(r, sloURL, idp)
+		result, err := cfg.samlService.HandleLogoutRequest(r, sloURL, idp)
 		if err != nil {
 			s.getLogger().Warn("logout request validation failed",
 				zap.Error(err),
@@ -304,7 +304,7 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 
 		// Clear session
 		http.SetCookie(w, &http.Cookie{
-			Name:     spConfig.Config.SessionCookieName,
+			Name:     cfg.Config.SessionCookieName,
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
@@ -312,11 +312,11 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   -1,
 		})
-		s.clearRememberIdPCookieForSP(w, r, spConfig)
+		s.clearRememberIdPCookieForSP(w, r, cfg)
 
 		// Send LogoutResponse back to IdP
 		returnTo := ValidateRelayState(r.URL.Query().Get("RelayState"))
-		logoutResponseURL, err := spConfig.samlService.CreateLogoutResponse(result.RequestID, idp, sloURL, returnTo)
+		logoutResponseURL, err := cfg.samlService.CreateLogoutResponse(result.RequestID, idp, sloURL, returnTo)
 		if err != nil {
 			s.renderAppError(w, r, domain.ServiceError("Failed to create logout response"))
 			return err
@@ -330,8 +330,8 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 	return nil
 }
 
-func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.metadataStore == nil {
+func (s *SAMLDisco) handleListIdPsInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return nil
 	}
@@ -339,7 +339,7 @@ func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, 
 	// Get optional search filter from query parameter
 	filter := r.URL.Query().Get("q")
 
-	idps, err := spConfig.metadataStore.ListIdPs(filter)
+	idps, err := cfg.metadataStore.ListIdPs(filter)
 	if err != nil {
 		s.renderAppError(w, r, domain.ServiceError("Failed to list identity providers"))
 		return err
@@ -352,22 +352,31 @@ func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, 
 
 	// Localize IdPs based on Accept-Language header
 	langPrefs := ParseAcceptLanguage(r.Header.Get("Accept-Language"))
-	idps = localizeIdPList(idps, langPrefs, spConfig.DefaultLanguage)
+	idps = localizeIdPList(idps, langPrefs, cfg.DefaultLanguage)
 
 	// Separate pinned IdPs from the main list
-	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(spConfig, idps)
+	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(cfg, idps)
+
+	// Log warning if metadata filtering results in empty list
+	if len(filteredIdPs) == 0 && len(idps) > 0 {
+		s.getLogger().Warn("empty IdP list after filtering",
+			zap.Int("total_idps", len(idps)),
+			zap.Int("pinned_idps", len(pinnedIdPs)),
+			zap.String("filter", filter),
+		)
+	}
 
 	response := idpListResponse{
 		IdPs:          filteredIdPs,
 		PinnedIdPs:    pinnedIdPs,
-		RememberedIdP: s.getRememberIdPCookieForSP(r, spConfig),
+		RememberedIdP: s.getRememberIdPCookieForSP(r, cfg),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(response)
 }
 
-func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+func (s *SAMLDisco) handleSelectIdPInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
 	// Parse JSON request body
 	var req selectIdPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -382,12 +391,12 @@ func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Look up IdP in metadata store
-	if spConfig.metadataStore == nil {
+	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return nil
 	}
 
-	idp, err := spConfig.metadataStore.GetIdP(req.EntityID)
+	idp, err := cfg.metadataStore.GetIdP(req.EntityID)
 	if err != nil {
 		s.getLogger().Debug("idp not found",
 			zap.String("entity_id", req.EntityID),
@@ -403,11 +412,11 @@ func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request,
 
 	// Only remember the selected IdP if explicitly requested (BREAKING CHANGE)
 	if req.Remember {
-		s.setRememberIdPCookieForSP(w, r, spConfig, req.EntityID)
+		s.setRememberIdPCookieForSP(w, r, cfg, req.EntityID)
 	}
 
 	// Check SAML service is configured
-	if spConfig.samlService == nil {
+	if cfg.samlService == nil {
 		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return nil
 	}
@@ -421,12 +430,12 @@ func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request,
 
 	// Determine if forceAuthn is needed based on return URL path
 	opts := &domain.AuthnOptions{
-		ForceAuthn: spConfig.ForceAuthn || MatchesForceAuthnPath(relayState, spConfig.ForceAuthnPaths),
+		ForceAuthn: cfg.ForceAuthn || MatchesForceAuthnPath(relayState, cfg.ForceAuthnPaths),
 	}
 
 	// Compute ACS URL and start SAML auth
-	acsURL := s.resolveAcsURLForSP(r, spConfig)
-	redirectURL, err := spConfig.samlService.StartAuthWithOptions(idp, acsURL, relayState, opts)
+	acsURL := s.resolveAcsURLForSP(r, cfg)
+	redirectURL, err := cfg.samlService.StartAuthWithOptions(idp, acsURL, relayState, opts)
 	if err != nil {
 		s.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
 		return nil
@@ -440,14 +449,14 @@ func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request,
 	return nil
 }
 
-func (s *SAMLDisco) handleSessionInfoForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+func (s *SAMLDisco) handleSessionInfoInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
 	response := sessionInfoResponse{Authenticated: false}
 
 	// Try to get session from cookie
-	if spConfig.sessionStore != nil {
-		cookie, err := r.Cookie(spConfig.Config.SessionCookieName)
+	if cfg.sessionStore != nil {
+		cookie, err := r.Cookie(cfg.Config.SessionCookieName)
 		if err == nil && cookie.Value != "" {
-			session, err := spConfig.sessionStore.Get(cookie.Value)
+			session, err := cfg.sessionStore.Get(cookie.Value)
 			if err == nil && session != nil {
 				response.Authenticated = true
 				response.Subject = session.Subject
@@ -461,12 +470,12 @@ func (s *SAMLDisco) handleSessionInfoForSP(w http.ResponseWriter, r *http.Reques
 	return json.NewEncoder(w).Encode(response)
 }
 
-func (s *SAMLDisco) handleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.metadataStore == nil {
+func (s *SAMLDisco) handleHealthInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("metadata store not configured"))
 		return nil
 	}
-	health := spConfig.metadataStore.Health()
+	health := cfg.metadataStore.Health()
 	resp := HealthResponse{
 		Version:        getVersion(),
 		GitCommit:      getGitCommit(),
@@ -478,21 +487,19 @@ func (s *SAMLDisco) handleHealthForSP(w http.ResponseWriter, r *http.Request, sp
 	return nil
 }
 
-// handleSimpleHealthForSP returns just the MetadataHealth for simpler monitoring.
-// This is a simplified endpoint at /saml/health (vs /saml/api/health which includes version info).
-func (s *SAMLDisco) handleSimpleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.metadataStore == nil {
+func (s *SAMLDisco) handleSimpleHealthInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("metadata store not configured"))
 		return nil
 	}
-	health := spConfig.metadataStore.Health()
+	health := cfg.metadataStore.Health()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(health)
 	return nil
 }
 
-func (s *SAMLDisco) handleLogoEndpointForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.logoStore == nil {
+func (s *SAMLDisco) handleLogoEndpointInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.logoStore == nil {
 		http.NotFound(w, r)
 		return nil
 	}
@@ -505,7 +512,16 @@ func (s *SAMLDisco) handleLogoEndpointForSP(w http.ResponseWriter, r *http.Reque
 	}
 	entityID := pathParts[4]
 
-	logo, err := spConfig.logoStore.Get(entityID)
+	// Validate that entityID is not empty after path split
+	if entityID == "" {
+		s.getLogger().Warn("empty entity_id in logo endpoint request",
+			zap.String("path", r.URL.Path),
+		)
+		http.NotFound(w, r)
+		return nil
+	}
+
+	logo, err := cfg.logoStore.Get(entityID)
 	if err != nil {
 		http.NotFound(w, r)
 		return nil
@@ -517,13 +533,13 @@ func (s *SAMLDisco) handleLogoEndpointForSP(w http.ResponseWriter, r *http.Reque
 	return nil
 }
 
-func (s *SAMLDisco) handleDiscoveryUIForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	if spConfig.metadataStore == nil {
+func (s *SAMLDisco) handleDiscoveryUIInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
+	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return nil
 	}
 
-	idps, err := spConfig.metadataStore.ListIdPs("")
+	idps, err := cfg.metadataStore.ListIdPs("")
 	if err != nil {
 		s.renderAppError(w, r, domain.ServiceError("Failed to retrieve identity providers"))
 		return nil
@@ -533,16 +549,16 @@ func (s *SAMLDisco) handleDiscoveryUIForSP(w http.ResponseWriter, r *http.Reques
 	returnURL := ValidateRelayState(r.URL.Query().Get("return_url"))
 
 	// Auto-redirect if only one IdP
-	if len(idps) == 1 && spConfig.samlService != nil {
+	if len(idps) == 1 && cfg.samlService != nil {
 		idp := &idps[0]
-		acsURL := s.resolveAcsURLForSP(r, spConfig)
+		acsURL := s.resolveAcsURLForSP(r, cfg)
 
 		// Determine if forceAuthn is needed based on return URL path
 		opts := &domain.AuthnOptions{
-			ForceAuthn: spConfig.ForceAuthn || MatchesForceAuthnPath(returnURL, spConfig.ForceAuthnPaths),
+			ForceAuthn: cfg.ForceAuthn || MatchesForceAuthnPath(returnURL, cfg.ForceAuthnPaths),
 		}
 
-		redirectURL, err := spConfig.samlService.StartAuthWithOptions(idp, acsURL, returnURL, opts)
+		redirectURL, err := cfg.samlService.StartAuthWithOptions(idp, acsURL, returnURL, opts)
 		if err != nil {
 			s.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
 			return nil
@@ -553,13 +569,13 @@ func (s *SAMLDisco) handleDiscoveryUIForSP(w http.ResponseWriter, r *http.Reques
 
 	// Serve discovery UI HTML
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return s.renderDiscoveryHTMLForSP(w, r, spConfig, idps, returnURL)
+	return s.renderDiscoveryHTMLForSP(w, r, cfg, idps, returnURL)
 }
 
-func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
+func (s *SAMLDisco) redirectToIdPInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) {
 	// If LoginRedirect is configured, redirect to custom UI
-	if spConfig.LoginRedirect != "" {
-		redirectURL := spConfig.LoginRedirect
+	if cfg.LoginRedirect != "" {
+		redirectURL := cfg.LoginRedirect
 		if strings.Contains(redirectURL, "?") {
 			redirectURL += "&"
 		} else {
@@ -571,13 +587,13 @@ func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, s
 	}
 
 	// Check if metadata store is configured
-	if spConfig.metadataStore == nil {
+	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 		return
 	}
 
 	// Get IdPs from metadata store
-	idps, err := spConfig.metadataStore.ListIdPs("")
+	idps, err := cfg.metadataStore.ListIdPs("")
 	if err != nil || len(idps) == 0 {
 		s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
 		return
@@ -591,29 +607,79 @@ func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, s
 	}
 
 	// Single IdP - check SAML service and redirect directly
-	if spConfig.samlService == nil {
+	if cfg.samlService == nil {
 		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return
 	}
 	idp := &idps[0]
 
 	// Compute ACS URL and use original URL as RelayState
-	acsURL := s.resolveAcsURLForSP(r, spConfig)
+	acsURL := s.resolveAcsURLForSP(r, cfg)
 	relayState := r.URL.RequestURI()
 
 	// Determine if forceAuthn is needed
 	opts := &domain.AuthnOptions{
-		ForceAuthn: spConfig.ForceAuthn || MatchesForceAuthnPath(r.URL.Path, spConfig.ForceAuthnPaths),
+		ForceAuthn: cfg.ForceAuthn || MatchesForceAuthnPath(r.URL.Path, cfg.ForceAuthnPaths),
 	}
 
 	// Generate AuthnRequest and redirect URL
-	redirectURL, err := spConfig.samlService.StartAuthWithOptions(idp, acsURL, relayState, opts)
+	redirectURL, err := cfg.samlService.StartAuthWithOptions(idp, acsURL, relayState, opts)
 	if err != nil {
 		s.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
 		return
 	}
 
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+}
+
+// ForSP wrapper methods - these delegate to internal handlers
+
+func (s *SAMLDisco) handleMetadataForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleMetadataInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleACSInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleLogoutForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleLogoutInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleSLOInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleListIdPsInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleSelectIdPInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleSessionInfoForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleSessionInfoInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleHealthInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleSimpleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleSimpleHealthInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleLogoEndpointForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleLogoEndpointInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) handleDiscoveryUIForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	return s.handleDiscoveryUIInternal(w, r, spConfig)
+}
+
+func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
+	s.redirectToIdPInternal(w, r, spConfig)
 }
 
 // separatePinnedIdPsForSP separates pinned IdPs from the main list for a specific SP config.

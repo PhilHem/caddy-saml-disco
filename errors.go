@@ -1,14 +1,17 @@
 package caddysamldisco
 
 import (
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // Re-export error types from domain package for backward compatibility
 type ErrorCode = domain.ErrorCode
 type AppError = domain.AppError
-type JSONErrorResponse = domain.JSONErrorResponse
-type JSONErrorDetail = domain.JSONErrorDetail
+
+// Re-export HTTP-related error types from adapter
+type JSONErrorResponse = caddy.JSONErrorResponse
+type JSONErrorDetail = caddy.JSONErrorDetail
 
 // Re-export error code constants
 const (
@@ -28,5 +31,5 @@ var (
 	BadRequestError      = domain.BadRequestError
 	AuthError            = domain.AuthError
 	ServiceError         = domain.ServiceError
-	NewJSONErrorResponse = domain.NewJSONErrorResponse
+	NewJSONErrorResponse = caddy.NewJSONErrorResponse
 )

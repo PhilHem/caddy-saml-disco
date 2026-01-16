@@ -90,7 +90,7 @@ func (s *SAMLDisco) handleDenied(w http.ResponseWriter, r *http.Request, subject
 	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(domain.NewJSONErrorResponse(accessDeniedError))
+		json.NewEncoder(w).Encode(NewJSONErrorResponse(accessDeniedError))
 		return
 	}
 	s.renderHTTPError(w, statusCode, "Access Denied", accessDeniedError.Message)
@@ -99,18 +99,18 @@ func (s *SAMLDisco) handleDenied(w http.ResponseWriter, r *http.Request, subject
 // renderAppError renders an AppError as JSON for API endpoints or HTML for others.
 // API endpoints are detected by the /saml/api/ path prefix.
 func (s *SAMLDisco) renderAppError(w http.ResponseWriter, r *http.Request, err *domain.AppError) {
-	statusCode := err.Code.HTTPStatus()
+	statusCode := HTTPStatusForCode(err.Code)
 
 	// API endpoints get JSON responses
 	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(domain.NewJSONErrorResponse(err))
+		json.NewEncoder(w).Encode(NewJSONErrorResponse(err))
 		return
 	}
 
 	// Non-API endpoints get HTML
-	s.renderHTTPError(w, statusCode, err.Code.Title(), err.Message)
+	s.renderHTTPError(w, statusCode, TitleForCode(err.Code), err.Message)
 }
 
 // handleDeniedForSP handles access denied responses for a specific SP config.
@@ -130,7 +130,7 @@ func (s *SAMLDisco) handleDeniedForSP(w http.ResponseWriter, r *http.Request, sp
 	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(domain.NewJSONErrorResponse(accessDeniedError))
+		json.NewEncoder(w).Encode(NewJSONErrorResponse(accessDeniedError))
 		return
 	}
 	s.renderHTTPError(w, statusCode, "Access Denied", accessDeniedError.Message)

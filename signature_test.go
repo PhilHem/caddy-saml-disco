@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -89,16 +90,16 @@ func TestErrorCode_SignatureInvalid(t *testing.T) {
 	}
 
 	// Signature errors should return 400 Bad Request
-	if ErrCodeSignatureInvalid.HTTPStatus() != http.StatusBadRequest {
-		t.Errorf("HTTPStatus() = %d, want %d",
-			ErrCodeSignatureInvalid.HTTPStatus(), http.StatusBadRequest)
+	if caddy.HTTPStatusForCode(ErrCodeSignatureInvalid) != http.StatusBadRequest {
+		t.Errorf("HTTPStatusForCode() = %d, want %d",
+			caddy.HTTPStatusForCode(ErrCodeSignatureInvalid), http.StatusBadRequest)
 	}
 }
 
 func TestErrorCode_SignatureInvalid_Title(t *testing.T) {
-	title := ErrCodeSignatureInvalid.Title()
+	title := caddy.TitleForCode(ErrCodeSignatureInvalid)
 	if title == "" || title == "Error" {
-		t.Errorf("Title() = %q, want a specific title", title)
+		t.Errorf("TitleForCode() = %q, want a specific title", title)
 	}
 }
 

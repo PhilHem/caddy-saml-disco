@@ -57,64 +57,6 @@ func (e *AppError) Unwrap() error {
 	return e.Cause
 }
 
-// HTTPStatus returns the HTTP status code for this error code.
-// Uses plain integers to avoid framework dependencies in the domain layer.
-func (c ErrorCode) HTTPStatus() int {
-	switch c {
-	case ErrCodeIdPNotFound:
-		return 404 // Not Found
-	case ErrCodeAuthFailed, ErrCodeSessionInvalid:
-		return 401 // Unauthorized
-	case ErrCodeBadRequest, ErrCodeSignatureInvalid:
-		return 400 // Bad Request
-	default:
-		return 500 // Internal Server Error
-	}
-}
-
-// Title returns a user-friendly title for this error code.
-func (c ErrorCode) Title() string {
-	switch c {
-	case ErrCodeConfigMissing:
-		return "Configuration Error"
-	case ErrCodeIdPNotFound:
-		return "Not Found"
-	case ErrCodeAuthFailed:
-		return "Authentication Failed"
-	case ErrCodeSessionInvalid:
-		return "Session Invalid"
-	case ErrCodeServiceError:
-		return "Service Error"
-	case ErrCodeBadRequest:
-		return "Invalid Request"
-	case ErrCodeSignatureInvalid:
-		return "Signature Invalid"
-	default:
-		return "Error"
-	}
-}
-
-// JSONErrorResponse is the standard JSON error format for API endpoints.
-type JSONErrorResponse struct {
-	Error JSONErrorDetail `json:"error"`
-}
-
-// JSONErrorDetail contains error details.
-type JSONErrorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// NewJSONErrorResponse creates a JSON error response from an AppError.
-func NewJSONErrorResponse(err *AppError) JSONErrorResponse {
-	return JSONErrorResponse{
-		Error: JSONErrorDetail{
-			Code:    err.Code.String(),
-			Message: err.Message,
-		},
-	}
-}
-
 // ConfigError creates a configuration error.
 func ConfigError(message string) *AppError {
 	return &AppError{Code: ErrCodeConfigMissing, Message: message}

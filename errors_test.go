@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 )
 
 func TestErrorCode_String(t *testing.T) {
@@ -60,7 +62,7 @@ func TestAppError_Unwrap_Nil(t *testing.T) {
 	}
 }
 
-func TestErrorCode_HTTPStatus(t *testing.T) {
+func TestHTTPStatusForCode(t *testing.T) {
 	tests := []struct {
 		code   ErrorCode
 		status int
@@ -73,13 +75,13 @@ func TestErrorCode_HTTPStatus(t *testing.T) {
 		{ErrCodeBadRequest, 400},
 	}
 	for _, tt := range tests {
-		if got := tt.code.HTTPStatus(); got != tt.status {
-			t.Errorf("%s.HTTPStatus() = %d, want %d", tt.code, got, tt.status)
+		if got := caddy.HTTPStatusForCode(tt.code); got != tt.status {
+			t.Errorf("HTTPStatusForCode(%s) = %d, want %d", tt.code, got, tt.status)
 		}
 	}
 }
 
-func TestErrorCode_Title(t *testing.T) {
+func TestTitleForCode(t *testing.T) {
 	tests := []struct {
 		code  ErrorCode
 		title string
@@ -92,8 +94,8 @@ func TestErrorCode_Title(t *testing.T) {
 		{ErrCodeBadRequest, "Invalid Request"},
 	}
 	for _, tt := range tests {
-		if got := tt.code.Title(); got != tt.title {
-			t.Errorf("%s.Title() = %q, want %q", tt.code, got, tt.title)
+		if got := caddy.TitleForCode(tt.code); got != tt.title {
+			t.Errorf("TitleForCode(%s) = %q, want %q", tt.code, got, tt.title)
 		}
 	}
 }
