@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 - **Remember IdP cookie**: The `/saml/api/select` endpoint now only sets the remember-IdP cookie when `remember: true` is explicitly passed in the request body. Previously, the cookie was always set on IdP selection.
 
+### Changed
+- **Error types relocated**: `JSONErrorResponse` and `JSONErrorDetail` types moved from `internal/core/domain/` to `internal/adapters/driving/caddy/` as they are Caddy adapter-specific (HTTP response format). Backward compatibility maintained via root package re-exports in `errors.go`.
+
 ## [0.16.1] - 2026-01-09
 
 ### Fixed

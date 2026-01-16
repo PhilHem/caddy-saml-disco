@@ -36,11 +36,3 @@ func (s *SAMLDisco) handleSimpleHealthInternal(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(health)
 	return nil
 }
-
-func (s *SAMLDisco) handleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleHealthInternal(w, r, spConfig)
-}
-
-func (s *SAMLDisco) handleSimpleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleSimpleHealthInternal(w, r, spConfig)
-}

@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -107,52 +106,30 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		return fmt.Errorf("read metadata file: %w", err)
 	}
 
-	// Verify signature if verifier is configured
-	if s.signatureVerifier != nil {
-		data, err = s.signatureVerifier.Verify(data)
-		if err != nil {
-			if s.metricsRecorder != nil {
-				s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
-			}
-			return fmt.Errorf("verify metadata signature: %w", err)
-		}
-	}
-
-	idps, validUntil, err := ParseMetadata(data)
+	// Use shared loader for verify -> parse -> filter pipeline
+	result, err := LoadAndProcessMetadata(data, LoaderConfig{
+		Source:                       s.path,
+		SignatureVerifier:            s.signatureVerifier,
+		Logger:                       s.logger,
+		IdPFilter:                    s.idpFilter,
+		RegistrationAuthorityFilter:  s.registrationAuthorityFilter,
+		EntityCategoryFilter:         s.entityCategoryFilter,
+		AssuranceCertificationFilter: s.assuranceCertificationFilter,
+	})
 	if err != nil {
-		// Log expiry rejections with structured fields
-		if errors.Is(err, domain.ErrMetadataExpired) && s.logger != nil {
-			s.logger.Warn("metadata expired",
-				zap.String("source", s.path),
-				zap.Error(err),
-			)
-		}
 		if s.metricsRecorder != nil {
 			s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
 		}
-		return fmt.Errorf("parse metadata: %w", err)
-	}
-
-	// Capture original entity IDs before filtering (for error messages)
-	originalEntityIDs := domain.ExtractEntityIDs(idps)
-
-	// Apply all filters and collect failures
-	idps, filterFailures := s.applyFiltersAndCollectFailures(idps)
-	if len(filterFailures) > 0 {
-		if s.metricsRecorder != nil {
-			s.metricsRecorder.RecordMetadataRefresh("file", false, 0)
-		}
-		// Build comprehensive error message with all failing filters and available IdPs
-		return fmt.Errorf("%s", domain.FormatFilterError(filterFailures, originalEntityIDs))
+		return err
 	}
 
 	s.mu.Lock()
-	s.idps = idps
-	s.validUntil = validUntil
+	s.idps = result.IdPs
+	s.validUntil = result.ValidUntil
 	s.mu.Unlock()
 
 	if s.metricsRecorder != nil {
-		s.metricsRecorder.RecordMetadataRefresh("file", true, len(idps))
+		s.metricsRecorder.RecordMetadataRefresh("file", true, len(result.IdPs))
 	}
 
 	return nil

@@ -108,11 +108,3 @@ func (s *SAMLDisco) redirectToIdPInternal(w http.ResponseWriter, r *http.Request
 
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
-
-func (s *SAMLDisco) handleDiscoveryUIForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleDiscoveryUIInternal(w, r, spConfig)
-}
-
-func (s *SAMLDisco) redirectToIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) {
-	s.redirectToIdPInternal(w, r, spConfig)
-}

@@ -86,8 +86,8 @@ func TestHandleXxx_EmptyEntityID(t *testing.T) {
 	}
 
 	cfg := &SPConfig{
-		Config:       Config{SessionCookieName: "saml_session"},
-		logoStore:    logoStore,
+		Config:    Config{SessionCookieName: "saml_session"},
+		logoStore: logoStore,
 	}
 
 	// Test path with insufficient parts (no entity ID)
@@ -129,8 +129,8 @@ func TestHandleXxx_URLParseError(t *testing.T) {
 	}
 
 	cfg := &SPConfig{
-		Config:        Config{SessionCookieName: "saml_session"},
-		samlService:   samlService,
+		Config:      Config{SessionCookieName: "saml_session"},
+		samlService: samlService,
 		metadataStore: &mockMetadataStore{
 			idps: []domain.IdPInfo{
 				{

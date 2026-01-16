@@ -184,11 +184,3 @@ func (s *SAMLDisco) handleACSInternal(w http.ResponseWriter, r *http.Request, cf
 	http.Redirect(w, r, relayState, http.StatusFound)
 	return nil
 }
-
-func (s *SAMLDisco) handleMetadataForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleMetadataInternal(w, r, spConfig)
-}
-
-func (s *SAMLDisco) handleACSForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleACSInternal(w, r, spConfig)
-}

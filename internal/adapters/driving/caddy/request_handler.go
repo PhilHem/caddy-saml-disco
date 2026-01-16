@@ -59,50 +59,50 @@ func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next 
 
 	// Handle logo endpoint (path prefix pattern)
 	if strings.HasPrefix(r.URL.Path, "/saml/api/logo/") && r.Method == http.MethodGet {
-		return s.handleLogoEndpointForSP(w, r, spConfig)
+		return s.handleLogoEndpointInternal(w, r, spConfig)
 	}
 
 	// Route SAML endpoints
 	switch r.URL.Path {
 	case "/saml/metadata":
 		if r.Method == http.MethodGet {
-			return s.handleMetadataForSP(w, r, spConfig)
+			return s.handleMetadataInternal(w, r, spConfig)
 		}
 	case "/saml/acs":
 		if r.Method == http.MethodPost {
-			return s.handleACSForSP(w, r, spConfig)
+			return s.handleACSInternal(w, r, spConfig)
 		}
 	case "/saml/logout":
 		if r.Method == http.MethodGet {
-			return s.handleLogoutForSP(w, r, spConfig)
+			return s.handleLogoutInternal(w, r, spConfig)
 		}
 	case "/saml/slo":
 		if r.Method == http.MethodGet || r.Method == http.MethodPost {
-			return s.handleSLOForSP(w, r, spConfig)
+			return s.handleSLOInternal(w, r, spConfig)
 		}
 	case "/saml/api/idps":
 		if r.Method == http.MethodGet {
-			return s.handleListIdPsForSP(w, r, spConfig)
+			return s.handleListIdPsInternal(w, r, spConfig)
 		}
 	case "/saml/api/select":
 		if r.Method == http.MethodPost {
-			return s.handleSelectIdPForSP(w, r, spConfig)
+			return s.handleSelectIdPInternal(w, r, spConfig)
 		}
 	case "/saml/api/session":
 		if r.Method == http.MethodGet {
-			return s.handleSessionInfoForSP(w, r, spConfig)
+			return s.handleSessionInfoInternal(w, r, spConfig)
 		}
 	case "/saml/api/health":
 		if r.Method == http.MethodGet {
-			return s.handleHealthForSP(w, r, spConfig)
+			return s.handleHealthInternal(w, r, spConfig)
 		}
 	case "/saml/health":
 		if r.Method == http.MethodGet {
-			return s.handleSimpleHealthForSP(w, r, spConfig)
+			return s.handleSimpleHealthInternal(w, r, spConfig)
 		}
 	case "/saml/disco":
 		if r.Method == http.MethodGet {
-			return s.handleDiscoveryUIForSP(w, r, spConfig)
+			return s.handleDiscoveryUIInternal(w, r, spConfig)
 		}
 	}
 
@@ -110,7 +110,7 @@ func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next 
 	if spConfig.sessionStore != nil && !strings.HasPrefix(r.URL.Path, "/saml/") {
 		cookie, err := r.Cookie(spConfig.Config.SessionCookieName)
 		if err != nil || cookie.Value == "" {
-			s.redirectToIdPForSP(w, r, spConfig)
+			s.redirectToIdPInternal(w, r, spConfig)
 			return nil
 		}
 
@@ -118,7 +118,7 @@ func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next 
 		session, err := spConfig.sessionStore.Get(cookie.Value)
 		if err != nil {
 			s.getMetricsRecorder().RecordSessionValidation(false)
-			s.redirectToIdPForSP(w, r, spConfig)
+			s.redirectToIdPInternal(w, r, spConfig)
 			return nil
 		}
 		s.getMetricsRecorder().RecordSessionValidation(true)

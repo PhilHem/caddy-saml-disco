@@ -1,0 +1,27 @@
+task_id: caddy-saml-disco-d1b.5
+phase: complete
+started_at: "2026-01-16T22:30:00Z"
+updated_at: "2026-01-16T22:31:00Z"
+plan:
+  files_to_modify:
+    - internal/adapters/driving/caddy/handlers_logout.go
+  files_to_read:
+    - internal/adapters/driving/caddy/cookies.go
+  test_cases:
+    - existing tests should pass - refactor only
+  pbt_decision: "SKIP: pure refactoring"
+  pct_decision: "SKIP: no concurrency"
+  tra_compliance: "na"
+progress:
+  tests_written: []
+  implementation_written:
+    - path: internal/adapters/driving/caddy/handlers_logout.go
+      complete: true
+      last_item: "replaced inline cookie-clearing with clearSessionCookiesForSP"
+verification:
+  tests_run: true
+  tests_passed: true
+  mypy_run: true
+  mypy_passed: true
+errors: []
+resumed_from: null

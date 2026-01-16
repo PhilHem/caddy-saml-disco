@@ -1,0 +1,43 @@
+task_id: caddy-saml-disco-d1b.2
+phase: complete
+started_at: "2026-01-16T22:35:00Z"
+updated_at: "2026-01-16T22:50:00Z"
+plan:
+  files_to_modify:
+    - internal/adapters/driven/metadata/loader.go
+    - internal/adapters/driven/metadata/url.go
+    - internal/adapters/driven/metadata/file.go
+  files_to_read:
+    - internal/adapters/driven/metadata/url.go
+    - internal/adapters/driven/metadata/file.go
+    - internal/adapters/driven/metadata/parser.go
+  test_cases:
+    - TestLoadAndProcessMetadata_SuccessPath
+    - TestLoadAndProcessMetadata_SignatureVerification
+    - TestLoadAndProcessMetadata_ExpiredMetadataWarning
+    - TestLoadAndProcessMetadata_FilterFailure
+  pbt_decision: "SKIP: simple pipeline with no roundtrip properties"
+  pct_decision: "SKIP: no shared mutable state"
+  tra_compliance: "Adapter.Metadata.LoadAndProcessMetadata - unit tier"
+progress:
+  tests_written:
+    - path: internal/adapters/driven/metadata/loader_test.go
+      complete: true
+      functions: [TestLoadAndProcessMetadata_SuccessPath, TestLoadAndProcessMetadata_SignatureVerification, TestLoadAndProcessMetadata_ExpiredMetadataWarning, TestLoadAndProcessMetadata_FilterFailure, TestLoadAndProcessMetadata_ValidUntilReturned, TestLoadAndProcessMetadata_MultipleFilters]
+  implementation_written:
+    - path: internal/adapters/driven/metadata/loader.go
+      complete: true
+      last_item: "LoadAndProcessMetadata"
+    - path: internal/adapters/driven/metadata/file.go
+      complete: true
+      last_item: "Refresh refactored to use LoadAndProcessMetadata"
+    - path: internal/adapters/driven/metadata/url.go
+      complete: true
+      last_item: "doRefresh refactored to use LoadAndProcessMetadata"
+verification:
+  tests_run: true
+  tests_passed: true
+  mypy_run: true
+  mypy_passed: true
+errors: []
+resumed_from: null

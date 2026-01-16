@@ -7,6 +7,14 @@ import (
 	"time"
 )
 
+// NoopVerifier is a test double that passes all signatures through unchanged.
+type NoopVerifier struct{}
+
+// Verify returns the data unchanged (no verification performed).
+func (v *NoopVerifier) Verify(data []byte) ([]byte, error) {
+	return data, nil
+}
+
 // FakeClock is a controllable clock for testing cache TTL expiration.
 type FakeClock struct {
 	mu  sync.Mutex

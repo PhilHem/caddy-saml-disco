@@ -2160,5 +2160,54 @@ func TestListIdPs_ReturnsEmptySlice_URLStore(t *testing.T) {
 	}
 }
 
+// TestURLMetadataStore_Concurrency_CloseVsRefresh tests that concurrent Close()
+// and doRefresh() calls don't cause data races or panics. This addresses the
+// scenario where a background refresh is in progress when Close() is called.
+func TestURLMetadataStore_Concurrency_CloseVsRefresh(t *testing.T) {
+	metadata, err := os.ReadFile("../../../../testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	// Use slow server to ensure refresh is in progress during Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(50 * time.Millisecond) // Slow response
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	// Run multiple iterations to increase chance of catching races
+	for i := 0; i < 10; i++ {
+		store := NewURLMetadataStoreWithRefresh(server.URL, 10*time.Millisecond)
+
+		// Spawn goroutines calling Refresh() (which calls doRefresh internally)
+		var wg sync.WaitGroup
+		const numRefreshers = 5
+		wg.Add(numRefreshers)
+		for j := 0; j < numRefreshers; j++ {
+			go func() {
+				defer wg.Done()
+				// Call Refresh multiple times to increase contention
+				for k := 0; k < 3; k++ {
+					_ = store.Refresh(context.Background())
+				}
+			}()
+		}
+
+		// Call Close() while refreshes are in progress
+		go func() {
+			time.Sleep(5 * time.Millisecond) // Let some refreshes start
+			store.Close()
+		}()
+
+		// Wait for all refreshers to complete
+		wg.Wait()
+
+		// Ensure Close() can be called again (idempotent)
+		store.Close()
+	}
+	// Test passes if no panics or race detector errors
+}
+
 // TestFileMetadataStore_StartupLogging verifies info log "metadata loaded"
 // with source, idp_count, and duration after Load().

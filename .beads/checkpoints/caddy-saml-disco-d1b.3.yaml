@@ -1,0 +1,58 @@
+task_id: caddy-saml-disco-d1b.3
+phase: complete
+started_at: "2026-01-16T22:30:00Z"
+updated_at: "2026-01-16T22:35:00Z"
+
+plan:
+  files_to_modify:
+    - internal/adapters/driving/caddy/request_handler.go
+    - internal/adapters/driving/caddy/handlers_auth.go
+    - internal/adapters/driving/caddy/handlers_discovery.go
+    - internal/adapters/driving/caddy/handlers_health.go
+    - internal/adapters/driving/caddy/handlers_logout.go
+    - internal/adapters/driving/caddy/handlers_session.go
+    - internal/adapters/driving/caddy/handlers_ui.go
+    - internal/adapters/driving/caddy/handlers_logo.go
+  files_to_read: []
+  test_cases:
+    - "existing tests - refactoring only"
+  pbt_decision: "SKIP: pure refactoring"
+  pct_decision: "SKIP: no concurrency changes"
+  tra_compliance: "na - refactoring only"
+
+progress:
+  tests_written: []
+  implementation_written:
+    - path: internal/adapters/driving/caddy/request_handler.go
+      complete: true
+      last_item: "replaced ForSP with Internal calls"
+    - path: internal/adapters/driving/caddy/handlers_auth.go
+      complete: true
+      last_item: "removed handleMetadataForSP, handleACSForSP"
+    - path: internal/adapters/driving/caddy/handlers_discovery.go
+      complete: true
+      last_item: "removed handleListIdPsForSP, handleSelectIdPForSP"
+    - path: internal/adapters/driving/caddy/handlers_health.go
+      complete: true
+      last_item: "removed handleHealthForSP, handleSimpleHealthForSP"
+    - path: internal/adapters/driving/caddy/handlers_logout.go
+      complete: true
+      last_item: "removed handleLogoutForSP, handleSLOForSP"
+    - path: internal/adapters/driving/caddy/handlers_session.go
+      complete: true
+      last_item: "removed handleSessionInfoForSP"
+    - path: internal/adapters/driving/caddy/handlers_ui.go
+      complete: true
+      last_item: "removed handleDiscoveryUIForSP, redirectToIdPForSP"
+    - path: internal/adapters/driving/caddy/handlers_logo.go
+      complete: true
+      last_item: "removed handleLogoEndpointForSP"
+
+verification:
+  tests_run: true
+  tests_passed: true
+  mypy_run: true
+  mypy_passed: true
+
+errors: []
+resumed_from: null

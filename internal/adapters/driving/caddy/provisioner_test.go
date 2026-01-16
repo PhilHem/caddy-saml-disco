@@ -11,27 +11,27 @@ import (
 // TestBuildMetadataStoreOptions tests the extraction of metadata store options building logic.
 func TestBuildMetadataStoreOptions(t *testing.T) {
 	tests := []struct {
-		name                          string
-		idpFilter                     string
-		registrationAuthorityFilter   string
-		entityCategoryFilter          string
-		assuranceCertificationFilter  string
-		verifyMetadataSignature       bool
-		metadataSigningCert           string
-		expectedOptionsCount          int
-		expectError                   bool
+		name                         string
+		idpFilter                    string
+		registrationAuthorityFilter  string
+		entityCategoryFilter         string
+		assuranceCertificationFilter string
+		verifyMetadataSignature      bool
+		metadataSigningCert          string
+		expectedOptionsCount         int
+		expectError                  bool
 	}{
 		{
 			name:                 "no filters or verification",
 			expectedOptionsCount: 3, // logger, metrics, version
 		},
 		{
-			name:                 "all filters enabled",
-			idpFilter:            "university",
-			registrationAuthorityFilter: "urn:example",
-			entityCategoryFilter: "research",
+			name:                         "all filters enabled",
+			idpFilter:                    "university",
+			registrationAuthorityFilter:  "urn:example",
+			entityCategoryFilter:         "research",
 			assuranceCertificationFilter: "assurance",
-			expectedOptionsCount: 7, // 4 filters + logger + metrics + version
+			expectedOptionsCount:         7, // 4 filters + logger + metrics + version
 		},
 		{
 			name:                    "signature verification enabled",
@@ -204,16 +204,16 @@ func TestInitializeSessionAndSAML(t *testing.T) {
 			expectSAMLService:  true,
 		},
 		{
-			name:               "missing key file",
-			keyFile:            "../../../../testdata/nonexistent_key.pem",
-			sessionDuration:    "24h",
-			expectError:        true,
+			name:            "missing key file",
+			keyFile:         "../../../../testdata/nonexistent_key.pem",
+			sessionDuration: "24h",
+			expectError:     true,
 		},
 		{
-			name:               "invalid session duration",
-			keyFile:            "../../../../testdata/sp-key.pem",
-			sessionDuration:    "invalid",
-			expectError:        true,
+			name:            "invalid session duration",
+			keyFile:         "../../../../testdata/sp-key.pem",
+			sessionDuration: "invalid",
+			expectError:     true,
 		},
 		{
 			name:               "no key file configured",

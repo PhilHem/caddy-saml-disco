@@ -43,7 +43,3 @@ func (s *SAMLDisco) handleLogoEndpointInternal(w http.ResponseWriter, r *http.Re
 	w.Write(logo.Data)
 	return nil
 }
-
-func (s *SAMLDisco) handleLogoEndpointForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleLogoEndpointInternal(w, r, spConfig)
-}

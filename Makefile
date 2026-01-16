@@ -50,8 +50,16 @@ pre-commit:
 
 # Run metadata tests with verbose output
 test-metadata-verbose:
-	go test -v ./internal/adapters/driven/metadata
+	go test -tags=unit -v ./internal/adapters/driven/metadata/...
+
+# Run loader tests only
+test-loader:
+	go test -tags=unit -v -run "TestLoadAndProcessMetadata" ./internal/adapters/driven/metadata/...
 
 # Run caddy adapter tests only
 test-caddy:
 	go test -tags=unit -timeout 30s -failfast -v ./internal/adapters/driving/caddy/...
+
+# Run specific test with race detection
+test-race:
+	go test -tags=unit -race -timeout 30s -failfast -v -run "$(PATTERN)" ./...

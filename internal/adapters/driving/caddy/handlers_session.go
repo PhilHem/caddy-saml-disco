@@ -27,7 +27,3 @@ func (s *SAMLDisco) handleSessionInfoInternal(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(response)
 }
-
-func (s *SAMLDisco) handleSessionInfoForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleSessionInfoInternal(w, r, spConfig)
-}

@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -351,65 +350,44 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		return refreshErr
 	}
 
-	// Verify signature if verifier is configured
-	if s.signatureVerifier != nil {
-		data, err = s.signatureVerifier.Verify(data)
-		if err != nil {
-			refreshErr := fmt.Errorf("verify metadata signature: %w", err)
-			s.markRefreshFailed(refreshErr)
-			return refreshErr
-		}
-	}
-
-	idps, validUntil, err := ParseMetadata(data)
+	// Use shared loader for verify -> parse -> filter pipeline
+	result, err := LoadAndProcessMetadata(data, LoaderConfig{
+		Source:                       s.url,
+		SignatureVerifier:            s.signatureVerifier,
+		Logger:                       s.logger,
+		IdPFilter:                    s.idpFilter,
+		RegistrationAuthorityFilter:  s.registrationAuthorityFilter,
+		EntityCategoryFilter:         s.entityCategoryFilter,
+		AssuranceCertificationFilter: s.assuranceCertificationFilter,
+	})
 	if err != nil {
-		// Log expiry rejections with structured fields
-		if errors.Is(err, domain.ErrMetadataExpired) && s.logger != nil {
-			s.logger.Warn("metadata expired",
-				zap.String("source", s.url),
-				zap.Error(err),
-			)
-		}
-		refreshErr := fmt.Errorf("parse metadata: %w", err)
-		s.markRefreshFailed(refreshErr)
-		return refreshErr
-	}
-
-	// Capture original entity IDs before filtering (for error messages)
-	originalEntityIDs := domain.ExtractEntityIDs(idps)
-
-	// Apply all filters and collect failures
-	idps, filterFailures := s.applyFiltersAndCollectFailures(idps)
-	if len(filterFailures) > 0 {
-		// Build comprehensive error message with all failing filters and available IdPs
-		refreshErr := fmt.Errorf("%s", domain.FormatFilterError(filterFailures, originalEntityIDs))
-		s.markRefreshFailed(refreshErr)
-		return refreshErr
+		s.markRefreshFailed(err)
+		return err
 	}
 
 	// Success - update all state
 	successTime := s.clock.Now()
 	newEtag := resp.Header.Get("ETag")
 	s.mu.Lock()
-	s.idps = idps
+	s.idps = result.IdPs
 	s.lastFetch = successTime
 	s.etag = newEtag
 	s.lastModified = resp.Header.Get("Last-Modified")
 	s.isFresh = true
 	s.lastSuccessTime = successTime
 	s.lastError = nil
-	s.validUntil = validUntil
+	s.validUntil = result.ValidUntil
 	s.mu.Unlock()
 
 	if s.logger != nil {
 		s.logger.Debug("metadata fetched (200 OK)",
-			zap.Int("idp_count", len(idps)),
+			zap.Int("idp_count", len(result.IdPs)),
 			zap.Duration("response_time", responseTime),
 			zap.String("new_etag", newEtag))
 	}
 
 	if s.metricsRecorder != nil {
-		s.metricsRecorder.RecordMetadataRefresh("url", true, len(idps))
+		s.metricsRecorder.RecordMetadataRefresh("url", true, len(result.IdPs))
 	}
 
 	return nil

@@ -89,16 +89,7 @@ func (s *SAMLDisco) handleSLOInternal(w http.ResponseWriter, r *http.Request, cf
 		}
 
 		// Clear session
-		http.SetCookie(w, &http.Cookie{
-			Name:     cfg.Config.SessionCookieName,
-			Value:    "",
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   r.TLS != nil,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   -1,
-		})
-		s.clearRememberIdPCookieForSP(w, r, cfg)
+		s.clearSessionCookiesForSP(w, r, cfg)
 
 		returnTo := ValidateRelayState(r.URL.Query().Get("RelayState"))
 		http.Redirect(w, r, returnTo, http.StatusFound)
@@ -131,16 +122,7 @@ func (s *SAMLDisco) handleSLOInternal(w http.ResponseWriter, r *http.Request, cf
 		}
 
 		// Clear session
-		http.SetCookie(w, &http.Cookie{
-			Name:     cfg.Config.SessionCookieName,
-			Value:    "",
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   r.TLS != nil,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   -1,
-		})
-		s.clearRememberIdPCookieForSP(w, r, cfg)
+		s.clearSessionCookiesForSP(w, r, cfg)
 
 		// Send LogoutResponse back to IdP
 		returnTo := ValidateRelayState(r.URL.Query().Get("RelayState"))
@@ -156,12 +138,4 @@ func (s *SAMLDisco) handleSLOInternal(w http.ResponseWriter, r *http.Request, cf
 	// No SAMLRequest or SAMLResponse - invalid request
 	s.renderAppError(w, r, domain.BadRequestError("Missing SAMLRequest or SAMLResponse"))
 	return nil
-}
-
-func (s *SAMLDisco) handleLogoutForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleLogoutInternal(w, r, spConfig)
-}
-
-func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleSLOInternal(w, r, spConfig)
 }

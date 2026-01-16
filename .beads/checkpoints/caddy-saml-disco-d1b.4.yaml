@@ -1,0 +1,44 @@
+task_id: caddy-saml-disco-d1b.4
+phase: complete
+started_at: "2026-01-16T22:35:00Z"
+updated_at: "2026-01-16T22:40:00Z"
+
+plan:
+  files_to_modify:
+    - types.go (new consolidated file)
+    - functions.go (new consolidated file)
+    - plugin.go (keep version info, remove re-exports)
+    - testing.go (keep separate)
+  files_to_delete:
+    - attributes.go
+    - caddyfile.go
+    - config.go
+    - entitlements.go
+    - errors.go
+    - logo.go
+    - metadata.go
+    - metrics.go
+    - request.go
+    - session.go
+    - signature.go
+    - templates.go
+    - saml.go
+  files_to_read:
+    - All 14 re-export files (completed)
+  test_cases: []
+  pbt_decision: "SKIP: Pure refactor consolidation"
+  pct_decision: "SKIP: No concurrency changes"
+  tra_compliance: "na - no new tests"
+
+progress:
+  tests_written: []
+  implementation_written: []
+
+verification:
+  tests_run: false
+  tests_passed: null
+  mypy_run: false
+  mypy_passed: null
+
+errors: []
+resumed_from: null

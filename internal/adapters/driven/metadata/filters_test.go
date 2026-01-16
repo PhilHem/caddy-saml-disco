@@ -177,9 +177,9 @@ func TestFilterIdPsByRegistrationAuthority(t *testing.T) {
 			expected: []string{"idp1", "idp2"},
 		},
 		{
-			name:    "empty IdP list",
-			pattern: "fed1",
-			idps:    []domain.IdPInfo{},
+			name:     "empty IdP list",
+			pattern:  "fed1",
+			idps:     []domain.IdPInfo{},
 			expected: []string{},
 		},
 		{
@@ -310,9 +310,9 @@ func TestFilterIdPsByEntityCategory(t *testing.T) {
 			expected: []string{},
 		},
 		{
-			name:    "empty IdP list",
-			pattern: "research",
-			idps:    []domain.IdPInfo{},
+			name:     "empty IdP list",
+			pattern:  "research",
+			idps:     []domain.IdPInfo{},
 			expected: []string{},
 		},
 		{
@@ -433,9 +433,9 @@ func TestFilterIdPsByAssuranceCertification(t *testing.T) {
 			expected: []string{},
 		},
 		{
-			name:    "empty IdP list",
-			pattern: "sirtfi",
-			idps:    []domain.IdPInfo{},
+			name:     "empty IdP list",
+			pattern:  "sirtfi",
+			idps:     []domain.IdPInfo{},
 			expected: []string{},
 		},
 		{
@@ -577,6 +577,225 @@ func TestFilterIdPs_CommaSeparated(t *testing.T) {
 							}
 							return result[i].EntityID
 						}())
+				}
+			}
+		})
+	}
+}
+
+// TestParseCSVPatterns tests the parseCSVPatterns helper function.
+// @tra: Adapter.Metadata.ParseCSVPatterns
+func TestParseCSVPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "empty string returns nil",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:     "single pattern",
+			input:    "pattern1",
+			expected: []string{"pattern1"},
+		},
+		{
+			name:     "multiple patterns",
+			input:    "pattern1,pattern2,pattern3",
+			expected: []string{"pattern1", "pattern2", "pattern3"},
+		},
+		{
+			name:     "trims whitespace",
+			input:    "  pattern1  ,  pattern2  ",
+			expected: []string{"pattern1", "pattern2"},
+		},
+		{
+			name:     "filters empty patterns",
+			input:    "pattern1,,pattern2",
+			expected: []string{"pattern1", "pattern2"},
+		},
+		{
+			name:     "only empty patterns returns nil",
+			input:    "  ,  ,  ",
+			expected: nil,
+		},
+		{
+			name:     "trailing comma",
+			input:    "pattern1,",
+			expected: []string{"pattern1"},
+		},
+		{
+			name:     "leading comma",
+			input:    ",pattern1",
+			expected: []string{"pattern1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseCSVPatterns(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d results, got %d", len(tt.expected), len(result))
+				return
+			}
+			for i, exp := range tt.expected {
+				if result[i] != exp {
+					t.Errorf("expected %q at index %d, got %q", exp, i, result[i])
+				}
+			}
+		})
+	}
+}
+
+// TestFilterIdPsByField_StringField tests the generic filterIdPsByField with string field accessor.
+// @tra: Adapter.Metadata.FilterByFieldString
+func TestFilterIdPsByField_StringField(t *testing.T) {
+	tests := []struct {
+		name     string
+		idps     []domain.IdPInfo
+		pattern  string
+		expected []string
+	}{
+		{
+			name:     "empty pattern returns all",
+			pattern:  "",
+			idps:     []domain.IdPInfo{{EntityID: "idp1", RegistrationAuthority: "fed1"}},
+			expected: []string{"idp1"},
+		},
+		{
+			name:    "matches single pattern",
+			pattern: "fed1",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", RegistrationAuthority: "fed1"},
+				{EntityID: "idp2", RegistrationAuthority: "fed2"},
+			},
+			expected: []string{"idp1"},
+		},
+		{
+			name:    "empty field value excluded",
+			pattern: "fed1",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", RegistrationAuthority: "fed1"},
+				{EntityID: "idp2", RegistrationAuthority: ""},
+			},
+			expected: []string{"idp1"},
+		},
+		{
+			name:    "multiple patterns with comma",
+			pattern: "fed1,fed2",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", RegistrationAuthority: "fed1"},
+				{EntityID: "idp2", RegistrationAuthority: "fed2"},
+				{EntityID: "idp3", RegistrationAuthority: "fed3"},
+			},
+			expected: []string{"idp1", "idp2"},
+		},
+		{
+			name:    "wildcard pattern",
+			pattern: "*fed*",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", RegistrationAuthority: "my-fed-1"},
+				{EntityID: "idp2", RegistrationAuthority: "other"},
+			},
+			expected: []string{"idp1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterIdPsByField(tt.idps, tt.pattern, func(idp domain.IdPInfo) string {
+				return idp.RegistrationAuthority
+			})
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d results, got %d", len(tt.expected), len(result))
+				return
+			}
+			for i, exp := range tt.expected {
+				if result[i].EntityID != exp {
+					t.Errorf("expected EntityID %q at index %d, got %q", exp, i, result[i].EntityID)
+				}
+			}
+		})
+	}
+}
+
+// TestFilterIdPsByField_SliceField tests the generic filterIdPsBySliceField with slice field accessor.
+// @tra: Adapter.Metadata.FilterByFieldSlice
+func TestFilterIdPsByField_SliceField(t *testing.T) {
+	tests := []struct {
+		name     string
+		idps     []domain.IdPInfo
+		pattern  string
+		expected []string
+	}{
+		{
+			name:     "empty pattern returns all",
+			pattern:  "",
+			idps:     []domain.IdPInfo{{EntityID: "idp1", EntityCategories: []string{"cat1"}}},
+			expected: []string{"idp1"},
+		},
+		{
+			name:    "matches single category",
+			pattern: "cat1",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", EntityCategories: []string{"cat1"}},
+				{EntityID: "idp2", EntityCategories: []string{"cat2"}},
+			},
+			expected: []string{"idp1"},
+		},
+		{
+			name:    "empty slice excluded",
+			pattern: "cat1",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", EntityCategories: []string{"cat1"}},
+				{EntityID: "idp2", EntityCategories: []string{}},
+			},
+			expected: []string{"idp1"},
+		},
+		{
+			name:    "nil slice excluded",
+			pattern: "cat1",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", EntityCategories: []string{"cat1"}},
+				{EntityID: "idp2", EntityCategories: nil},
+			},
+			expected: []string{"idp1"},
+		},
+		{
+			name:    "multiple patterns with comma",
+			pattern: "cat1,cat2",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", EntityCategories: []string{"cat1"}},
+				{EntityID: "idp2", EntityCategories: []string{"cat2"}},
+				{EntityID: "idp3", EntityCategories: []string{"cat3"}},
+			},
+			expected: []string{"idp1", "idp2"},
+		},
+		{
+			name:    "IdP with multiple values, one matches",
+			pattern: "cat2",
+			idps: []domain.IdPInfo{
+				{EntityID: "idp1", EntityCategories: []string{"cat1", "cat2"}},
+				{EntityID: "idp2", EntityCategories: []string{"cat3"}},
+			},
+			expected: []string{"idp1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := filterIdPsBySliceField(tt.idps, tt.pattern, func(idp domain.IdPInfo) []string {
+				return idp.EntityCategories
+			})
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d results, got %d", len(tt.expected), len(result))
+				return
+			}
+			for i, exp := range tt.expected {
+				if result[i].EntityID != exp {
+					t.Errorf("expected EntityID %q at index %d, got %q", exp, i, result[i].EntityID)
 				}
 			}
 		})

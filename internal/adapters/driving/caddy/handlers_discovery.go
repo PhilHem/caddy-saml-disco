@@ -129,14 +129,6 @@ func (s *SAMLDisco) handleSelectIdPInternal(w http.ResponseWriter, r *http.Reque
 	return nil
 }
 
-func (s *SAMLDisco) handleListIdPsForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleListIdPsInternal(w, r, spConfig)
-}
-
-func (s *SAMLDisco) handleSelectIdPForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
-	return s.handleSelectIdPInternal(w, r, spConfig)
-}
-
 // separatePinnedIdPsForSP separates pinned IdPs from the main list for a specific SP config.
 func (s *SAMLDisco) separatePinnedIdPsForSP(spConfig *SPConfig, idps []domain.IdPInfo) ([]domain.IdPInfo, []domain.IdPInfo) {
 	return domain.SeparatePinnedIdPs(idps, spConfig.PinnedIdPs)

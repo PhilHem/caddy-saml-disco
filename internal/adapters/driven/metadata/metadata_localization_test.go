@@ -759,6 +759,4 @@ func TestApplyFilters_Property_OrderIndependence(t *testing.T) {
 	}
 }
 
-
-
 // TestFileMetadataStore_WithEntityCategoryFilter tests filtering via FileMetadataStore
