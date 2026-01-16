@@ -3,6 +3,7 @@
 package caddy
 
 import (
+	"crypto/tls"
 	"net/http/httptest"
 	"testing"
 
@@ -187,4 +188,45 @@ func TestSAMLDisco_ServeHTTP_MultiSP_UnknownHostname(t *testing.T) {
 
 	_ = w
 	_ = req
+}
+
+// TestResolveAcsURLForSP_XForwardedProto verifies that resolveAcsURLForSP
+// respects X-Forwarded-Proto header for reverse proxy deployments.
+// This is a regression test for the inconsistency where resolveAcsURL checked
+// X-Forwarded-Proto but resolveAcsURLForSP did not.
+func TestResolveAcsURLForSP_XForwardedProto(t *testing.T) {
+	s := &SAMLDisco{}
+	spConfig := &SPConfig{}
+
+	tests := []struct {
+		name           string
+		tls            bool
+		xForwardProto  string
+		expectedScheme string
+	}{
+		{"TLS connection", true, "", "https"},
+		{"No TLS, no header", false, "", "http"},
+		{"No TLS with X-Forwarded-Proto https", false, "https", "https"},
+		{"No TLS with X-Forwarded-Proto http", false, "http", "http"},
+		{"TLS ignores X-Forwarded-Proto", true, "http", "https"}, // TLS takes precedence
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.Host = "app.example.com"
+			if tc.tls {
+				// Simulate TLS by setting req.TLS
+				req.TLS = &tls.ConnectionState{}
+			}
+			if tc.xForwardProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tc.xForwardProto)
+			}
+
+			acsURL := s.resolveAcsURLForSP(req, spConfig)
+			if acsURL.Scheme != tc.expectedScheme {
+				t.Errorf("resolveAcsURLForSP scheme = %q, want %q", acsURL.Scheme, tc.expectedScheme)
+			}
+		})
+	}
 }

@@ -10,7 +10,7 @@ test:
 
 # Run unit tests only
 test-unit:
-	go test -tags=unit ./...
+	go test -tags=unit -timeout 30s -failfast ./...
 
 # Run unit tests with 5s timeout per test (identifies slow/deadlocking tests)
 test-unit-timeout:
@@ -30,7 +30,7 @@ test-bdd:
 
 # Run domain tests only
 test-domain:
-	go test -tags=unit -v ./internal/core/domain/...
+	go test -tags=unit -timeout 30s -failfast -v ./internal/core/domain/...
 
 # Run metrics tests only
 test-metrics:

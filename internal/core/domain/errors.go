@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"net/http"
 )
 
 // ErrorCode represents categorized error types.
@@ -59,16 +58,17 @@ func (e *AppError) Unwrap() error {
 }
 
 // HTTPStatus returns the HTTP status code for this error code.
+// Uses plain integers to avoid framework dependencies in the domain layer.
 func (c ErrorCode) HTTPStatus() int {
 	switch c {
 	case ErrCodeIdPNotFound:
-		return http.StatusNotFound
+		return 404 // Not Found
 	case ErrCodeAuthFailed, ErrCodeSessionInvalid:
-		return http.StatusUnauthorized
+		return 401 // Unauthorized
 	case ErrCodeBadRequest, ErrCodeSignatureInvalid:
-		return http.StatusBadRequest
+		return 400 // Bad Request
 	default:
-		return http.StatusInternalServerError
+		return 500 // Internal Server Error
 	}
 }
 

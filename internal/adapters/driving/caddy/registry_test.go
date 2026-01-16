@@ -64,3 +64,52 @@ func TestSPConfigRegistry_GetByHostname_CaseSensitive(t *testing.T) {
 		t.Error("should not match different case")
 	}
 }
+
+func TestSPConfigRegistry_Add_SucceedsForUniqueHostname(t *testing.T) {
+	registry := NewSPConfigRegistry()
+
+	cfg1 := &SPConfig{Hostname: "app1.example.com", Config: Config{EntityID: "https://app1/saml"}}
+	cfg2 := &SPConfig{Hostname: "app2.example.com", Config: Config{EntityID: "https://app2/saml"}}
+
+	err := registry.Add(cfg1)
+	if err != nil {
+		t.Errorf("Add unique hostname should not error, got: %v", err)
+	}
+
+	err = registry.Add(cfg2)
+	if err != nil {
+		t.Errorf("Add second unique hostname should not error, got: %v", err)
+	}
+
+	// Verify both are in registry
+	if registry.GetByHostname("app1.example.com") == nil {
+		t.Error("app1.example.com should be in registry")
+	}
+	if registry.GetByHostname("app2.example.com") == nil {
+		t.Error("app2.example.com should be in registry")
+	}
+}
+
+func TestSPConfigRegistry_Add_ReturnsErrorOnCollision(t *testing.T) {
+	registry := NewSPConfigRegistry()
+
+	cfg1 := &SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app1/saml"}}
+	cfg2 := &SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app2/saml"}}
+
+	err := registry.Add(cfg1)
+	if err != nil {
+		t.Errorf("Add first config should not error, got: %v", err)
+	}
+
+	// Adding duplicate hostname should return error
+	err = registry.Add(cfg2)
+	if err == nil {
+		t.Error("Add duplicate hostname should return error")
+	}
+
+	// Original config should still be in registry
+	found := registry.GetByHostname("app.example.com")
+	if found == nil || found.Config.EntityID != "https://app1/saml" {
+		t.Error("original config should be unchanged after collision attempt")
+	}
+}

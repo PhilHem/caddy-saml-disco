@@ -74,7 +74,7 @@ func validateSPConfigs(configs []*SPConfig) error {
 		if err := cfg.Validate(); err != nil {
 			return fmt.Errorf("sp config for %s: %w", cfg.Hostname, err)
 		}
-		cookieName := cfg.SessionCookieName
+		cookieName := cfg.Config.SessionCookieName
 		if cookieName == "" {
 			// Use default if not set
 			cookieName = "saml_session"

@@ -262,7 +262,7 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 
 		// Clear session
 		http.SetCookie(w, &http.Cookie{
-			Name:     spConfig.SessionCookieName,
+			Name:     spConfig.Config.SessionCookieName,
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
@@ -304,7 +304,7 @@ func (s *SAMLDisco) handleSLOForSP(w http.ResponseWriter, r *http.Request, spCon
 
 		// Clear session
 		http.SetCookie(w, &http.Cookie{
-			Name:     spConfig.SessionCookieName,
+			Name:     spConfig.Config.SessionCookieName,
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
@@ -445,7 +445,7 @@ func (s *SAMLDisco) handleSessionInfoForSP(w http.ResponseWriter, r *http.Reques
 
 	// Try to get session from cookie
 	if spConfig.sessionStore != nil {
-		cookie, err := r.Cookie(spConfig.SessionCookieName)
+		cookie, err := r.Cookie(spConfig.Config.SessionCookieName)
 		if err == nil && cookie.Value != "" {
 			session, err := spConfig.sessionStore.Get(cookie.Value)
 			if err == nil && session != nil {

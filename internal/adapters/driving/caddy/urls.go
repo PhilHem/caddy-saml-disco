@@ -8,6 +8,23 @@ import (
 // URL resolution methods for SAMLDisco.
 // These methods compute ACS and SLO URLs from request context and configuration.
 
+// @tra: Adapter.ResolveSchemeDirectTLS
+// @tra: Adapter.ResolveSchemeXForwardedProto
+// @tra: Adapter.ResolveSchemePlainHTTP
+// resolveScheme extracts the scheme from an HTTP request.
+// Returns "https" if r.TLS is set, otherwise checks X-Forwarded-Proto header,
+// falling back to "http" if neither is available.
+func resolveScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	// Check X-Forwarded-Proto header
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
+	return "http"
+}
+
 // resolveAcsURL computes the ACS URL from the request and configuration.
 func (s *SAMLDisco) resolveAcsURL(r *http.Request) *url.URL {
 	if s.AcsURL != "" {
@@ -16,18 +33,8 @@ func (s *SAMLDisco) resolveAcsURL(r *http.Request) *url.URL {
 	}
 
 	// Compute from request
-	scheme := "https"
-	if r.TLS == nil {
-		// Check X-Forwarded-Proto header
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		} else {
-			scheme = "http"
-		}
-	}
-
 	return &url.URL{
-		Scheme: scheme,
+		Scheme: resolveScheme(r),
 		Host:   r.Host,
 		Path:   "/saml/acs",
 	}
@@ -35,19 +42,8 @@ func (s *SAMLDisco) resolveAcsURL(r *http.Request) *url.URL {
 
 // resolveSLOURL computes the SLO URL from the request.
 func (s *SAMLDisco) resolveSLOURL(r *http.Request) *url.URL {
-	// Compute from request (similar to resolveAcsURL)
-	scheme := "https"
-	if r.TLS == nil {
-		// Check X-Forwarded-Proto header
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		} else {
-			scheme = "http"
-		}
-	}
-
 	return &url.URL{
-		Scheme: scheme,
+		Scheme: resolveScheme(r),
 		Host:   r.Host,
 		Path:   "/saml/slo",
 	}
@@ -63,12 +59,8 @@ func (s *SAMLDisco) resolveAcsURLForSP(r *http.Request, spConfig *SPConfig) *url
 	}
 
 	// Default: construct from request
-	scheme := "https"
-	if r.TLS == nil {
-		scheme = "http"
-	}
 	return &url.URL{
-		Scheme: scheme,
+		Scheme: resolveScheme(r),
 		Host:   r.Host,
 		Path:   "/saml/acs",
 	}
@@ -76,19 +68,8 @@ func (s *SAMLDisco) resolveAcsURLForSP(r *http.Request, spConfig *SPConfig) *url
 
 // resolveSLOURLForSP computes the SLO URL from the request and SP config.
 func (s *SAMLDisco) resolveSLOURLForSP(r *http.Request, spConfig *SPConfig) *url.URL {
-	// Compute from request (similar to resolveAcsURLForSP)
-	scheme := "https"
-	if r.TLS == nil {
-		// Check X-Forwarded-Proto header
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		} else {
-			scheme = "http"
-		}
-	}
-
 	return &url.URL{
-		Scheme: scheme,
+		Scheme: resolveScheme(r),
 		Host:   r.Host,
 		Path:   "/saml/slo",
 	}

@@ -97,6 +97,7 @@ func NewSPConfigRegistry() *SPConfigRegistry {
 }
 
 // Add adds an SP config to the registry.
+// Returns an error if a config with the same hostname already exists.
 func (r *SPConfigRegistry) Add(cfg *SPConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("config cannot be nil")
@@ -106,6 +107,9 @@ func (r *SPConfigRegistry) Add(cfg *SPConfig) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, exists := r.configs[cfg.Hostname]; exists {
+		return fmt.Errorf("SP config with hostname %q already exists", cfg.Hostname)
+	}
 	r.configs[cfg.Hostname] = cfg
 	return nil
 }
@@ -252,7 +256,7 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("load SP private key: %w", err)
 		}
 
-		duration, err := time.ParseDuration(s.SessionDuration)
+		duration, err := time.ParseDuration(s.Config.SessionDuration)
 		if err != nil {
 			return fmt.Errorf("parse session duration: %w", err)
 		}
@@ -278,8 +282,8 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	}
 
 	// Parse remember IdP duration
-	if s.RememberIdPDuration != "" {
-		rememberDur, err := ParseDuration(s.RememberIdPDuration)
+	if s.Config.RememberIdPDuration != "" {
+		rememberDur, err := ParseDuration(s.Config.RememberIdPDuration)
 		if err != nil {
 			return fmt.Errorf("parse remember IdP duration: %w", err)
 		}
@@ -430,7 +434,7 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 			return fmt.Errorf("load SP private key: %w", err)
 		}
 
-		duration, err := time.ParseDuration(spCfg.SessionDuration)
+		duration, err := time.ParseDuration(spCfg.Config.SessionDuration)
 		if err != nil {
 			return fmt.Errorf("parse session duration: %w", err)
 		}
@@ -587,7 +591,7 @@ func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next 
 
 	// Check session for protected routes (skip SAML endpoints)
 	if spConfig.sessionStore != nil && !strings.HasPrefix(r.URL.Path, "/saml/") {
-		cookie, err := r.Cookie(spConfig.SessionCookieName)
+		cookie, err := r.Cookie(spConfig.Config.SessionCookieName)
 		if err != nil || cookie.Value == "" {
 			s.redirectToIdPForSP(w, r, spConfig)
 			return nil
@@ -1003,7 +1007,7 @@ func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) er
 
 	// Try to get session from cookie
 	if s.sessionStore != nil {
-		cookie, err := r.Cookie(s.SessionCookieName)
+		cookie, err := r.Cookie(s.Config.SessionCookieName)
 		if err == nil && cookie.Value != "" {
 			session, err := s.sessionStore.Get(cookie.Value)
 			if err == nil && session != nil {
@@ -1205,7 +1209,7 @@ func (s *SAMLDisco) handleSLO(w http.ResponseWriter, r *http.Request) error {
 
 		// Clear session
 		http.SetCookie(w, &http.Cookie{
-			Name:     s.SessionCookieName,
+			Name:     s.Config.SessionCookieName,
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
@@ -1241,7 +1245,7 @@ func (s *SAMLDisco) handleSLO(w http.ResponseWriter, r *http.Request) error {
 
 		// Clear session for the user (would match by NameID from result)
 		http.SetCookie(w, &http.Cookie{
-			Name:     s.SessionCookieName,
+			Name:     s.Config.SessionCookieName,
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
@@ -1328,11 +1332,24 @@ func ValidateRelayState(relayState string) string {
 	}
 
 	// Check for encoded characters that could bypass validation
-	// Decode and re-check for protocol-relative URLs
-	decoded, err := url.QueryUnescape(relayState)
-	if err != nil {
-		return "/"
+	// Decode in a loop to catch double/triple encoding attacks (e.g., /%2f%2f or /%252f%252f)
+	decoded := relayState
+	for i := 0; i < 10; i++ { // Max 10 iterations to prevent infinite loops
+		newDecoded, err := url.QueryUnescape(decoded)
+		if err != nil {
+			return "/"
+		}
+		if newDecoded == decoded {
+			break // No more decoding needed
+		}
+		decoded = newDecoded
+		// Check after each decode for protocol-relative URLs
+		if strings.HasPrefix(decoded, "//") {
+			return "/"
+		}
 	}
+
+	// Final check on fully decoded value
 	if strings.HasPrefix(decoded, "//") {
 		return "/"
 	}

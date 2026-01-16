@@ -952,6 +952,12 @@ func TestValidateRelayState(t *testing.T) {
 		{"tab prefix becomes valid", "\t/valid", "/valid"},       // trimmed, then valid
 		{"only whitespace", "   ", "/"},                          // trimmed to empty
 		{"newline in path", "/path\nHeader: injection", "/"},     // header injection blocked
+
+		// Double-encoding bypass attempts - should be rejected
+		{"double encoded protocol relative", "/%2f%2fevil.com", "/"},      // decodes to //evil.com
+		{"triple encoded protocol relative", "/%252f%252fevil.com", "/"},  // decodes to /%2f%2f then //
+		{"double encoded with path", "/%2f%2fevil.com/path", "/"},         // decodes to //evil.com/path
+		{"mixed encoding bypass", "/%2F%2Fevil.com", "/"},                 // uppercase encoding
 	}
 
 	for _, tc := range tests {

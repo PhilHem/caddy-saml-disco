@@ -13,38 +13,34 @@ import (
 // Attribute header methods for SAMLDisco.
 // These methods handle SAML attribute-to-HTTP-header mapping, stripping, and restoration.
 
-// applyAttributeHeaders applies SAML attributes and entitlements as HTTP headers.
-// Headers are mapped according to AttributeHeaders and EntitlementHeaders configuration.
-// Only headers with X- prefix are allowed for security.
-// If entitlements are configured, local entitlements supplement IdP-provided SAML attributes.
-func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Session) {
-	// Use snapshots if available (taken during Provision to prevent mutation),
-	// otherwise fall back to live config (for backward compatibility or tests that don't call Provision)
-	attributeHeaders := s.attributeHeadersSnapshot
-	if len(attributeHeaders) == 0 {
-		attributeHeaders = s.AttributeHeaders
-	}
-	entitlementHeaders := s.entitlementHeadersSnapshot
-	if len(entitlementHeaders) == 0 {
-		entitlementHeaders = s.EntitlementHeaders
-	}
-	headerPrefix := s.headerPrefixSnapshot
-	// Check if snapshot is empty (zero value) - if so, use live config
-	if headerPrefix == "" && s.HeaderPrefix != "" {
-		headerPrefix = s.HeaderPrefix
-	}
+// HeaderConfig encapsulates configuration for applying attribute headers.
+// It captures: attributeHeaders, entitlementHeaders, headerPrefix, stripHeaders, entitlementStore.
+type HeaderConfig struct {
+	AttributeHeaders   []AttributeMapping
+	EntitlementHeaders []EntitlementHeaderMapping
+	HeaderPrefix       string
+	StripHeaders       bool
+	EntitlementStore   ports.EntitlementStore
+	// RestoreOnEntitlementError controls whether headers should be restored when
+	// entitlement lookup fails. Set to true for SP mode (strict), false for non-SP mode (lenient).
+	RestoreOnEntitlementError bool
+}
 
-	if len(attributeHeaders) == 0 && len(entitlementHeaders) == 0 {
+// applyAttributeHeadersCore applies SAML attributes and entitlements as HTTP headers
+// using the provided configuration. This is the shared logic used by both
+// applyAttributeHeaders and applyAttributeHeadersForSP.
+func applyAttributeHeadersCore(r *http.Request, session *domain.Session, cfg HeaderConfig, logger *zap.Logger) {
+	if len(cfg.AttributeHeaders) == 0 && len(cfg.EntitlementHeaders) == 0 {
 		return
 	}
 
 	// Store original header values before stripping (for rollback on error)
 	var originalHeaders map[string][]string
-	if s.shouldStripAttributeHeaders() {
+	if cfg.StripHeaders {
 		// Save state before stripping
 		originalHeaders = make(map[string][]string)
-		for _, mapping := range attributeHeaders {
-			headerToStrip := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
+		for _, mapping := range cfg.AttributeHeaders {
+			headerToStrip := domain.ApplyHeaderPrefix(cfg.HeaderPrefix, mapping.HeaderName)
 			canonical := http.CanonicalHeaderKey(headerToStrip)
 			// Find the actual key in the map (may differ in case, especially for non-ASCII)
 			// Iterate through all headers to find case-insensitive match
@@ -59,8 +55,8 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 				}
 			}
 		}
-		for _, mapping := range entitlementHeaders {
-			headerToStrip := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
+		for _, mapping := range cfg.EntitlementHeaders {
+			headerToStrip := domain.ApplyHeaderPrefix(cfg.HeaderPrefix, mapping.HeaderName)
 			canonical := http.CanonicalHeaderKey(headerToStrip)
 			// Find the actual key in the map (may differ in case, especially for non-ASCII)
 			// Iterate through all headers to find case-insensitive match
@@ -94,17 +90,23 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 
 	// Look up entitlements if configured
 	var entitlementResult *domain.EntitlementResult
-	if s.entitlementStore != nil {
-		result, err := s.entitlementStore.Lookup(session.Subject)
+	if cfg.EntitlementStore != nil {
+		result, err := cfg.EntitlementStore.Lookup(session.Subject)
 		if err != nil {
 			// Log error but continue - entitlements are supplementary
 			// ErrEntitlementNotFound is expected for users not in entitlements file
 			if !errors.Is(err, domain.ErrEntitlementNotFound) {
-				s.getLogger().Warn("entitlement lookup failed during header mapping",
+				logger.Warn("entitlement lookup failed during header mapping",
 					zap.Error(err),
 					zap.String("subject", session.Subject),
 				)
-				// Continue to apply SAML attributes even when entitlement lookup fails
+				// If RestoreOnEntitlementError is set (SP mode) and EntitlementHeaders are configured,
+				// restore headers before returning (consistent with mapping error behavior - HEADER-012)
+				if cfg.RestoreOnEntitlementError && len(cfg.EntitlementHeaders) > 0 && originalHeaders != nil {
+					restoreHeaderState(r, originalHeaders)
+					return
+				}
+				// Otherwise continue to apply SAML attributes even when entitlement lookup fails
 				// (HEADER-015: Entitlements are supplementary, not blocking)
 				// entitlementResult remains nil, so entitlement headers won't be set
 			}
@@ -117,24 +119,24 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 	combined := domain.CombineAttributes(multiAttrs, entitlementResult)
 
 	// Map SAML attributes to headers (if AttributeHeaders configured)
-	if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
+	if len(cfg.AttributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
 		// Convert caddy.AttributeMapping to ports.AttributeMapping
-		portMappings := make([]ports.AttributeMapping, len(attributeHeaders))
-		for i, m := range attributeHeaders {
+		portMappings := make([]ports.AttributeMapping, len(cfg.AttributeHeaders))
+		for i, m := range cfg.AttributeHeaders {
 			portMappings[i] = ports.AttributeMapping{
 				SAMLAttribute: m.SAMLAttribute,
 				HeaderName:    m.HeaderName,
 				Separator:     m.Separator,
 			}
 		}
-		headers, err := domain.MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, portMappings, headerPrefix)
+		headers, err := domain.MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, portMappings, cfg.HeaderPrefix)
 		if err != nil {
 			// Configuration error - should have been caught at startup
 			// Restore original headers before returning
 			if originalHeaders != nil {
 				restoreHeaderState(r, originalHeaders)
 			}
-			s.getLogger().Error("failed to map attributes to headers",
+			logger.Error("failed to map attributes to headers",
 				zap.Error(err),
 				zap.String("subject", session.Subject),
 			)
@@ -149,14 +151,14 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 	}
 
 	// Map entitlements to headers (if EntitlementHeaders configured)
-	if len(entitlementHeaders) > 0 && entitlementResult != nil {
-		mappedEntitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, entitlementHeaders)
+	if len(cfg.EntitlementHeaders) > 0 && entitlementResult != nil {
+		mappedEntitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, cfg.EntitlementHeaders)
 		if err != nil {
 			// Restore original headers before returning
 			if originalHeaders != nil {
 				restoreHeaderState(r, originalHeaders)
 			}
-			s.getLogger().Error("failed to map entitlements to headers",
+			logger.Error("failed to map entitlements to headers",
 				zap.Error(err),
 				zap.String("subject", session.Subject),
 			)
@@ -165,11 +167,45 @@ func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Sessi
 
 		// Apply prefix to entitlement headers
 		for header, value := range mappedEntitlementHeaders {
-			finalHeader := domain.ApplyHeaderPrefix(headerPrefix, header)
+			finalHeader := domain.ApplyHeaderPrefix(cfg.HeaderPrefix, header)
 			finalHeader = http.CanonicalHeaderKey(finalHeader)
 			r.Header.Set(finalHeader, value)
 		}
 	}
+}
+
+// applyAttributeHeaders applies SAML attributes and entitlements as HTTP headers.
+// Headers are mapped according to AttributeHeaders and EntitlementHeaders configuration.
+// Only headers with X- prefix are allowed for security.
+// If entitlements are configured, local entitlements supplement IdP-provided SAML attributes.
+func (s *SAMLDisco) applyAttributeHeaders(r *http.Request, session *domain.Session) {
+	// Use snapshots if available (taken during Provision to prevent mutation),
+	// otherwise fall back to live config (for backward compatibility or tests that don't call Provision)
+	attributeHeaders := s.attributeHeadersSnapshot
+	if len(attributeHeaders) == 0 {
+		attributeHeaders = s.AttributeHeaders
+	}
+	entitlementHeaders := s.entitlementHeadersSnapshot
+	if len(entitlementHeaders) == 0 {
+		entitlementHeaders = s.EntitlementHeaders
+	}
+	headerPrefix := s.headerPrefixSnapshot
+	// Check if snapshot is empty (zero value) - if so, use live config
+	if headerPrefix == "" && s.HeaderPrefix != "" {
+		headerPrefix = s.HeaderPrefix
+	}
+
+	// Create HeaderConfig and call core function
+	cfg := HeaderConfig{
+		AttributeHeaders:          attributeHeaders,
+		EntitlementHeaders:        entitlementHeaders,
+		HeaderPrefix:              headerPrefix,
+		StripHeaders:              s.shouldStripAttributeHeaders(),
+		EntitlementStore:          s.entitlementStore,
+		RestoreOnEntitlementError: false, // Non-SP mode: lenient (continue on entitlement error)
+	}
+
+	applyAttributeHeadersCore(r, session, cfg, s.getLogger())
 }
 
 // saveHeaderState stores original header values before stripping for rollback on error.
@@ -264,110 +300,15 @@ func (s *SAMLDisco) applyAttributeHeadersForSP(r *http.Request, session *domain.
 		headerPrefix = spConfig.HeaderPrefix
 	}
 
-	// Store original header values before stripping (for rollback on error)
-	var originalHeaders map[string][]string
-	if shouldStripAttributeHeadersForSP(spConfig) {
-		originalHeaders = make(map[string][]string)
-		for _, mapping := range attributeHeaders {
-			headerName := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
-			headerName = http.CanonicalHeaderKey(headerName)
-			if values := r.Header[headerName]; len(values) > 0 {
-				originalHeaders[headerName] = values
-			}
-			r.Header.Del(headerName)
-		}
-		for _, mapping := range entitlementHeaders {
-			headerName := domain.ApplyHeaderPrefix(headerPrefix, mapping.HeaderName)
-			headerName = http.CanonicalHeaderKey(headerName)
-			if values := r.Header[headerName]; len(values) > 0 {
-				originalHeaders[headerName] = values
-			}
-			r.Header.Del(headerName)
-		}
+	// Create HeaderConfig and call core function
+	cfg := HeaderConfig{
+		AttributeHeaders:          attributeHeaders,
+		EntitlementHeaders:        entitlementHeaders,
+		HeaderPrefix:              headerPrefix,
+		StripHeaders:              shouldStripAttributeHeadersForSP(spConfig),
+		EntitlementStore:          spConfig.entitlementStore,
+		RestoreOnEntitlementError: true, // SP mode: strict (restore headers on entitlement error)
 	}
 
-	if session == nil {
-		return
-	}
-
-	// Convert single-valued session attributes to multi-valued format
-	var multiAttrs map[string][]string
-	if len(session.Attributes) > 0 {
-		multiAttrs = make(map[string][]string, len(session.Attributes))
-		for k, v := range session.Attributes {
-			multiAttrs[k] = []string{v}
-		}
-	}
-
-	// Look up entitlements if configured
-	var entitlementResult *domain.EntitlementResult
-	if spConfig.entitlementStore != nil {
-		result, err := spConfig.entitlementStore.Lookup(session.Subject)
-		if err != nil {
-			// Log error but continue - entitlements are supplementary
-			// ErrEntitlementNotFound is expected for users not in entitlements file
-			if !errors.Is(err, domain.ErrEntitlementNotFound) {
-				s.getLogger().Warn("entitlement lookup failed during header mapping",
-					zap.Error(err),
-					zap.String("subject", session.Subject),
-				)
-				// If EntitlementHeaders are configured, restore headers before returning
-				// (consistent with mapping error behavior - HEADER-012)
-				if len(entitlementHeaders) > 0 && originalHeaders != nil {
-					restoreHeaderState(r, originalHeaders)
-					return
-				}
-			}
-		} else {
-			entitlementResult = result
-		}
-	}
-
-	// Combine SAML attributes with local entitlements
-	combined := domain.CombineAttributes(multiAttrs, entitlementResult)
-
-	// Map SAML attributes to headers (if AttributeHeaders configured)
-	if len(attributeHeaders) > 0 && len(combined.SAMLAttributes) > 0 {
-		headers, err := domain.MapAttributesToHeadersWithPrefix(combined.SAMLAttributes, attributeHeaders, headerPrefix)
-		if err != nil {
-			// Restore original headers before returning
-			if originalHeaders != nil {
-				restoreHeaderState(r, originalHeaders)
-			}
-			s.getLogger().Error("failed to map attributes to headers",
-				zap.Error(err),
-				zap.String("subject", session.Subject),
-			)
-			return
-		}
-
-		// Set headers on the request
-		for header, value := range headers {
-			canonicalHeader := http.CanonicalHeaderKey(header)
-			r.Header.Set(canonicalHeader, value)
-		}
-	}
-
-	// Map entitlements to headers (if EntitlementHeaders configured)
-	if len(entitlementHeaders) > 0 && entitlementResult != nil {
-		mappedEntitlementHeaders, err := MapEntitlementsToHeaders(entitlementResult, entitlementHeaders)
-		if err != nil {
-			// Restore original headers before returning
-			if originalHeaders != nil {
-				restoreHeaderState(r, originalHeaders)
-			}
-			s.getLogger().Error("failed to map entitlements to headers",
-				zap.Error(err),
-				zap.String("subject", session.Subject),
-			)
-			return
-		}
-
-		// Apply prefix to entitlement headers
-		for header, value := range mappedEntitlementHeaders {
-			finalHeader := domain.ApplyHeaderPrefix(headerPrefix, header)
-			finalHeader = http.CanonicalHeaderKey(finalHeader)
-			r.Header.Set(finalHeader, value)
-		}
-	}
+	applyAttributeHeadersCore(r, session, cfg, s.getLogger())
 }
