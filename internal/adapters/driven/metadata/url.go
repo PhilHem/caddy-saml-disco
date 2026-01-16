@@ -91,6 +91,11 @@ func NewURLMetadataStoreWithRefresh(url string, refreshInterval time.Duration, o
 	s := NewURLMetadataStore(url, refreshInterval, opts...)
 	s.stopCh = make(chan struct{})
 	s.refreshCtx, s.refreshCancel = context.WithCancel(context.Background())
+	if s.logger != nil {
+		s.logger.Info("starting background metadata refresh",
+			zap.Duration("interval", refreshInterval),
+			zap.String("url", url))
+	}
 	go s.refreshLoop(refreshInterval)
 	return s
 }
@@ -103,17 +108,21 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 		select {
 		case <-ticker.C:
 			// Use cancellable context for background refresh
+			startTime := s.clock.Now()
 			err := s.doRefresh(s.refreshCtx, true) // force=true bypasses cache TTL
+			duration := s.clock.Now().Sub(startTime)
 			if s.logger != nil {
 				if err != nil {
 					s.logger.Warn("background metadata refresh failed",
-						zap.Error(err))
+						zap.Error(err),
+						zap.Duration("duration", duration))
 				} else {
 					s.mu.RLock()
 					idpCount := len(s.idps)
 					s.mu.RUnlock()
 					s.logger.Info("background metadata refresh succeeded",
-						zap.Int("idp_count", idpCount))
+						zap.Int("idp_count", idpCount),
+						zap.Duration("duration", duration))
 				}
 			}
 			if s.onRefresh != nil {
@@ -135,6 +144,9 @@ func (s *URLMetadataStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.stopCh != nil && !s.closed {
+		if s.logger != nil {
+			s.logger.Info("stopping background metadata refresh")
+		}
 		close(s.stopCh)
 		s.closed = true
 		// Cancel refresh context to stop in-progress HTTP requests
@@ -148,7 +160,18 @@ func (s *URLMetadataStore) Close() error {
 // Load fetches and parses the metadata from the URL.
 // This should be called during initialization.
 func (s *URLMetadataStore) Load() error {
-	return s.Refresh(context.Background())
+	startTime := s.clock.Now()
+	err := s.Refresh(context.Background())
+	if err == nil && s.logger != nil {
+		s.mu.RLock()
+		idpCount := len(s.idps)
+		s.mu.RUnlock()
+		s.logger.Info("metadata loaded",
+			zap.String("source", s.url),
+			zap.Int("idp_count", idpCount),
+			zap.Duration("duration", s.clock.Now().Sub(startTime)))
+	}
+	return err
 }
 
 // GetIdP returns the IdP if the entity ID matches.
@@ -240,10 +263,18 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	// Check if cache is still valid (unless forced) - do this while holding refreshMu
 	// to ensure atomic check with refresh state
 	s.mu.RLock()
-	cacheValid := !force && !s.lastFetch.IsZero() && s.clock.Now().Sub(s.lastFetch) < s.cacheTTL
+	now := s.clock.Now()
+	cacheValid := !force && !s.lastFetch.IsZero() && now.Sub(s.lastFetch) < s.cacheTTL
 	if cacheValid {
+		ttlRemaining := s.cacheTTL - now.Sub(s.lastFetch)
+		idpCount := len(s.idps)
 		s.mu.RUnlock()
 		s.refreshMu.Unlock()
+		if s.logger != nil {
+			s.logger.Debug("using cached metadata",
+				zap.Duration("ttl_remaining", ttlRemaining),
+				zap.Int("idp_count", idpCount))
+		}
 		return nil // Cache hit
 	}
 	// Read etag/lastModified while holding both locks to ensure consistency
@@ -254,6 +285,13 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	// Mark refresh as in progress
 	s.refreshing = true
 	s.refreshMu.Unlock()
+
+	// Log cache miss (fetching)
+	if s.logger != nil {
+		s.logger.Debug("fetching metadata",
+			zap.String("url", s.url),
+			zap.Bool("forced", force))
+	}
 
 	// Ensure we clear refreshing flag when done
 	defer func() {
@@ -284,7 +322,10 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		req.Header.Set("If-Modified-Since", lastModified)
 	}
 
+	// Time the HTTP request
+	httpStartTime := s.clock.Now()
 	resp, err := s.httpClient.Do(req)
+	responseTime := s.clock.Now().Sub(httpStartTime)
 	if err != nil {
 		refreshErr := fmt.Errorf("fetch metadata: %w", err)
 		s.markRefreshFailed(refreshErr)
@@ -300,6 +341,11 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		s.lastError = nil
 		// lastSuccessTime stays the same (data itself didn't change)
 		s.mu.Unlock()
+		if s.logger != nil {
+			s.logger.Debug("metadata not modified (304)",
+				zap.Duration("response_time", responseTime),
+				zap.String("etag", etag))
+		}
 		return nil
 	}
 
@@ -353,17 +399,25 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	}
 
 	// Success - update all state
-	now := s.clock.Now()
+	successTime := s.clock.Now()
+	newEtag := resp.Header.Get("ETag")
 	s.mu.Lock()
 	s.idps = idps
-	s.lastFetch = now
-	s.etag = resp.Header.Get("ETag")
+	s.lastFetch = successTime
+	s.etag = newEtag
 	s.lastModified = resp.Header.Get("Last-Modified")
 	s.isFresh = true
-	s.lastSuccessTime = now
+	s.lastSuccessTime = successTime
 	s.lastError = nil
 	s.validUntil = validUntil
 	s.mu.Unlock()
+
+	if s.logger != nil {
+		s.logger.Debug("metadata fetched (200 OK)",
+			zap.Int("idp_count", len(idps)),
+			zap.Duration("response_time", responseTime),
+			zap.String("new_etag", newEtag))
+	}
 
 	if s.metricsRecorder != nil {
 		s.metricsRecorder.RecordMetadataRefresh("url", true, len(idps))

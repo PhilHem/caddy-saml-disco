@@ -4469,3 +4469,391 @@ func TestExtractEntityIDs_Property_LengthPreserved(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// Metadata Caching Observability Tests (caddy-saml-disco-lat)
+// =============================================================================
+
+// TestURLMetadataStore_CacheHitLogging verifies debug log "using cached metadata"
+// with ttl_remaining and idp_count when cache is valid.
+func TestURLMetadataStore_CacheHitLogging(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour, WithLogger(logger))
+
+	// Initial load (cache miss)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Second load should be a cache hit
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+
+	// Assert: cache hit log
+	hitLogs := logs.FilterMessage("using cached metadata")
+	if hitLogs.Len() == 0 {
+		t.Error("expected 'using cached metadata' debug log on cache hit")
+	}
+
+	if hitLogs.Len() > 0 {
+		entry := hitLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["ttl_remaining"]; !ok {
+			t.Error("expected ttl_remaining field in cache hit log")
+		}
+		if _, ok := fields["idp_count"]; !ok {
+			t.Error("expected idp_count field in cache hit log")
+		}
+	}
+}
+
+// TestURLMetadataStore_CacheMissLogging verifies debug log "fetching metadata"
+// with url and forced fields when cache is invalid or forced.
+func TestURLMetadataStore_CacheMissLogging(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	fakeClock := NewFakeClock()
+	store := NewURLMetadataStore(server.URL, time.Hour,
+		WithLogger(logger),
+		WithClock(fakeClock))
+
+	// Initial load (cache miss)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Assert: cache miss (fetch) log
+	fetchLogs := logs.FilterMessage("fetching metadata")
+	if fetchLogs.Len() == 0 {
+		t.Error("expected 'fetching metadata' debug log on cache miss")
+	}
+
+	if fetchLogs.Len() > 0 {
+		entry := fetchLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["url"]; !ok {
+			t.Error("expected url field in fetch log")
+		}
+		if _, ok := fields["forced"]; !ok {
+			t.Error("expected forced field in fetch log")
+		}
+	}
+}
+
+// TestURLMetadataStore_ConditionalRequestLogging_304 verifies debug log
+// "metadata not modified (304)" with response_time and etag.
+func TestURLMetadataStore_ConditionalRequestLogging_304(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	etag := `"test-etag-123"`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If client sends If-None-Match with our etag, return 304
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	fakeClock := NewFakeClock()
+	store := NewURLMetadataStore(server.URL, time.Hour,
+		WithLogger(logger),
+		WithClock(fakeClock))
+
+	// Initial load
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Advance clock past TTL to force refresh
+	fakeClock.Advance(2 * time.Hour)
+
+	// Second load should get 304
+	if err := store.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() failed: %v", err)
+	}
+
+	// Assert: 304 log
+	notModifiedLogs := logs.FilterMessage("metadata not modified (304)")
+	if notModifiedLogs.Len() == 0 {
+		t.Error("expected 'metadata not modified (304)' debug log")
+	}
+
+	if notModifiedLogs.Len() > 0 {
+		entry := notModifiedLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["response_time"]; !ok {
+			t.Error("expected response_time field in 304 log")
+		}
+		if _, ok := fields["etag"]; !ok {
+			t.Error("expected etag field in 304 log")
+		}
+	}
+}
+
+// TestURLMetadataStore_ConditionalRequestLogging_200 verifies debug log
+// "metadata fetched (200 OK)" with idp_count and response_time.
+func TestURLMetadataStore_ConditionalRequestLogging_200(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour, WithLogger(logger))
+
+	// Initial load
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Assert: 200 OK log
+	fetchedLogs := logs.FilterMessage("metadata fetched (200 OK)")
+	if fetchedLogs.Len() == 0 {
+		t.Error("expected 'metadata fetched (200 OK)' debug log")
+	}
+
+	if fetchedLogs.Len() > 0 {
+		entry := fetchedLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["idp_count"]; !ok {
+			t.Error("expected idp_count field in 200 OK log")
+		}
+		if _, ok := fields["response_time"]; !ok {
+			t.Error("expected response_time field in 200 OK log")
+		}
+	}
+}
+
+// TestURLMetadataStore_BackgroundRefreshLifecycleLogging_Start verifies info log
+// "starting background metadata refresh" with interval and url.
+func TestURLMetadataStore_BackgroundRefreshLifecycleLogging_Start(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStoreWithRefresh(server.URL, time.Hour,
+		WithLogger(logger))
+	defer store.Close()
+
+	// Assert: start log
+	startLogs := logs.FilterMessage("starting background metadata refresh")
+	if startLogs.Len() == 0 {
+		t.Error("expected 'starting background metadata refresh' info log")
+	}
+
+	if startLogs.Len() > 0 {
+		entry := startLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["interval"]; !ok {
+			t.Error("expected interval field in start log")
+		}
+		if _, ok := fields["url"]; !ok {
+			t.Error("expected url field in start log")
+		}
+	}
+}
+
+// TestURLMetadataStore_BackgroundRefreshLifecycleLogging_Stop verifies info log
+// "stopping background metadata refresh" on Close().
+func TestURLMetadataStore_BackgroundRefreshLifecycleLogging_Stop(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStoreWithRefresh(server.URL, time.Hour,
+		WithLogger(logger))
+
+	// Close to trigger stop log
+	store.Close()
+
+	// Assert: stop log
+	stopLogs := logs.FilterMessage("stopping background metadata refresh")
+	if stopLogs.Len() == 0 {
+		t.Error("expected 'stopping background metadata refresh' info log")
+	}
+}
+
+// TestURLMetadataStore_BackgroundRefreshLifecycleLogging_Duration verifies that
+// background refresh logs include duration field.
+func TestURLMetadataStore_BackgroundRefreshLifecycleLogging_Duration(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	refreshed := make(chan error, 10)
+	store := NewURLMetadataStoreWithRefresh(server.URL, 50*time.Millisecond,
+		WithLogger(logger),
+		WithOnRefresh(func(err error) { refreshed <- err }))
+	defer store.Close()
+
+	// Initial load
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Wait for background refresh
+	select {
+	case <-refreshed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for background refresh")
+	}
+
+	// Assert: success log with duration
+	successLogs := logs.FilterMessage("background metadata refresh succeeded")
+	if successLogs.Len() == 0 {
+		t.Error("expected 'background metadata refresh succeeded' info log")
+	}
+
+	if successLogs.Len() > 0 {
+		entry := successLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["duration"]; !ok {
+			t.Error("expected duration field in success log")
+		}
+	}
+}
+
+// TestURLMetadataStore_StartupLogging verifies info log "metadata loaded"
+// with source, idp_count, and duration after Load().
+func TestURLMetadataStore_StartupLogging(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	metadata, err := os.ReadFile("testdata/idp-metadata.xml")
+	if err != nil {
+		t.Fatalf("read test metadata: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(metadata)
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour, WithLogger(logger))
+
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Assert: metadata loaded log
+	loadedLogs := logs.FilterMessage("metadata loaded")
+	if loadedLogs.Len() == 0 {
+		t.Error("expected 'metadata loaded' info log")
+	}
+
+	if loadedLogs.Len() > 0 {
+		entry := loadedLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["source"]; !ok {
+			t.Error("expected source field in loaded log")
+		}
+		if _, ok := fields["idp_count"]; !ok {
+			t.Error("expected idp_count field in loaded log")
+		}
+		if _, ok := fields["duration"]; !ok {
+			t.Error("expected duration field in loaded log")
+		}
+	}
+}
+
+// TestFileMetadataStore_StartupLogging verifies info log "metadata loaded"
+// with source, idp_count, and duration after Load().
+func TestFileMetadataStore_StartupLogging(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	store := NewFileMetadataStore("testdata/idp-metadata.xml", WithLogger(logger))
+
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Assert: metadata loaded log
+	loadedLogs := logs.FilterMessage("metadata loaded")
+	if loadedLogs.Len() == 0 {
+		t.Error("expected 'metadata loaded' info log")
+	}
+
+	if loadedLogs.Len() > 0 {
+		entry := loadedLogs.All()[0]
+		fields := entry.ContextMap()
+		if _, ok := fields["source"]; !ok {
+			t.Error("expected source field in loaded log")
+		}
+		if _, ok := fields["idp_count"]; !ok {
+			t.Error("expected idp_count field in loaded log")
+		}
+		if _, ok := fields["duration"]; !ok {
+			t.Error("expected duration field in loaded log")
+		}
+	}
+}

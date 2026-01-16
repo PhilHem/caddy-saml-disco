@@ -3268,6 +3268,68 @@ func TestHealthEndpoint_NoValidUntil(t *testing.T) {
 }
 
 // =============================================================================
+// Simple Health API: /saml/health Tests
+// =============================================================================
+
+func TestSimpleHealthEndpoint_ReturnsMetadataHealthOnly(t *testing.T) {
+	store := NewInMemoryMetadataStore([]IdPInfo{{EntityID: "https://idp1.example.com"}})
+	s := &SAMLDisco{}
+	s.SetMetadataStore(store)
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	// Should return just MetadataHealth, not full HealthResponse
+	var health MetadataHealth
+	if err := json.NewDecoder(rec.Body).Decode(&health); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if health.IdPCount != 1 {
+		t.Errorf("IdPCount = %d, want 1", health.IdPCount)
+	}
+	if !health.IsFresh {
+		t.Error("IsFresh should be true for in-memory store")
+	}
+
+	// Verify it does NOT include version info (that would be HealthResponse, not MetadataHealth)
+	body := rec.Body.String()
+	if strings.Contains(body, "version") {
+		t.Error("/saml/health should return MetadataHealth without version info")
+	}
+}
+
+func TestSimpleHealthEndpoint_NoMetadataStore(t *testing.T) {
+	s := &SAMLDisco{}
+	// No metadata store configured
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/health", nil)
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err := s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+// =============================================================================
 // Cleanup/CleanerUpper Interface Tests
 // =============================================================================
 

@@ -575,6 +575,10 @@ func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next 
 		if r.Method == http.MethodGet {
 			return s.handleHealthForSP(w, r, spConfig)
 		}
+	case "/saml/health":
+		if r.Method == http.MethodGet {
+			return s.handleSimpleHealthForSP(w, r, spConfig)
+		}
 	case "/saml/disco":
 		if r.Method == http.MethodGet {
 			return s.handleDiscoveryUIForSP(w, r, spConfig)

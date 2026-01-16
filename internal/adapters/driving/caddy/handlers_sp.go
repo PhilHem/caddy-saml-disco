@@ -478,6 +478,19 @@ func (s *SAMLDisco) handleHealthForSP(w http.ResponseWriter, r *http.Request, sp
 	return nil
 }
 
+// handleSimpleHealthForSP returns just the MetadataHealth for simpler monitoring.
+// This is a simplified endpoint at /saml/health (vs /saml/api/health which includes version info).
+func (s *SAMLDisco) handleSimpleHealthForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
+	if spConfig.metadataStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("metadata store not configured"))
+		return nil
+	}
+	health := spConfig.metadataStore.Health()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(health)
+	return nil
+}
+
 func (s *SAMLDisco) handleLogoEndpointForSP(w http.ResponseWriter, r *http.Request, spConfig *SPConfig) error {
 	if spConfig.logoStore == nil {
 		http.NotFound(w, r)

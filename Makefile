@@ -18,7 +18,7 @@ test-unit-timeout:
 
 # Run specific test pattern with timeout
 test-pattern:
-	go test -tags=unit -timeout 5s -run "$(PATTERN)" -v ./...
+	go test -tags=unit -timeout 5s -failfast -run "$(PATTERN)" -v ./...
 
 # Run integration tests only
 test-integration:

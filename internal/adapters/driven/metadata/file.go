@@ -26,6 +26,7 @@ type FileMetadataStore struct {
 	signatureVerifier            ports.SignatureVerifier
 	logger                       *zap.Logger
 	metricsRecorder              ports.MetricsRecorder
+	clock                        Clock // for time operations (defaults to RealClock)
 
 	mu         sync.RWMutex
 	idps       []domain.IdPInfo // Supports multiple IdPs from aggregate metadata
@@ -38,6 +39,10 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 	for _, opt := range opts {
 		opt(options)
 	}
+	clock := options.clock
+	if clock == nil {
+		clock = RealClock{}
+	}
 	return &FileMetadataStore{
 		path:                         path,
 		idpFilter:                    options.idpFilter,
@@ -47,13 +52,25 @@ func NewFileMetadataStore(path string, opts ...MetadataOption) *FileMetadataStor
 		signatureVerifier:            options.signatureVerifier,
 		logger:                       options.logger,
 		metricsRecorder:              options.metricsRecorder,
+		clock:                        clock,
 	}
 }
 
 // Load reads and parses the metadata file.
 // This should be called during initialization.
 func (s *FileMetadataStore) Load() error {
-	return s.Refresh(context.Background())
+	startTime := s.clock.Now()
+	err := s.Refresh(context.Background())
+	if err == nil && s.logger != nil {
+		s.mu.RLock()
+		idpCount := len(s.idps)
+		s.mu.RUnlock()
+		s.logger.Info("metadata loaded",
+			zap.String("source", s.path),
+			zap.Int("idp_count", idpCount),
+			zap.Duration("duration", s.clock.Now().Sub(startTime)))
+	}
+	return err
 }
 
 // GetIdP returns the IdP if the entity ID matches.
