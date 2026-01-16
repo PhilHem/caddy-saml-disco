@@ -47,3 +47,11 @@ fmt:
 # Run pre-commit checks
 pre-commit:
 	pre-commit run --all-files
+
+# Run metadata tests with verbose output
+test-metadata-verbose:
+	go test -v ./internal/adapters/driven/metadata
+
+# Run caddy adapter tests only
+test-caddy:
+	go test -tags=unit -timeout 30s -v ./internal/adapters/driving/caddy/...

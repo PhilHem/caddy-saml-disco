@@ -12,6 +12,7 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/session"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/signature"
+	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
 // Provision sets up the module.
@@ -70,63 +71,28 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	}
 
 	// Build metadata store options
-	var metadataOpts []metadata.MetadataOption
-	if s.IdPFilter != "" {
-		metadataOpts = append(metadataOpts, metadata.WithIdPFilter(s.IdPFilter))
+	metadataOpts, err := s.buildMetadataStoreOptions()
+	if err != nil {
+		return fmt.Errorf("build metadata store options: %w", err)
 	}
-	if s.RegistrationAuthorityFilter != "" {
-		metadataOpts = append(metadataOpts, metadata.WithRegistrationAuthorityFilter(s.RegistrationAuthorityFilter))
-	}
-	if s.EntityCategoryFilter != "" {
-		metadataOpts = append(metadataOpts, metadata.WithEntityCategoryFilter(s.EntityCategoryFilter))
-	}
-	if s.AssuranceCertificationFilter != "" {
-		metadataOpts = append(metadataOpts, metadata.WithAssuranceCertificationFilter(s.AssuranceCertificationFilter))
-	}
-
-	// Configure signature verification if enabled
-	if s.VerifyMetadataSignature {
-		certs, err := signature.LoadSigningCertificates(s.MetadataSigningCert)
-		if err != nil {
-			return fmt.Errorf("load metadata signing certificate: %w", err)
-		}
-		verifier := signature.NewXMLDsigVerifierWithCertsAndLogger(certs, s.logger)
-		metadataOpts = append(metadataOpts, metadata.WithSignatureVerifier(verifier))
-		s.logger.Info("metadata signature verification enabled",
-			zap.String("cert_file", s.MetadataSigningCert),
-			zap.Int("cert_count", len(certs)))
-	}
-
-	// Pass logger to metadata store for background refresh logging
-	metadataOpts = append(metadataOpts, metadata.WithLogger(s.logger))
-
-	// Pass metrics recorder to metadata store for refresh metrics
-	metadataOpts = append(metadataOpts, metadata.WithMetricsRecorder(s.getMetricsRecorder()))
-
-	// Pass version for User-Agent header
-	metadataOpts = append(metadataOpts, metadata.WithVersion(getVersion()))
 
 	// Initialize metadata store based on config
-	if s.MetadataFile != "" {
-		store := metadata.NewFileMetadataStore(s.MetadataFile, metadataOpts...)
-		if err := store.Load(); err != nil {
-			return fmt.Errorf("load metadata from file: %w", err)
-		}
-		s.metadataStore = store
-	} else if s.MetadataURL != "" {
-		var store *metadata.URLMetadataStore
-		if s.BackgroundRefresh {
-			store = metadata.NewURLMetadataStoreWithRefresh(s.MetadataURL, refreshInterval, metadataOpts...)
-			s.logger.Info("background metadata refresh enabled",
-				zap.Duration("interval", refreshInterval))
-		} else {
-			store = metadata.NewURLMetadataStore(s.MetadataURL, refreshInterval, metadataOpts...)
-		}
-		if err := store.Load(); err != nil {
-			return fmt.Errorf("load metadata from URL: %w", err)
-		}
-		s.metadataStore = store
+	store, err := s.initializeMetadataStore(refreshInterval, metadataOpts)
+	if err != nil {
+		return fmt.Errorf("initialize metadata store: %w", err)
 	}
+	if store != nil {
+		// Load metadata after creating the store
+		if loader, ok := store.(interface{ Load() error }); ok {
+			if err := loader.Load(); err != nil {
+				if s.MetadataFile != "" {
+					return fmt.Errorf("load metadata from file: %w", err)
+				}
+				return fmt.Errorf("load metadata from URL: %w", err)
+			}
+		}
+	}
+	s.metadataStore = store
 
 	// Initialize logo store if metadata store is configured
 	if s.metadataStore != nil {
@@ -134,36 +100,13 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	}
 
 	// Initialize session store and SAML service if key file is configured
-	if s.KeyFile != "" {
-		privateKey, err := session.LoadPrivateKey(s.KeyFile)
-		if err != nil {
-			return fmt.Errorf("load SP private key: %w", err)
-		}
-
-		duration, err := time.ParseDuration(s.Config.SessionDuration)
-		if err != nil {
-			return fmt.Errorf("parse session duration: %w", err)
-		}
-
-		s.sessionStore = session.NewCookieSessionStore(privateKey, duration)
-		s.sessionDuration = duration
-
-		// Initialize SAML service if certificate is also configured
-		if s.CertFile != "" {
-			certificate, err := session.LoadCertificate(s.CertFile)
-			if err != nil {
-				return fmt.Errorf("load SP certificate: %w", err)
-			}
-			s.samlService = NewSAMLServiceWithCleanup(s.EntityID, privateKey, certificate, DefaultRequestCleanupInterval)
-
-			// Configure metadata signing if enabled
-			if s.SignMetadata {
-				signer := signature.NewXMLDsigSigner(privateKey, certificate)
-				s.samlService.SetMetadataSigner(signer)
-				s.logger.Info("SP metadata signing enabled")
-			}
-		}
+	sessionStore, samlService, sessionDur, err := s.initializeSessionAndSAML()
+	if err != nil {
+		return fmt.Errorf("initialize session and SAML: %w", err)
 	}
+	s.sessionStore = sessionStore
+	s.samlService = samlService
+	s.sessionDuration = sessionDur
 
 	// Parse remember IdP duration
 	if s.Config.RememberIdPDuration != "" {
@@ -222,6 +165,105 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 	s.logger.Info("saml discovery service provisioned", logFields...)
 
 	return nil
+}
+
+// buildMetadataStoreOptions constructs metadata store options from configuration.
+func (s *SAMLDisco) buildMetadataStoreOptions() ([]metadata.MetadataOption, error) {
+	var metadataOpts []metadata.MetadataOption
+
+	// Add filter options
+	if s.IdPFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithIdPFilter(s.IdPFilter))
+	}
+	if s.RegistrationAuthorityFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithRegistrationAuthorityFilter(s.RegistrationAuthorityFilter))
+	}
+	if s.EntityCategoryFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithEntityCategoryFilter(s.EntityCategoryFilter))
+	}
+	if s.AssuranceCertificationFilter != "" {
+		metadataOpts = append(metadataOpts, metadata.WithAssuranceCertificationFilter(s.AssuranceCertificationFilter))
+	}
+
+	// Configure signature verification if enabled
+	if s.VerifyMetadataSignature {
+		certs, err := signature.LoadSigningCertificates(s.MetadataSigningCert)
+		if err != nil {
+			return nil, fmt.Errorf("load metadata signing certificate: %w", err)
+		}
+		verifier := signature.NewXMLDsigVerifierWithCertsAndLogger(certs, s.logger)
+		metadataOpts = append(metadataOpts, metadata.WithSignatureVerifier(verifier))
+		s.logger.Info("metadata signature verification enabled",
+			zap.String("cert_file", s.MetadataSigningCert),
+			zap.Int("cert_count", len(certs)))
+	}
+
+	// Add infrastructure options
+	metadataOpts = append(metadataOpts, metadata.WithLogger(s.logger))
+	metadataOpts = append(metadataOpts, metadata.WithMetricsRecorder(s.getMetricsRecorder()))
+	metadataOpts = append(metadataOpts, metadata.WithVersion(getVersion()))
+
+	return metadataOpts, nil
+}
+
+// initializeMetadataStore creates a metadata store based on configuration.
+// The store is not loaded - the caller is responsible for calling Load().
+func (s *SAMLDisco) initializeMetadataStore(refreshInterval time.Duration, opts []metadata.MetadataOption) (ports.MetadataStore, error) {
+	if s.MetadataFile != "" {
+		store := metadata.NewFileMetadataStore(s.MetadataFile, opts...)
+		return store, nil
+	}
+
+	if s.MetadataURL != "" {
+		var store *metadata.URLMetadataStore
+		if s.BackgroundRefresh {
+			store = metadata.NewURLMetadataStoreWithRefresh(s.MetadataURL, refreshInterval, opts...)
+			s.logger.Info("background metadata refresh enabled",
+				zap.Duration("interval", refreshInterval))
+		} else {
+			store = metadata.NewURLMetadataStore(s.MetadataURL, refreshInterval, opts...)
+		}
+		return store, nil
+	}
+
+	return nil, nil
+}
+
+// initializeSessionAndSAML creates session store and SAML service from configuration.
+func (s *SAMLDisco) initializeSessionAndSAML() (ports.SessionStore, *SAMLService, time.Duration, error) {
+	if s.KeyFile == "" {
+		return nil, nil, 0, nil
+	}
+
+	privateKey, err := session.LoadPrivateKey(s.KeyFile)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("load SP private key: %w", err)
+	}
+
+	duration, err := time.ParseDuration(s.Config.SessionDuration)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("parse session duration: %w", err)
+	}
+
+	sessionStore := session.NewCookieSessionStore(privateKey, duration)
+
+	var samlService *SAMLService
+	if s.CertFile != "" {
+		certificate, err := session.LoadCertificate(s.CertFile)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("load SP certificate: %w", err)
+		}
+		samlService = NewSAMLServiceWithCleanup(s.EntityID, privateKey, certificate, DefaultRequestCleanupInterval)
+
+		// Configure metadata signing if enabled
+		if s.SignMetadata {
+			signer := signature.NewXMLDsigSigner(privateKey, certificate)
+			samlService.SetMetadataSigner(signer)
+			s.logger.Info("SP metadata signing enabled")
+		}
+	}
+
+	return sessionStore, samlService, duration, nil
 }
 
 // provisionSPConfig provisions a single SP config with its metadata store, session store, and SAML service.

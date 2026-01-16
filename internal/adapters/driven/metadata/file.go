@@ -94,10 +94,6 @@ func (s *FileMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if len(s.idps) == 0 {
-		return nil, nil
-	}
-
 	var result []domain.IdPInfo
 	for _, idp := range s.idps {
 		if domain.MatchesSearch(&idp, filter) {

@@ -29,6 +29,7 @@ var (
 	ParseAcceptLanguage              = caddyadapter.ParseAcceptLanguage
 	ParseDuration                    = caddyadapter.ParseDuration
 	MatchesForceAuthnPath            = caddyadapter.MatchesForceAuthnPath
+	SetVersionGetters                = caddyadapter.SetVersionGetters
 )
 
 func init() {

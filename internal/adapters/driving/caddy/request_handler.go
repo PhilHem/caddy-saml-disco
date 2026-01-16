@@ -138,84 +138,6 @@ func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next 
 	return next.ServeHTTP(w, r)
 }
 
-// redirectToIdP redirects the user to authenticate.
-// If LoginRedirect is configured, redirects to custom login UI.
-// Otherwise, redirects directly to the IdP (single IdP scenario).
-// The original URL is passed as return_url/RelayState so ACS can redirect back after login.
-func (s *SAMLDisco) redirectToIdP(w http.ResponseWriter, r *http.Request) {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:        s.Config,
-		samlService:   s.samlService,
-		metadataStore: s.metadataStore,
-	}
-	s.redirectToIdPInternal(w, r, cfg)
-}
-
-// handleMetadata serves the SP metadata XML.
-func (s *SAMLDisco) handleMetadata(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:        s.Config,
-		samlService:   s.samlService,
-		metadataStore: s.metadataStore,
-	}
-	return s.handleMetadataInternal(w, r, cfg)
-}
-
-// handleACS processes the SAML Response from the IdP.
-func (s *SAMLDisco) handleACS(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:           s.Config,
-		samlService:      s.samlService,
-		metadataStore:    s.metadataStore,
-		sessionStore:     s.sessionStore,
-		entitlementStore: s.entitlementStore,
-		sessionDuration:  s.sessionDuration,
-	}
-	return s.handleACSInternal(w, r, cfg)
-}
-
-// selectIdPRequest is the JSON request body for POST /saml/api/select.
-type selectIdPRequest struct {
-	EntityID  string `json:"entity_id"`
-	ReturnURL string `json:"return_url"`
-	Remember  bool   `json:"remember"` // Explicit opt-in required for remember cookie
-}
-
-// handleSelectIdP handles POST /saml/api/select to start SAML auth with a selected IdP.
-func (s *SAMLDisco) handleSelectIdP(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:        s.Config,
-		samlService:   s.samlService,
-		metadataStore: s.metadataStore,
-	}
-	return s.handleSelectIdPInternal(w, r, cfg)
-}
-
-// sessionInfoResponse is the JSON response for GET /saml/api/session.
-type sessionInfoResponse struct {
-	Authenticated bool              `json:"authenticated"`
-	Subject       string            `json:"subject,omitempty"`
-	IdPEntityID   string            `json:"idp_entity_id,omitempty"`
-	Attributes    map[string]string `json:"attributes,omitempty"`
-}
-
-// handleDiscoveryUI handles GET /saml/disco and serves the IdP selection page.
-// If only one IdP is configured, it auto-redirects to that IdP.
-func (s *SAMLDisco) handleDiscoveryUI(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:           s.Config,
-		samlService:      s.samlService,
-		metadataStore:    s.metadataStore,
-		templateRenderer: s.templateRenderer,
-	}
-	return s.handleDiscoveryUIInternal(w, r, cfg)
-}
-
 // getDefaultLanguage returns the configured default language, falling back to "en".
 func (s *SAMLDisco) getDefaultLanguage() string {
 	if s.DefaultLanguage != "" {
@@ -233,30 +155,19 @@ func (s *SAMLDisco) getLogger() *zap.Logger {
 	return zap.NewNop()
 }
 
-// handleSessionInfo handles GET /saml/api/session and returns current session info.
-func (s *SAMLDisco) handleSessionInfo(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:       s.Config,
-		sessionStore: s.sessionStore,
-	}
-	return s.handleSessionInfoInternal(w, r, cfg)
+// selectIdPRequest is the JSON request body for POST /saml/api/select.
+type selectIdPRequest struct {
+	EntityID  string `json:"entity_id"`
+	ReturnURL string `json:"return_url"`
+	Remember  bool   `json:"remember"` // Explicit opt-in required for remember cookie
 }
 
-func (s *SAMLDisco) handleHealth(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		metadataStore: s.metadataStore,
-	}
-	return s.handleHealthInternal(w, r, cfg)
-}
-
-func (s *SAMLDisco) handleLogoEndpoint(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		logoStore: s.logoStore,
-	}
-	return s.handleLogoEndpointInternal(w, r, cfg)
+// sessionInfoResponse is the JSON response for GET /saml/api/session.
+type sessionInfoResponse struct {
+	Authenticated bool              `json:"authenticated"`
+	Subject       string            `json:"subject,omitempty"`
+	IdPEntityID   string            `json:"idp_entity_id,omitempty"`
+	Attributes    map[string]string `json:"attributes,omitempty"`
 }
 
 // idpListResponse is the JSON response for GET /saml/api/idps.
@@ -266,48 +177,11 @@ type idpListResponse struct {
 	RememberedIdP string           `json:"remembered_idp_id,omitempty"`
 }
 
-// handleListIdPs handles GET /saml/api/idps and returns available IdPs as JSON.
-// Supports optional ?q=search query parameter to filter IdPs.
-// Pinned IdPs are separated into their own list and filtered from the main list.
-func (s *SAMLDisco) handleListIdPs(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:        s.Config,
-		metadataStore: s.metadataStore,
-	}
-	return s.handleListIdPsInternal(w, r, cfg)
-}
-
 // separatePinnedIdPs separates configured pinned IdPs from the main list.
 // Returns (pinnedIdPs, remainingIdPs). Pinned IdPs are returned in the order
 // specified in the configuration, not in their original order in the list.
 func (s *SAMLDisco) separatePinnedIdPs(idps []domain.IdPInfo) ([]domain.IdPInfo, []domain.IdPInfo) {
 	return domain.SeparatePinnedIdPs(idps, s.PinnedIdPs)
-}
-
-// handleLogout handles the logout endpoint by clearing the session cookie
-// and redirecting to the return_to URL or root.
-// If the IdP supports SLO, it redirects to IdP SLO instead of just clearing the cookie.
-func (s *SAMLDisco) handleLogout(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:        s.Config,
-		samlService:   s.samlService,
-		metadataStore: s.metadataStore,
-	}
-	return s.handleLogoutInternal(w, r, cfg)
-}
-
-// handleSLO handles the Single Logout endpoint.
-// It processes both SP-initiated (SAMLResponse) and IdP-initiated (SAMLRequest) logout flows.
-func (s *SAMLDisco) handleSLO(w http.ResponseWriter, r *http.Request) error {
-	// Create temporary SPConfig from single-SP mode fields
-	cfg := &SPConfig{
-		Config:        s.Config,
-		samlService:   s.samlService,
-		metadataStore: s.metadataStore,
-	}
-	return s.handleSLOInternal(w, r, cfg)
 }
 
 // applyCORSHeaders sets CORS headers if the request origin is allowed.

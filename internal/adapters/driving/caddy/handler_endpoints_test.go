@@ -756,3 +756,152 @@ func TestHTTPStatusCodeEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// Cycle 1: Enhanced RelayState Validation Tests
+// =============================================================================
+
+// TestValidateRelayState_DoubleEncodedBypass tests that double-encoded protocol markers are detected.
+func TestValidateRelayState_DoubleEncodedBypass(t *testing.T) {
+	tests := []struct {
+		name       string
+		relayState string
+		want       string
+	}{
+		{"double encoded //", "/%2f%2fevil.com", "/"},
+		{"triple encoded //", "/%252f%252fevil.com", "/"},
+		{"double encoded with path", "/%2f%2fevil.com/path", "/"},
+		{"mixed case encoding", "/%2F%2Fevil.com", "/"},
+		{"quadruple encoded", "/%25252f%25252fevil.com", "/"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValidateRelayState(tc.relayState)
+			if got != tc.want {
+				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestValidateRelayState_EncodedProtocolMarker tests that protocol markers in decoded paths are detected.
+func TestValidateRelayState_EncodedProtocolMarker(t *testing.T) {
+	tests := []struct {
+		name       string
+		relayState string
+		want       string
+	}{
+		{"http: encoded", "/path?redirect=http%3A//evil.com", "/"},
+		{"https: encoded", "/path?redirect=https%3A//evil.com", "/"},
+		{"javascript: encoded", "javascript%3Aalert(1)", "/"},
+		{"data: encoded", "data%3Atext/html,evil", "/"},
+		{"encoded colon in path", "/path%3A//evil.com", "/"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValidateRelayState(tc.relayState)
+			if got != tc.want {
+				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestValidateRelayState_MixedEncodingBypass tests combinations of encoding tricks.
+func TestValidateRelayState_MixedEncodingBypass(t *testing.T) {
+	tests := []struct {
+		name       string
+		relayState string
+		want       string
+	}{
+		{"encoded slash then literal", "/%2f/evil.com", "/"},
+		{"literal then encoded", "//%2fevil.com", "/"},
+		{"mixed with uppercase", "/%2F/evil.com", "/"},
+		{"partial encoding", "/path/%2f%2fevil.com", "/"},
+		{"nested encoding layers", "/%252F%252Fevil.com", "/"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValidateRelayState(tc.relayState)
+			if got != tc.want {
+				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+			}
+		})
+	}
+}
+
+// FuzzValidateRelayState_InvariantCheck is a property test that validates all security invariants.
+func FuzzValidateRelayState_InvariantCheck(f *testing.F) {
+	// Use the same seeds as the main fuzz test for consistency
+	seeds := []string{
+		"", "/", "/dashboard", "/page?foo=bar",
+		"http://evil.com", "//evil.com",
+		"javascript:alert(1)",
+		"%2f%2fevil.com",
+		"/path\r\nHeader: injection",
+		"/%252f%252fevil.com",
+		"/path?redirect=http%3A//evil.com",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		result := ValidateRelayState(input)
+
+		// Invariant 1: Output is never empty
+		if result == "" {
+			t.Errorf("ValidateRelayState(%q) returned empty string", input)
+		}
+
+		// Invariant 2: Output always starts with "/"
+		if !strings.HasPrefix(result, "/") {
+			t.Errorf("ValidateRelayState(%q) = %q, does not start with /", input, result)
+		}
+
+		// Invariant 3: Output never starts with "//" (protocol-relative URL)
+		if strings.HasPrefix(result, "//") {
+			t.Errorf("ValidateRelayState(%q) = %q, starts with // (protocol-relative)", input, result)
+		}
+
+		// Invariant 4: Parsed URL has no scheme or host
+		parsed, err := url.Parse(result)
+		if err != nil {
+			t.Errorf("ValidateRelayState(%q) = %q, failed to parse: %v", input, result, err)
+		} else {
+			if parsed.Scheme != "" {
+				t.Errorf("ValidateRelayState(%q) = %q, has scheme: %q", input, result, parsed.Scheme)
+			}
+			if parsed.Host != "" {
+				t.Errorf("ValidateRelayState(%q) = %q, has host: %q", input, result, parsed.Host)
+			}
+		}
+
+		// Invariant 5: Output contains no CR/LF (header injection prevention)
+		if strings.ContainsAny(result, "\r\n") {
+			t.Errorf("ValidateRelayState(%q) = %q, contains CR/LF", input, result)
+		}
+
+		// Invariant 6: Decoded output must not contain protocol markers
+		decoded := result
+		for i := 0; i < 10; i++ {
+			newDecoded, err := url.QueryUnescape(decoded)
+			if err != nil || newDecoded == decoded {
+				break
+			}
+			decoded = newDecoded
+		}
+
+		// After full decoding, check for protocol markers
+		if strings.Contains(decoded, "://") {
+			t.Errorf("ValidateRelayState(%q) = %q, decoded contains protocol marker: %q", input, result, decoded)
+		}
+		if strings.HasPrefix(decoded, "//") {
+			t.Errorf("ValidateRelayState(%q) = %q, decoded starts with //: %q", input, result, decoded)
+		}
+	})
+}

@@ -164,6 +164,7 @@ func ValidateRelayState(relayState string) string {
 
 	// Check for encoded characters that could bypass validation
 	// Decode in a loop to catch double/triple encoding attacks (e.g., /%2f%2f or /%252f%252f)
+	// Check after each decode for protocol markers and double-slashes
 	decoded := relayState
 	for i := 0; i < 10; i++ { // Max 10 iterations to prevent infinite loops
 		newDecoded, err := url.QueryUnescape(decoded)
@@ -174,14 +175,15 @@ func ValidateRelayState(relayState string) string {
 			break // No more decoding needed
 		}
 		decoded = newDecoded
-		// Check after each decode for protocol-relative URLs
-		if strings.HasPrefix(decoded, "//") {
+
+		// Check decoded value for dangerous patterns
+		if strings.Contains(decoded, "//") || strings.Contains(decoded, "://") {
 			return "/"
 		}
 	}
 
 	// Final check on fully decoded value
-	if strings.HasPrefix(decoded, "//") {
+	if strings.Contains(decoded, "//") || strings.Contains(decoded, "://") {
 		return "/"
 	}
 
@@ -252,6 +254,9 @@ func ValidateDenyRedirect(redirectURL string) string {
 // Version getters - these are set via ldflags in the root package
 // We access them via a function pointer to avoid import cycles
 var (
+	// Protect version getters with sync.Once to ensure thread-safe one-time initialization
+	versionSetOnce sync.Once
+
 	getVersion   = func() string { return "dev" }
 	getGitCommit = func() string { return "" }
 	getBuildTime = func() string { return "" }
@@ -259,8 +264,11 @@ var (
 
 // SetVersionGetters sets the version getter functions.
 // Called from root package init to inject version info.
+// Thread-safe via sync.Once to ensure one-time initialization.
 func SetVersionGetters(version, gitCommit, buildTime func() string) {
-	getVersion = version
-	getGitCommit = gitCommit
-	getBuildTime = buildTime
+	versionSetOnce.Do(func() {
+		getVersion = version
+		getGitCommit = gitCommit
+		getBuildTime = buildTime
+	})
 }

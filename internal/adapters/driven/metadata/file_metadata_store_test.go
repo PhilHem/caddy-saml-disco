@@ -1426,3 +1426,54 @@ func TestFileMetadataStore_StartupLogging(t *testing.T) {
 		}
 	}
 }
+
+func TestListIdPs_ReturnsEmptySlice_FileStore(t *testing.T) {
+	// Create a temporary file with no IdPs
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.xml")
+
+	// Create a valid XML with no IdPs (just root element)
+	emptyXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+</EntitiesDescriptor>`
+
+	if err := os.WriteFile(path, []byte(emptyXML), 0644); err != nil {
+		t.Fatalf("write empty metadata: %v", err)
+	}
+
+	store := NewFileMetadataStore(path)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Must be an empty slice, not nil
+	if idps == nil {
+		t.Error("ListIdPs() returned nil, want empty slice")
+	}
+	if len(idps) != 0 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 0", len(idps))
+	}
+}
+
+func TestListIdPs_ReturnsEmptySlice_InMemoryStore(t *testing.T) {
+	// Create an in-memory store with no IdPs
+	store := NewInMemoryMetadataStore([]domain.IdPInfo{})
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Must be an empty slice, not nil
+	if idps == nil {
+		t.Error("ListIdPs() returned nil, want empty slice")
+	}
+	if len(idps) != 0 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 0", len(idps))
+	}
+}

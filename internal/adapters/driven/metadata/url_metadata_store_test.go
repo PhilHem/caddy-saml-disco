@@ -2129,5 +2129,36 @@ func TestURLMetadataStore_StartupLogging(t *testing.T) {
 	}
 }
 
+func TestListIdPs_ReturnsEmptySlice_URLStore(t *testing.T) {
+	// Create a server that returns empty metadata
+	emptyXML := `<?xml version="1.0"?>
+<EntitiesDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+</EntitiesDescriptor>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write([]byte(emptyXML))
+	}))
+	defer server.Close()
+
+	store := NewURLMetadataStore(server.URL, time.Hour)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	idps, err := store.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+
+	// Must be an empty slice, not nil
+	if idps == nil {
+		t.Error("ListIdPs() returned nil, want empty slice")
+	}
+	if len(idps) != 0 {
+		t.Errorf("ListIdPs() returned %d IdPs, want 0", len(idps))
+	}
+}
+
 // TestFileMetadataStore_StartupLogging verifies info log "metadata loaded"
 // with source, idp_count, and duration after Load().

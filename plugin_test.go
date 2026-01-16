@@ -3393,3 +3393,32 @@ func (m *mockCloseableMetadataStore) Close() error {
 	m.closed = true
 	return nil
 }
+
+// TestSetVersionGetters_ConcurrentCalls verifies that SetVersionGetters is thread-safe
+// when called concurrently from multiple goroutines.
+func TestSetVersionGetters_ConcurrentCalls(t *testing.T) {
+	numGoroutines := 100
+	done := make(chan bool, numGoroutines)
+
+	// Launch multiple goroutines that call SetVersionGetters concurrently
+	for i := 0; i < numGoroutines; i++ {
+		go func(idx int) {
+			defer func() { done <- true }()
+
+			version := func() string { return "v1.0.0" }
+			gitCommit := func() string { return "abc123" }
+			buildTime := func() string { return "2025-01-16" }
+
+			// Call SetVersionGetters - must be thread-safe and only set once
+			SetVersionGetters(version, gitCommit, buildTime)
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// No panic or race condition should occur
+	// Test passes if all goroutines complete without data races
+}
