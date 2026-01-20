@@ -2,6 +2,7 @@ package caddy
 
 import (
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -113,13 +114,77 @@ func parseConfigDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 		if !d.NextArg() {
 			return true, d.ArgErr()
 		}
-		cfg.MetadataURL = d.Val()
+		url := d.Val()
+
+		// Create a MetadataSource entry and parse any block options
+		src := &MetadataSource{URL: url}
+
+		// Check if there's a nested block with options
+		nesting := d.Nesting()
+		for d.NextBlock(nesting) {
+			switch d.Val() {
+			case "idp_filter":
+				if !d.NextArg() {
+					return true, d.ArgErr()
+				}
+				src.IdPFilter = d.Val()
+
+			case "refresh_interval":
+				if !d.NextArg() {
+					return true, d.ArgErr()
+				}
+				interval, err := parseDuration(d.Val())
+				if err != nil {
+					return true, d.Errf("refresh_interval: %v", err)
+				}
+				src.RefreshInterval = interval
+
+			default:
+				return true, d.Errf("unrecognized metadata_url block option: %s", d.Val())
+			}
+		}
+
+		// Always add to MetadataSources for multi-source support
+		src.SetDefaults()
+		cfg.MetadataSources = append(cfg.MetadataSources, *src)
 
 	case "metadata_file":
 		if !d.NextArg() {
 			return true, d.ArgErr()
 		}
-		cfg.MetadataFile = d.Val()
+		file := d.Val()
+
+		// Create a MetadataSource entry and parse any block options
+		src := &MetadataSource{File: file}
+
+		// Check if there's a nested block with options
+		nesting := d.Nesting()
+		for d.NextBlock(nesting) {
+			switch d.Val() {
+			case "idp_filter":
+				if !d.NextArg() {
+					return true, d.ArgErr()
+				}
+				src.IdPFilter = d.Val()
+
+			case "refresh_interval":
+				if !d.NextArg() {
+					return true, d.ArgErr()
+				}
+				interval, err := parseDuration(d.Val())
+				if err != nil {
+					return true, d.Errf("refresh_interval: %v", err)
+				}
+				src.RefreshInterval = interval
+
+			default:
+				return true, d.Errf("unrecognized metadata_file block option: %s", d.Val())
+			}
+		}
+
+		// Always add to MetadataSources for multi-source support
+		src.SetDefaults()
+		cfg.MetadataSources = append(cfg.MetadataSources, *src)
 
 	case "cert_file":
 		if !d.NextArg() {
@@ -390,4 +455,9 @@ func parseConfigDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 		return false, nil // Not a Config directive
 	}
 	return true, nil
+}
+
+// parseDuration parses a duration string (e.g., "1h", "30m").
+func parseDuration(s string) (time.Duration, error) {
+	return time.ParseDuration(s)
 }

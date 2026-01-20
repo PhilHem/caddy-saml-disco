@@ -2,9 +2,34 @@ package caddy
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
+
+// MetadataSource represents a single metadata source with per-source options.
+type MetadataSource struct {
+	// URL is the URL to fetch IdP metadata from.
+	URL string `json:"url,omitempty"`
+
+	// File is the path to a local IdP metadata file.
+	File string `json:"file,omitempty"`
+
+	// IdPFilter is a pattern to filter IdPs from this specific metadata source.
+	// Supports glob patterns (e.g., "*.example.edu").
+	IdPFilter string `json:"idp_filter,omitempty"`
+
+	// RefreshInterval is how often to refresh metadata from this source.
+	// Defaults to 30 minutes if not specified.
+	RefreshInterval time.Duration `json:"refresh_interval,omitempty"`
+}
+
+// SetDefaults applies default values to MetadataSource fields.
+func (m *MetadataSource) SetDefaults() {
+	if m.RefreshInterval == 0 {
+		m.RefreshInterval = 30 * time.Minute
+	}
+}
 
 // Config holds the configuration for the SAML Discovery plugin.
 type Config struct {
@@ -18,6 +43,10 @@ type Config struct {
 	// MetadataFile is the path to a local IdP metadata file.
 	// Either MetadataURL or MetadataFile must be set.
 	MetadataFile string `json:"metadata_file,omitempty"`
+
+	// MetadataSources is a list of metadata sources with per-source options.
+	// Allows multiple metadata URLs/files, each with its own IdPFilter and refresh interval.
+	MetadataSources []MetadataSource `json:"metadata_sources,omitempty"`
 
 	// CertFile is the path to the SP certificate file (PEM format).
 	CertFile string `json:"cert_file,omitempty"`
@@ -219,11 +248,16 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if c.MetadataURL == "" && c.MetadataFile == "" {
-		return fmt.Errorf("either metadata_url or metadata_file must be specified")
+	// Check if at least one metadata source is specified
+	hasOldMetadata := c.MetadataURL != "" || c.MetadataFile != ""
+	hasNewMetadata := len(c.MetadataSources) > 0
+
+	if !hasOldMetadata && !hasNewMetadata {
+		return fmt.Errorf("at least one metadata source must be specified (via metadata_url, metadata_file, or metadata_sources)")
 	}
 
-	if c.MetadataURL != "" && c.MetadataFile != "" {
+	// Backward compatibility: old fields can be used independently
+	if hasOldMetadata && (c.MetadataURL != "" && c.MetadataFile != "") {
 		return fmt.Errorf("only one of metadata_url or metadata_file can be specified")
 	}
 

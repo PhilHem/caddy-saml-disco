@@ -76,20 +76,29 @@ func (s *SAMLDisco) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("build metadata store options: %w", err)
 	}
 
-	// Initialize metadata store based on config
-	store, err := s.initializeMetadataStore(refreshInterval, metadataOpts)
-	if err != nil {
-		return fmt.Errorf("initialize metadata store: %w", err)
-	}
-	if store != nil {
-		// Load metadata after creating the store
-		if loader, ok := store.(interface{ Load() error }); ok {
-			if err := loader.Load(); err != nil {
-				if s.MetadataFile != "" {
-					return fmt.Errorf("load metadata from file: %w", err)
-				}
-				return fmt.Errorf("load metadata from URL: %w", err)
-			}
+	// Initialize metadata store: use new MetadataSources if configured,
+	// otherwise fall back to old MetadataURL/MetadataFile for backward compatibility
+	var store ports.MetadataStore
+	if len(s.MetadataSources) > 0 {
+		store, err = BuildMetadataStore(&s.Config, metadataOpts)
+		if err != nil {
+			return fmt.Errorf("build metadata store: %w", err)
+		}
+		if err := s.loadMetadataStore(store, "metadata"); err != nil {
+			return err
+		}
+	} else {
+		// Backward compatibility: use old single-source initialization
+		store, err = s.initializeMetadataStore(refreshInterval, metadataOpts)
+		if err != nil {
+			return fmt.Errorf("initialize metadata store: %w", err)
+		}
+		sourceType := "metadata from URL"
+		if s.MetadataFile != "" {
+			sourceType = "metadata from file"
+		}
+		if err := s.loadMetadataStore(store, sourceType); err != nil {
+			return err
 		}
 	}
 	s.metadataStore = store
@@ -227,6 +236,20 @@ func (s *SAMLDisco) initializeMetadataStore(refreshInterval time.Duration, opts 
 	}
 
 	return nil, nil
+}
+
+// loadMetadataStore loads metadata into a store if it supports the Load() method.
+// Returns a formatted error with sourceType on failure.
+func (s *SAMLDisco) loadMetadataStore(store ports.MetadataStore, sourceType string) error {
+	if store == nil {
+		return nil
+	}
+	if loader, ok := store.(interface{ Load() error }); ok {
+		if err := loader.Load(); err != nil {
+			return fmt.Errorf("load %s: %w", sourceType, err)
+		}
+	}
+	return nil
 }
 
 // initializeSessionAndSAML creates session store and SAML service from configuration.

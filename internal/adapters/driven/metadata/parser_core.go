@@ -35,7 +35,7 @@ func ParseMetadata(data []byte) ([]domain.IdPInfo, *time.Time, error) {
 
 	// Try EntitiesDescriptor first (aggregate metadata)
 	var entities saml.EntitiesDescriptor
-	if err := xml.Unmarshal(data, &entities); err == nil && len(entities.EntityDescriptors) > 0 {
+	if err := xml.Unmarshal(data, &entities); err == nil && isEntitiesDescriptor(data) {
 		idps, err := parseEntitiesDescriptorWithMaps(&entities, uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
 		return idps, validUntil, err
 	}
@@ -46,6 +46,21 @@ func ParseMetadata(data []byte) ([]domain.IdPInfo, *time.Time, error) {
 		return nil, nil, err
 	}
 	return []domain.IdPInfo{*idp}, validUntil, nil
+}
+
+// isEntitiesDescriptor checks if the XML data has EntitiesDescriptor as root element.
+// This helps distinguish between aggregate metadata (EntitiesDescriptor) and single IdP metadata (EntityDescriptor).
+func isEntitiesDescriptor(data []byte) bool {
+	// Quick heuristic: check if the root element is EntitiesDescriptor
+	// This is faster than full XML parsing and sufficient for our needs
+	type rootDetector struct {
+		XMLName xml.Name
+	}
+	var root rootDetector
+	if err := xml.Unmarshal(data, &root); err != nil {
+		return false
+	}
+	return root.XMLName.Local == "EntitiesDescriptor"
 }
 
 // extractAndValidateExpiry extracts validUntil from metadata and validates it.
@@ -97,8 +112,9 @@ func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMa
 		idps = append(idps, nestedIdps...)
 	}
 
-	if len(idps) == 0 {
-		return nil, fmt.Errorf("no IdPs found in aggregate metadata")
+	// Return empty slice (not nil) when no IdPs found - this is valid for empty aggregate metadata
+	if idps == nil {
+		idps = []domain.IdPInfo{}
 	}
 
 	return idps, nil

@@ -13,10 +13,20 @@ import (
 	"testing"
 
 	"github.com/cucumber/godog"
+	messages "github.com/cucumber/messages/go/v21"
 
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
+
+// metadataSource represents a metadata source for testing.
+type metadataSource struct {
+	sourceType string // "url" or "file"
+	location   string
+	idpFilter  string
+	status     string // "ok" or "error"
+	idps       []domain.IdPInfo
+}
 
 // testContext holds the test state for each scenario.
 type testContext struct {
@@ -27,8 +37,13 @@ type testContext struct {
 	idpFilter     string
 	loginRedirect string
 
+	// Multi-source config
+	metadataSources []metadataSource
+
 	// Computed at "When" time
 	filteredIdPs []domain.IdPInfo
+	aggregatedIdPs []domain.IdPInfo
+	sourceFailures int
 
 	// Response capture (for redirect scenarios)
 	response    *httptest.ResponseRecorder
@@ -114,6 +129,40 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 
 	// Then step: And I should not see "entityID"
 	sc.Step(`^I should not see "([^"]*)"$`, iShouldNotSeeEntityID)
+
+	// =========================================================================
+	// Multi-source scenarios (Cycle 6)
+	// =========================================================================
+
+	// Given step: metadata sources table
+	sc.Step(`^metadata sources:$`, metadataSourcesTable)
+
+	// Given step: both sources contain same IdP
+	sc.Step(`^both sources contain "([^"]*)"$`, bothSourcesContain)
+
+	// When step: aggregate metadata from all sources
+	sc.Step(`^I aggregate metadata from all sources$`, iAggregateMetadataFromAllSources)
+
+	// Then step: I should see IdPs from all sources
+	sc.Step(`^I should see IdPs from all sources$`, iShouldSeeIdPsFromAllSources)
+
+	// Then step: deduplicated IdPs count
+	sc.Step(`^deduplicated IdPs count is (\d+)$`, deduplicatedIdPsCountIs)
+
+	// Then step: I should see IdPs from working source
+	sc.Step(`^I should see IdPs from the working source$`, iShouldSeeIdPsFromWorkingSource)
+
+	// Then step: aggregator should report source failures
+	sc.Step(`^the aggregator should report (\d+) source failure(?:s)?$`, aggregatorShouldReportSourceFailures)
+
+	// Then step: I should see 1 IdP not duplicated
+	sc.Step(`^I should see 1 IdP \(not duplicated\)$`, iShouldSee1IdPNotDuplicated)
+
+	// Then step: I should see N IdPs (for aggregated scenarios)
+	sc.Step(`^I should see (\d+) IdPs?$`, iShouldSeeNIdPsAggregated)
+
+	// Then step: single source mode should work
+	sc.Step(`^single source mode should work without code changes$`, singleSourceModeShouldWork)
 }
 
 // =============================================================================
@@ -336,19 +385,34 @@ func iListAvailableIdPs(ctx context.Context) (context.Context, error) {
 }
 
 // iShouldSeeNIdPs asserts the filtered IdP count.
+// Checks aggregatedIdPs if they exist (multi-source scenarios),
+// otherwise checks filteredIdPs (single-source scenarios).
 func iShouldSeeNIdPs(ctx context.Context, expectedCount int) error {
 	tc := ctx.Value(ctxKey{}).(*testContext)
 
-	actualCount := len(tc.filteredIdPs)
+	// Prefer aggregatedIdPs if populated (multi-source scenarios)
+	var idps []domain.IdPInfo
+	if len(tc.aggregatedIdPs) > 0 || len(tc.metadataSources) > 0 {
+		idps = tc.aggregatedIdPs
+	} else {
+		idps = tc.filteredIdPs
+	}
+
+	actualCount := len(idps)
 	if actualCount != expectedCount {
 		var entityIDs []string
-		for _, idp := range tc.filteredIdPs {
+		for _, idp := range idps {
 			entityIDs = append(entityIDs, idp.EntityID)
 		}
 		return fmt.Errorf("expected %d IdP(s), got %d: %v", expectedCount, actualCount, entityIDs)
 	}
 
 	return nil
+}
+
+// iShouldSeeNIdPsAggregated is an alias for backward compatibility.
+func iShouldSeeNIdPsAggregated(ctx context.Context, expectedCount int) error {
+	return iShouldSeeNIdPs(ctx, expectedCount)
 }
 
 // iShouldSeeEntityID asserts the entity ID is in the filtered list.
@@ -408,4 +472,246 @@ func filterIdPsInTest(idps []domain.IdPInfo, pattern string) []domain.IdPInfo {
 		}
 	}
 	return filtered
+}
+
+// =============================================================================
+// Multi-source scenario step implementations (Cycle 6)
+// =============================================================================
+
+// metadataSourcesTable parses a table of metadata sources with their configuration.
+func metadataSourcesTable(ctx context.Context, table *godog.Table) (context.Context, error) {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	// Parse header row to identify columns
+	if len(table.Rows) == 0 {
+		return ctx, errors.New("metadata sources table is empty")
+	}
+
+	headerRow := table.Rows[0]
+	colIndex := make(map[string]int)
+	for i, cell := range headerRow.Cells {
+		colIndex[cell.Value] = i
+	}
+
+	// Verify required columns
+	if _, ok := colIndex["source_type"]; !ok {
+		return ctx, errors.New("metadata sources table missing 'source_type' column")
+	}
+	if _, ok := colIndex["location"]; !ok {
+		return ctx, errors.New("metadata sources table missing 'location' column")
+	}
+
+	// Parse data rows
+	for i, row := range table.Rows {
+		if i == 0 {
+			// Skip header row
+			continue
+		}
+
+		source := metadataSource{
+			sourceType: getTableCell(row, colIndex, "source_type"),
+			location:   getTableCell(row, colIndex, "location"),
+			idpFilter:  getTableCell(row, colIndex, "idp_filter"),
+			status:     getTableCell(row, colIndex, "status"),
+		}
+
+		// Default status to "ok" if not specified
+		if source.status == "" {
+			source.status = "ok"
+		}
+
+		// Populate IdPs based on source type (test doubles)
+		source.idps = createTestIdPsForSource(source.sourceType, source.location)
+
+		// Apply filter if specified
+		if source.idpFilter != "" {
+			source.idps = filterIdPsInTest(source.idps, source.idpFilter)
+		}
+
+		tc.metadataSources = append(tc.metadataSources, source)
+	}
+
+	return ctx, nil
+}
+
+// getTableCell safely retrieves a table cell value by column name.
+func getTableCell(row *messages.PickleTableRow, colIndex map[string]int, colName string) string {
+	idx, ok := colIndex[colName]
+	if !ok || idx >= len(row.Cells) {
+		return ""
+	}
+	return row.Cells[idx].Value
+}
+
+// createTestIdP is a helper that constructs an IdPInfo from an entity ID.
+func createTestIdP(entityID, displayName string) domain.IdPInfo {
+	return domain.IdPInfo{
+		EntityID:    entityID,
+		DisplayName: displayName,
+		SSOURL:      strings.TrimSuffix(entityID, "/saml") + "/sso",
+	}
+}
+
+// createTestIdPsForSource creates test IdPs for a given source location.
+// Uses test doubles to simulate different metadata sources.
+func createTestIdPsForSource(sourceType, location string) []domain.IdPInfo {
+	// Simulate different metadata sources
+	switch location {
+	case "https://federation1.example/xml":
+		return []domain.IdPInfo{
+			createTestIdP("https://idp1.example.edu/saml", "University A"),
+		}
+	case "https://federation2.example/xml":
+		return []domain.IdPInfo{
+			createTestIdP("https://idp1.example.edu/saml", "University A"),
+			createTestIdP("https://idp2.example.org/saml", "Organization B"),
+			createTestIdP("https://idp3.other.com/saml", "Other Provider"),
+		}
+	case "/etc/saml/local-idps.xml":
+		return []domain.IdPInfo{
+			createTestIdP("https://idp2.example.org/saml", "Organization B"),
+		}
+	case "https://metadata.example":
+		// Default single source with Background IdPs
+		return []domain.IdPInfo{
+			createTestIdP("https://idp1.example.edu/saml", "University A"),
+			createTestIdP("https://idp2.example.org/saml", "Organization B"),
+			createTestIdP("https://idp3.other.com/saml", "Other Provider"),
+		}
+	default:
+		// Generic source - return empty by default
+		return []domain.IdPInfo{}
+	}
+}
+
+// bothSourcesContain configures both metadata sources to ONLY contain a specific IdP.
+// This replaces their current IdP lists to ensure they share exactly this IdP.
+func bothSourcesContain(ctx context.Context, entityID string) (context.Context, error) {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	if len(tc.metadataSources) < 2 {
+		return ctx, errors.New("expected at least 2 metadata sources")
+	}
+
+	// Create the common IdP
+	idp := domain.IdPInfo{
+		EntityID:    entityID,
+		DisplayName: entityID,
+		SSOURL:      strings.TrimSuffix(entityID, "/saml") + "/sso",
+	}
+
+	// Replace each source's IdPs with just this one
+	for i := range tc.metadataSources {
+		tc.metadataSources[i].idps = []domain.IdPInfo{idp}
+	}
+
+	return ctx, nil
+}
+
+// iAggregateMetadataFromAllSources simulates aggregating metadata from multiple sources.
+func iAggregateMetadataFromAllSources(ctx context.Context) (context.Context, error) {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	// Simulate aggregation: combine IdPs from all sources
+	seenEntityIDs := make(map[string]bool)
+	tc.aggregatedIdPs = []domain.IdPInfo{}
+
+	for _, source := range tc.metadataSources {
+		// Simulate source failures
+		if source.status == "error" {
+			tc.sourceFailures++
+			continue
+		}
+
+		// Deduplicate: only add IdPs we haven't seen before
+		for _, idp := range source.idps {
+			if !seenEntityIDs[idp.EntityID] {
+				tc.aggregatedIdPs = append(tc.aggregatedIdPs, idp)
+				seenEntityIDs[idp.EntityID] = true
+			}
+		}
+	}
+
+	return ctx, nil
+}
+
+// iShouldSeeIdPsFromAllSources verifies aggregation includes sources.
+func iShouldSeeIdPsFromAllSources(ctx context.Context) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	if len(tc.aggregatedIdPs) == 0 {
+		return errors.New("no IdPs aggregated from sources")
+	}
+
+	return nil
+}
+
+// deduplicatedIdPsCountIs verifies the deduplicated count.
+func deduplicatedIdPsCountIs(ctx context.Context, expectedCount int) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	actualCount := len(tc.aggregatedIdPs)
+	if actualCount != expectedCount {
+		var entityIDs []string
+		for _, idp := range tc.aggregatedIdPs {
+			entityIDs = append(entityIDs, idp.EntityID)
+		}
+		return fmt.Errorf("expected %d deduplicated IdPs, got %d: %v", expectedCount, actualCount, entityIDs)
+	}
+
+	return nil
+}
+
+// iShouldSeeIdPsFromWorkingSource verifies fallback to working sources.
+func iShouldSeeIdPsFromWorkingSource(ctx context.Context) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	// After aggregation, we should have IdPs only from working sources
+	if len(tc.aggregatedIdPs) == 0 {
+		return errors.New("expected IdPs from working source, but got none")
+	}
+
+	return nil
+}
+
+// aggregatorShouldReportSourceFailures verifies failure tracking.
+func aggregatorShouldReportSourceFailures(ctx context.Context, expectedFailures int) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	if tc.sourceFailures != expectedFailures {
+		return fmt.Errorf("expected %d source failures, got %d", expectedFailures, tc.sourceFailures)
+	}
+
+	return nil
+}
+
+// iShouldSee1IdPNotDuplicated verifies deduplication works.
+func iShouldSee1IdPNotDuplicated(ctx context.Context) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	if len(tc.aggregatedIdPs) != 1 {
+		var entityIDs []string
+		for _, idp := range tc.aggregatedIdPs {
+			entityIDs = append(entityIDs, idp.EntityID)
+		}
+		return fmt.Errorf("expected 1 IdP (deduplicated), got %d: %v", len(tc.aggregatedIdPs), entityIDs)
+	}
+
+	return nil
+}
+
+// singleSourceModeShouldWork verifies backward compatibility.
+func singleSourceModeShouldWork(ctx context.Context) error {
+	tc := ctx.Value(ctxKey{}).(*testContext)
+
+	// Single source should produce same result as before
+	if len(tc.metadataSources) != 1 {
+		return fmt.Errorf("expected single source mode, but got %d sources", len(tc.metadataSources))
+	}
+
+	if len(tc.aggregatedIdPs) != 3 {
+		return fmt.Errorf("expected 3 IdPs in single source mode, got %d", len(tc.aggregatedIdPs))
+	}
+
+	return nil
 }

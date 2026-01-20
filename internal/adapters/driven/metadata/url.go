@@ -183,11 +183,12 @@ func (s *URLMetadataStore) GetIdP(entityID string) (*domain.IdPInfo, error) {
 
 // ListIdPs returns all IdPs, optionally filtered by a search term.
 // Searches across EntityID, DisplayName, and all DisplayNames language variants.
+// Always returns an empty slice (not nil) when no IdPs match.
 func (s *URLMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []domain.IdPInfo
+	result := make([]domain.IdPInfo, 0)
 	for _, idp := range s.idps {
 		if domain.MatchesSearch(&idp, filter) {
 			result = append(result, idp)
