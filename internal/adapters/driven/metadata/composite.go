@@ -80,6 +80,30 @@ func (c *CompositeMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, erro
 	return result, nil
 }
 
+// Load performs initial metadata load from all wrapped stores.
+// This is called during provisioning to ensure metadata is available at startup.
+// Continues on failure, collecting all errors and returning a combined error.
+func (c *CompositeMetadataStore) Load() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var errors []error
+
+	for _, store := range c.stores {
+		// Check if this store implements Load()
+		if loader, ok := store.(interface{ Load() error }); ok {
+			if err := loader.Load(); err != nil {
+				errors = append(errors, err)
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return joinErrors(errors)
+	}
+	return nil
+}
+
 // Refresh reloads metadata from all wrapped stores.
 // Continues on failure, collecting all errors and returning a combined error.
 func (c *CompositeMetadataStore) Refresh(ctx context.Context) error {

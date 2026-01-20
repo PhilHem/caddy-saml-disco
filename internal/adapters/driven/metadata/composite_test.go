@@ -142,6 +142,31 @@ func TestCompositeStore_EmptyStores(t *testing.T) {
 	}
 }
 
+// TestCompositeStore_Load tests that Load() calls Load() on all wrapped stores.
+func TestCompositeStore_Load(t *testing.T) {
+	idp1 := domain.IdPInfo{EntityID: "https://idp1.example.org", DisplayName: "IdP 1"}
+	idp2 := domain.IdPInfo{EntityID: "https://idp2.example.org", DisplayName: "IdP 2"}
+
+	store1 := NewInMemoryMetadataStore([]domain.IdPInfo{idp1})
+	store2 := NewInMemoryMetadataStore([]domain.IdPInfo{idp2})
+
+	composite := NewCompositeMetadataStore([]ports.MetadataStore{store1, store2})
+
+	err := composite.Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Verify both stores' IdPs are accessible
+	result, err := composite.ListIdPs("")
+	if err != nil {
+		t.Fatalf("ListIdPs() failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 IdPs after Load(), got %d", len(result))
+	}
+}
+
 // TestCompositeStore_Refresh_AllSucceed tests Refresh when all stores succeed.
 func TestCompositeStore_Refresh_AllSucceed(t *testing.T) {
 	idp1 := domain.IdPInfo{EntityID: "https://idp1.example.org", DisplayName: "IdP 1"}
