@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-01-20
+
+### Added
+- **Comma-separated IdP filter patterns**: `idp_filter` now supports comma-separated patterns with OR logic. Use exact entity IDs as a whitelist (e.g., `"https://idp1.example.edu, https://idp2.example.org"`) or mix patterns and exact matches.
+
 ### Breaking Changes
 - **Remember IdP cookie**: The `/saml/api/select` endpoint now only sets the remember-IdP cookie when `remember: true` is explicitly passed in the request body. Previously, the cookie was always set on IdP selection.
 
 ### Changed
 - **Error types relocated**: `JSONErrorResponse` and `JSONErrorDetail` types moved from `internal/core/domain/` to `internal/adapters/driving/caddy/` as they are Caddy adapter-specific (HTTP response format). Backward compatibility maintained via root package re-exports in `errors.go`.
+- **Architecture refactoring**: Various code organization improvements addressing architecture review findings.
 
 ## [0.16.1] - 2026-01-09
 
