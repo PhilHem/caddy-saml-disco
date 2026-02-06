@@ -291,6 +291,13 @@ func parseConfigDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 			return true, d.ArgErr()
 		}
 
+	case "bypass_idp":
+		args := d.RemainingArgs()
+		if len(args) == 0 {
+			return true, d.ArgErr()
+		}
+		cfg.BypassIdPs = append(cfg.BypassIdPs, args...)
+
 	case "alt_login":
 		args := d.RemainingArgs()
 		if len(args) < 2 {

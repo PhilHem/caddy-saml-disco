@@ -26,22 +26,30 @@ func (s *SAMLDisco) handleDiscoveryUIInternal(w http.ResponseWriter, r *http.Req
 	returnURL := ValidateRelayState(r.URL.Query().Get("return_url"))
 
 	// Auto-redirect if only one IdP
-	if len(idps) == 1 && cfg.samlService != nil {
+	if len(idps) == 1 {
 		idp := &idps[0]
-		acsURL := s.resolveAcsURLForSP(r, cfg)
 
-		// Determine if forceAuthn is needed based on return URL path
-		opts := &domain.AuthnOptions{
-			ForceAuthn: cfg.ForceAuthn || MatchesForceAuthnPath(returnURL, cfg.ForceAuthnPaths),
+		// If this is a bypass IdP, create session directly
+		if isBypassIdP(cfg, idp.EntityID) {
+			return s.handleBypassIdP(w, r, cfg, idp, returnURL)
 		}
 
-		redirectURL, err := cfg.samlService.StartAuthWithOptions(idp, acsURL, returnURL, opts)
-		if err != nil {
-			s.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
+		if cfg.samlService != nil {
+			acsURL := s.resolveAcsURLForSP(r, cfg)
+
+			// Determine if forceAuthn is needed based on return URL path
+			opts := &domain.AuthnOptions{
+				ForceAuthn: cfg.ForceAuthn || MatchesForceAuthnPath(returnURL, cfg.ForceAuthnPaths),
+			}
+
+			redirectURL, err := cfg.samlService.StartAuthWithOptions(idp, acsURL, returnURL, opts)
+			if err != nil {
+				s.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
+				return nil
+			}
+			http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 			return nil
 		}
-		http.Redirect(w, r, redirectURL.String(), http.StatusFound)
-		return nil
 	}
 
 	// Serve discovery UI HTML
@@ -83,12 +91,19 @@ func (s *SAMLDisco) redirectToIdPInternal(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Single IdP - check SAML service and redirect directly
+	// Single IdP - bypass or SAML redirect
+	idp := &idps[0]
+
+	// If this is a bypass IdP, create session directly
+	if isBypassIdP(cfg, idp.EntityID) {
+		s.handleBypassIdP(w, r, cfg, idp, r.URL.RequestURI())
+		return
+	}
+
 	if cfg.samlService == nil {
 		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return
 	}
-	idp := &idps[0]
 
 	// Compute ACS URL and use original URL as RelayState
 	acsURL := s.resolveAcsURLForSP(r, cfg)

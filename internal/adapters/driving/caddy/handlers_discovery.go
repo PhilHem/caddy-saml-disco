@@ -3,6 +3,7 @@ package caddy
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 	"go.uber.org/zap"
@@ -95,6 +96,11 @@ func (s *SAMLDisco) handleSelectIdPInternal(w http.ResponseWriter, r *http.Reque
 		s.setRememberIdPCookieForSP(w, r, cfg, req.EntityID)
 	}
 
+	// Check if this is a bypass IdP - skip SAML and create session directly
+	if isBypassIdP(cfg, req.EntityID) {
+		return s.handleBypassIdP(w, r, cfg, idp, req.ReturnURL)
+	}
+
 	// Check SAML service is configured
 	if cfg.samlService == nil {
 		s.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
@@ -125,6 +131,56 @@ func (s *SAMLDisco) handleSelectIdPInternal(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"redirect_url": redirectURL.String(),
+	})
+	return nil
+}
+
+// isBypassIdP checks if the given entity ID is configured as a bypass IdP.
+func isBypassIdP(cfg *SPConfig, entityID string) bool {
+	for _, id := range cfg.BypassIdPs {
+		if id == entityID {
+			return true
+		}
+	}
+	return false
+}
+
+// handleBypassIdP creates a guest session for a bypass IdP without SAML authentication.
+func (s *SAMLDisco) handleBypassIdP(w http.ResponseWriter, r *http.Request, cfg *SPConfig, idp *domain.IdPInfo, returnURL string) error {
+	s.getLogger().Info("bypass idp selected, creating guest session",
+		zap.String("entity_id", idp.EntityID),
+	)
+
+	relayState := returnURL
+	if relayState == "" {
+		relayState = "/"
+	}
+	relayState = ValidateRelayState(relayState)
+
+	// Create a guest session
+	session := &domain.Session{
+		Subject:     "guest",
+		IdPEntityID: idp.EntityID,
+		IssuedAt:    time.Now(),
+		ExpiresAt:   time.Now().Add(cfg.sessionDuration),
+	}
+
+	if cfg.sessionStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("Session store is not configured"))
+		return nil
+	}
+	token, err := cfg.sessionStore.Create(session)
+	if err != nil {
+		s.renderAppError(w, r, domain.ServiceError("Failed to create session"))
+		return err
+	}
+
+	s.setSessionCookieForSP(w, r, cfg, token)
+
+	// Return JSON with redirect URL (same format as normal SAML flow)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"redirect_url": relayState,
 	})
 	return nil
 }

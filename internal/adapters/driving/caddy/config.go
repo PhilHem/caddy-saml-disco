@@ -124,6 +124,12 @@ type Config struct {
 	// PinnedIdPs is a list of IdP entity IDs to display prominently in the discovery UI.
 	PinnedIdPs []string `json:"pinned_idps,omitempty"`
 
+	// BypassIdPs is a list of IdP entity IDs that skip SAML authentication.
+	// When a user selects a bypassed IdP in the discovery page, a guest session
+	// is created immediately without redirecting to the IdP.
+	// The IdP must still be present in the metadata (via idp_filter) to appear in the discovery page.
+	BypassIdPs []string `json:"bypass_idps,omitempty"`
+
 	// AltLogins is a list of alternative login methods to display in the discovery UI.
 	AltLogins []AltLoginConfig `json:"alt_logins,omitempty"`
 
