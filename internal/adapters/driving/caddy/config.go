@@ -31,6 +31,10 @@ func (m *MetadataSource) SetDefaults() {
 	}
 }
 
+// GuestEntityID is a sentinel entity ID used for guest access entries.
+// It never appears in real federation metadata.
+const GuestEntityID = "urn:caddy-saml-disco:guest"
+
 // Config holds the configuration for the SAML Discovery plugin.
 type Config struct {
 	// EntityID is the SAML entity ID for this SP (required).
@@ -129,6 +133,12 @@ type Config struct {
 	// is created immediately without redirecting to the IdP.
 	// The IdP must still be present in the metadata (via idp_filter) to appear in the discovery page.
 	BypassIdPs []string `json:"bypass_idps,omitempty"`
+
+	// GuestAccessLabel is the display name for a virtual guest access entry
+	// on the discovery page. When set, a pinned entry with this label appears
+	// that creates a guest session without any SAML authentication.
+	// Unlike bypass_idp, no real IdP metadata is required.
+	GuestAccessLabel string `json:"guest_access_label,omitempty"`
 
 	// AltLogins is a list of alternative login methods to display in the discovery UI.
 	AltLogins []AltLoginConfig `json:"alt_logins,omitempty"`

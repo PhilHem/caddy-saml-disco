@@ -22,6 +22,14 @@ func (s *SAMLDisco) renderDiscoveryHTML(w http.ResponseWriter, r *http.Request, 
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPs(localizedIdPs)
 
+	// Append guest access entry to pinned IdPs if configured
+	if s.GuestAccessLabel != "" {
+		pinnedIdPs = append(pinnedIdPs, domain.IdPInfo{
+			EntityID:    GuestEntityID,
+			DisplayName: s.GuestAccessLabel,
+		})
+	}
+
 	// Get the remembered IdP entity ID
 	rememberedIdPID := s.getRememberIdPCookie(r)
 
@@ -148,6 +156,14 @@ func (s *SAMLDisco) renderDiscoveryHTMLForSP(w http.ResponseWriter, r *http.Requ
 
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(spConfig, localizedIdPs)
+
+	// Append guest access entry to pinned IdPs if configured
+	if spConfig.GuestAccessLabel != "" {
+		pinnedIdPs = append(pinnedIdPs, domain.IdPInfo{
+			EntityID:    GuestEntityID,
+			DisplayName: spConfig.GuestAccessLabel,
+		})
+	}
 
 	// Get the remembered IdP entity ID
 	rememberedIdPID := s.getRememberIdPCookieForSP(r, spConfig)

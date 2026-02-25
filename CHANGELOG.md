@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-02-25
+
+### Added
+- **`guest_access` directive**: Add a virtual guest entry to the discovery page that creates a guest session without any SAML authentication or IdP metadata. Unlike `bypass_idp`, no real IdP backing is required. Usage: `guest_access "Extern"`.
+
 ## [0.18.2] - 2026-02-06
 
 ### Added

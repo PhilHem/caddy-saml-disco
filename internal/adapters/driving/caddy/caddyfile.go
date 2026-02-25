@@ -298,6 +298,12 @@ func parseConfigDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 		}
 		cfg.BypassIdPs = append(cfg.BypassIdPs, args...)
 
+	case "guest_access":
+		if !d.NextArg() {
+			return true, d.ArgErr()
+		}
+		cfg.GuestAccessLabel = d.Val()
+
 	case "alt_login":
 		args := d.RemainingArgs()
 		if len(args) < 2 {

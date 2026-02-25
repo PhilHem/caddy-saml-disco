@@ -38,6 +38,14 @@ func (s *SAMLDisco) handleListIdPsInternal(w http.ResponseWriter, r *http.Reques
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(cfg, idps)
 
+	// Append guest access entry to pinned IdPs if configured
+	if cfg.GuestAccessLabel != "" {
+		pinnedIdPs = append(pinnedIdPs, domain.IdPInfo{
+			EntityID:    GuestEntityID,
+			DisplayName: cfg.GuestAccessLabel,
+		})
+	}
+
 	// Log warning if metadata filtering results in empty list
 	if len(filteredIdPs) == 0 && len(idps) > 0 {
 		s.getLogger().Warn("empty IdP list after filtering",
@@ -69,6 +77,11 @@ func (s *SAMLDisco) handleSelectIdPInternal(w http.ResponseWriter, r *http.Reque
 	if req.EntityID == "" {
 		s.renderAppError(w, r, domain.BadRequestError("entity_id is required"))
 		return nil
+	}
+
+	// Handle guest access — no metadata lookup needed
+	if req.EntityID == GuestEntityID && cfg.GuestAccessLabel != "" {
+		return s.handleGuestAccess(w, r, cfg, req.ReturnURL)
 	}
 
 	// Look up IdP in metadata store
@@ -178,6 +191,43 @@ func (s *SAMLDisco) handleBypassIdP(w http.ResponseWriter, r *http.Request, cfg 
 	s.setSessionCookieForSP(w, r, cfg, token)
 
 	// Return JSON with redirect URL (same format as normal SAML flow)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"redirect_url": relayState,
+	})
+	return nil
+}
+
+// handleGuestAccess creates a guest session without any SAML authentication.
+// Unlike handleBypassIdP, this does not require an IdP to exist in metadata.
+func (s *SAMLDisco) handleGuestAccess(w http.ResponseWriter, r *http.Request, cfg *SPConfig, returnURL string) error {
+	s.getLogger().Info("guest access selected, creating guest session")
+
+	relayState := returnURL
+	if relayState == "" {
+		relayState = "/"
+	}
+	relayState = ValidateRelayState(relayState)
+
+	session := &domain.Session{
+		Subject:     "guest",
+		IdPEntityID: GuestEntityID,
+		IssuedAt:    time.Now(),
+		ExpiresAt:   time.Now().Add(cfg.sessionDuration),
+	}
+
+	if cfg.sessionStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("Session store is not configured"))
+		return nil
+	}
+	token, err := cfg.sessionStore.Create(session)
+	if err != nil {
+		s.renderAppError(w, r, domain.ServiceError("Failed to create session"))
+		return err
+	}
+
+	s.setSessionCookieForSP(w, r, cfg, token)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"redirect_url": relayState,
