@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-02-25
+
+### Fixed
+- Discovery page cards use CSS grid layout so text aligns consistently even when logo is absent (e.g., guest entry). Empty logo placeholder `<div>` reserves the grid column.
+
 ## [0.19.0] - 2026-02-25
 
 ### Added

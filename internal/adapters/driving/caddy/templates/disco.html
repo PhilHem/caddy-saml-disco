@@ -10,11 +10,11 @@
         h1 { margin-top: 0; color: #333; }
         .search { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 20px; box-sizing: border-box; }
         .idp-list { list-style: none; padding: 0; margin: 0; }
-        .idp-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; }
+        .idp-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; display: grid; grid-template-columns: 40px 1fr; gap: 15px; align-items: center; }
         .idp-item:hover { background: #f8f9fa; border-color: #007bff; }
         .idp-item.remembered { border-left: 3px solid #007bff; background: #f0f7ff; }
-        .idp-logo { width: 40px; height: 40px; margin-right: 15px; object-fit: contain; }
-        .idp-info { flex: 1; }
+        .idp-logo { width: 40px; height: 40px; object-fit: contain; align-self: center; }
+        .idp-info { align-self: center; }
         .idp-name { font-weight: 600; color: #333; }
         .idp-desc { font-size: 0.9em; color: #666; margin-top: 4px; }
         .no-results { text-align: center; color: #666; padding: 20px; }
@@ -29,7 +29,7 @@
         <ul class="idp-list" id="idpList">
             {{range .PinnedIdPs}}
             <li class="idp-item" data-entity-id="{{.EntityID}}" data-name="{{.DisplayName}}">
-                {{if .LogoURL}}<img class="idp-logo" src="{{.LogoURL}}" alt="">{{end}}
+                {{if .LogoURL}}<img class="idp-logo" src="{{.LogoURL}}" alt="">{{else}}<div class="idp-logo"></div>{{end}}
                 <div class="idp-info">
                     <div class="idp-name">{{.DisplayName}}</div>
                     {{if .Description}}<div class="idp-desc">{{.Description}}</div>{{end}}
@@ -38,7 +38,7 @@
             {{end}}
             {{range .IdPs}}
             <li class="idp-item{{if eq .EntityID $.RememberedIdPID}} remembered{{end}}" data-entity-id="{{.EntityID}}" data-name="{{.DisplayName}}">
-                {{if .LogoURL}}<img class="idp-logo" src="{{.LogoURL}}" alt="">{{end}}
+                {{if .LogoURL}}<img class="idp-logo" src="{{.LogoURL}}" alt="">{{else}}<div class="idp-logo"></div>{{end}}
                 <div class="idp-info">
                     <div class="idp-name">{{.DisplayName}}</div>
                     {{if .Description}}<div class="idp-desc">{{.Description}}</div>{{end}}
