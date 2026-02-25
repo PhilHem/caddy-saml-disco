@@ -38,9 +38,9 @@ func (s *SAMLDisco) handleListIdPsInternal(w http.ResponseWriter, r *http.Reques
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(cfg, idps)
 
-	// Append guest access entry to pinned IdPs if configured
+	// Append guest access entry to end of regular IdPs if configured
 	if cfg.GuestAccessLabel != "" {
-		pinnedIdPs = append(pinnedIdPs, domain.IdPInfo{
+		filteredIdPs = append(filteredIdPs, domain.IdPInfo{
 			EntityID:    GuestEntityID,
 			DisplayName: cfg.GuestAccessLabel,
 		})

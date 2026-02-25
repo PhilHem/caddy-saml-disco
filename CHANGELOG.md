@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-02-25
+
+### Fixed
+- Guest access entry now appears at the bottom of the discovery list instead of at the top with pinned IdPs.
+
 ## [0.19.3] - 2026-02-25
 
 ### Fixed

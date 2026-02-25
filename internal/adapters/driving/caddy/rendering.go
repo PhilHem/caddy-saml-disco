@@ -157,9 +157,9 @@ func (s *SAMLDisco) renderDiscoveryHTMLForSP(w http.ResponseWriter, r *http.Requ
 	// Separate pinned IdPs from the main list
 	pinnedIdPs, filteredIdPs := s.separatePinnedIdPsForSP(spConfig, localizedIdPs)
 
-	// Append guest access entry to pinned IdPs if configured
+	// Append guest access entry to end of regular IdPs if configured
 	if spConfig.GuestAccessLabel != "" {
-		pinnedIdPs = append(pinnedIdPs, domain.IdPInfo{
+		filteredIdPs = append(filteredIdPs, domain.IdPInfo{
 			EntityID:    GuestEntityID,
 			DisplayName: spConfig.GuestAccessLabel,
 		})
