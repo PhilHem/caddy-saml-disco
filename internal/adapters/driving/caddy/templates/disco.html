@@ -13,6 +13,7 @@
         .idp-item { padding: 15px; border: 1px solid #eee; border-radius: 4px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; }
         .idp-item:hover { background: #f8f9fa; border-color: #007bff; }
         .idp-item.remembered { border-left: 3px solid #007bff; background: #f0f7ff; }
+        .idp-item.pinned { border-left: 3px solid #28a745; background: #f0fff4; }
         .idp-logo { width: 40px; height: 40px; margin-right: 15px; object-fit: contain; }
         .idp-info { flex: 1; }
         .idp-name { font-weight: 600; color: #333; }
@@ -24,9 +25,18 @@
 <body>
     <div class="container">
         <h1>Select your Identity Provider</h1>
-        {{if .IdPs}}
+        {{if or .IdPs .PinnedIdPs}}
         <input type="text" class="search" id="search" placeholder="Search for your institution..." autocomplete="off">
         <ul class="idp-list" id="idpList">
+            {{range .PinnedIdPs}}
+            <li class="idp-item pinned" data-entity-id="{{.EntityID}}" data-name="{{.DisplayName}}">
+                {{if .LogoURL}}<img class="idp-logo" src="{{.LogoURL}}" alt="">{{end}}
+                <div class="idp-info">
+                    <div class="idp-name">{{.DisplayName}}</div>
+                    {{if .Description}}<div class="idp-desc">{{.Description}}</div>{{end}}
+                </div>
+            </li>
+            {{end}}
             {{range .IdPs}}
             <li class="idp-item{{if eq .EntityID $.RememberedIdPID}} remembered{{end}}" data-entity-id="{{.EntityID}}" data-name="{{.DisplayName}}">
                 {{if .LogoURL}}<img class="idp-logo" src="{{.LogoURL}}" alt="">{{end}}
@@ -42,7 +52,7 @@
         <div class="empty-state">No identity providers available</div>
         {{end}}
     </div>
-    {{if .IdPs}}
+    {{if or .IdPs .PinnedIdPs}}
     <script>
         const returnUrl = '{{.ReturnURL}}';
         const items = document.querySelectorAll('.idp-item');
