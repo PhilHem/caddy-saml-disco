@@ -132,21 +132,8 @@ func (s *SAMLDisco) handleACSInternal(w http.ResponseWriter, r *http.Request, cf
 		ExpiresAt:    time.Now().Add(cfg.sessionDuration),
 	}
 
-	if cfg.sessionStore == nil {
-		s.renderAppError(w, r, domain.ConfigError("Session store is not configured"))
-		return nil
-	}
-	token, err := cfg.sessionStore.Create(session)
-	if err != nil {
-		s.renderAppError(w, r, domain.ServiceError("Failed to create session"))
-		return err
-	}
-	s.getMetricsRecorder().RecordSessionCreated()
-
-	// Set session cookie
-	s.setSessionCookieForSP(w, r, cfg, token)
-
-	// Check entitlements if configured
+	// Check entitlements before creating a session cookie.
+	// If the user is denied, we must not issue a session.
 	if cfg.entitlementStore != nil {
 		entitlementResult, err := cfg.entitlementStore.Lookup(session.Subject)
 		if err != nil {
@@ -178,6 +165,20 @@ func (s *SAMLDisco) handleACSInternal(w http.ResponseWriter, r *http.Request, cf
 			}
 		}
 	}
+
+	if cfg.sessionStore == nil {
+		s.renderAppError(w, r, domain.ConfigError("Session store is not configured"))
+		return nil
+	}
+	token, err := cfg.sessionStore.Create(session)
+	if err != nil {
+		s.renderAppError(w, r, domain.ServiceError("Failed to create session"))
+		return err
+	}
+	s.getMetricsRecorder().RecordSessionCreated()
+
+	// Set session cookie
+	s.setSessionCookieForSP(w, r, cfg, token)
 
 	// Redirect to relay state or default page
 	relayState := ValidateRelayState(r.FormValue("RelayState"))
