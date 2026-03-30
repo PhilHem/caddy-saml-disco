@@ -336,14 +336,22 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *domain.Id
 		}
 	}
 
-	// Consume the request ID (mark as used)
-	// The InResponseTo field links back to our original AuthnRequest
+	// Consume the request ID (mark as used, enforce single-use).
+	// The InResponseTo field links back to our original AuthnRequest.
+	// Valid() atomically checks and deletes the ID; it returns false if the ID
+	// was already consumed or never existed, indicating a replay.
+	consumed := false
 	if assertion.Subject != nil {
 		for _, sc := range assertion.Subject.SubjectConfirmations {
 			if sc.SubjectConfirmationData != nil && sc.SubjectConfirmationData.InResponseTo != "" {
-				s.requestStore.Valid(sc.SubjectConfirmationData.InResponseTo)
+				if s.requestStore.Valid(sc.SubjectConfirmationData.InResponseTo) {
+					consumed = true
+				}
 			}
 		}
+	}
+	if !consumed {
+		return nil, fmt.Errorf("request ID already consumed or not found: replay detected")
 	}
 
 	return &AuthResult{

@@ -57,6 +57,15 @@ func (s *InMemoryMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, error
 	return result, nil
 }
 
+// Replace atomically swaps the full IdP list with the provided slice.
+// This is used in tests to simulate a metadata refresh without constructing
+// a new store instance.
+func (s *InMemoryMetadataStore) Replace(idps []domain.IdPInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.idps = idps
+}
+
 // Refresh is a no-op for in-memory store.
 func (s *InMemoryMetadataStore) Refresh(ctx context.Context) error {
 	return nil
