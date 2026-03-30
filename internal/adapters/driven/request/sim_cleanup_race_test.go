@@ -7,12 +7,15 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // SimTest1: Single-use enforcement under concurrency.
 // 10 goroutines simultaneously call Valid() on the same request ID.
 // Exactly one must return true; the rest must return false.
 func TestSim_SingleUseUnderConcurrency(t *testing.T) {
+	tra.Require(t, "Adapter.Request.SingleUseUnderConcurrency")
 	store := NewInMemoryRequestStore()
 	if err := store.Store("req-X", time.Now().Add(5*time.Second)); err != nil {
 		t.Fatalf("Store() error: %v", err)
@@ -52,6 +55,7 @@ func TestSim_SingleUseUnderConcurrency(t *testing.T) {
 // SimTest2: Expiry enforcement via lazy check in Valid().
 // Store a request with a TTL in the past; Valid() must return false.
 func TestSim_ExpiryEnforcement(t *testing.T) {
+	tra.Require(t, "Adapter.Request.ExpiryEnforcement")
 	store := NewInMemoryRequestStore()
 
 	// Store with expiry already in the past.
@@ -68,6 +72,7 @@ func TestSim_ExpiryEnforcement(t *testing.T) {
 // Verifies that the background cleanup goroutine removes expired entries
 // without interfering with Valid() for live entries.
 func TestSim_CleanupVsValidRace(t *testing.T) {
+	tra.Require(t, "Adapter.Request.CleanupVsValidRace")
 	cleaned := make(chan struct{}, 10)
 	store := NewInMemoryRequestStoreWithCleanup(
 		20*time.Millisecond,
@@ -116,6 +121,7 @@ func TestSim_CleanupVsValidRace(t *testing.T) {
 // Calls Close() while the cleanup goroutine may be running and verifies
 // there is no deadlock and that Close() is idempotent.
 func TestSim_CloseDuringCleanup(t *testing.T) {
+	tra.Require(t, "Adapter.Request.CloseDuringCleanup")
 	cleaned := make(chan struct{}, 10)
 	store := NewInMemoryRequestStoreWithCleanup(
 		10*time.Millisecond,

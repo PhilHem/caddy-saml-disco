@@ -14,6 +14,7 @@ import (
 
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 const simEntityID = "https://idp.sim.example.com"
@@ -35,6 +36,7 @@ var minimalPNG = []byte{
 // for the same uncached logo trigger exactly one HTTP request even when the
 // server returns 500, and that all goroutines receive an error.
 func TestSimThunderingHerd_FailureCoalescing(t *testing.T) {
+	tra.Require(t, "Adapter.Logo.ThunderingHerdFailureCoalescing")
 	var requestCount atomic.Int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +94,7 @@ func TestSimThunderingHerd_FailureCoalescing(t *testing.T) {
 // the store retries on the next call (failure is not cached), and that a
 // successful response is then served from cache on subsequent calls.
 func TestSimThunderingHerd_SuccessAfterFailure(t *testing.T) {
+	tra.Require(t, "Adapter.Logo.ThunderingHerdSuccessAfterFailure")
 	var requestCount atomic.Int64
 	var serveSuccess atomic.Bool
 
@@ -153,6 +156,7 @@ func TestSimThunderingHerd_SuccessAfterFailure(t *testing.T) {
 // against a slow server still produce exactly one HTTP request and all
 // goroutines receive identical logo data.
 func TestSimThunderingHerd_SlowServerCoalescing(t *testing.T) {
+	tra.Require(t, "Adapter.Logo.ThunderingHerdSlowServerCoalescing")
 	var requestCount atomic.Int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

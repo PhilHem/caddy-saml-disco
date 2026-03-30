@@ -12,6 +12,7 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/entitlements"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/session"
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // TestSimEntitlementBypass_DeniedUserGetsNoCookie simulates the ACS deny path and
@@ -21,6 +22,7 @@ import (
 // so a denied user would leave with a valid session cookie. The fix moves the
 // entitlement check first so no cookie is issued on deny.
 func TestSimEntitlementBypass_DeniedUserGetsNoCookie(t *testing.T) {
+	tra.Require(t, "Adapter.Entitlement.DeniedUserNoCookie")
 	const deniedSubject = "intruder@external.example"
 	const cookieName = "saml_session"
 	const denyRedirect = "/access-denied"
@@ -113,6 +115,7 @@ func TestSimEntitlementBypass_DeniedUserGetsNoCookie(t *testing.T) {
 // TestSimEntitlementBypass_AllowedUserGetsCookie verifies the positive case:
 // an authorized subject receives a session cookie and is redirected normally.
 func TestSimEntitlementBypass_AllowedUserGetsCookie(t *testing.T) {
+	tra.Require(t, "Adapter.Entitlement.AllowedUserGetsCookie")
 	const allowedSubject = "allowed@internal.example"
 	const cookieName = "saml_session"
 

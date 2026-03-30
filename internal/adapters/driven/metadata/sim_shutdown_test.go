@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // minimalMetadataXML is an inline SAML metadata document used in shutdown
@@ -32,6 +34,7 @@ const minimalMetadataXML = `<?xml version="1.0" encoding="UTF-8"?>
 // quickly by cancelling the HTTP context of an in-progress background refresh,
 // rather than waiting for the full server response time.
 func TestSimShutdown_CloseAbortsInFlightRefresh(t *testing.T) {
+	tra.Require(t, "Adapter.Metadata.ShutdownCloseAbortsRefresh")
 	// Server sleeps 500ms before responding, simulating a slow upstream.
 	requestStarted := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +97,7 @@ func TestSimShutdown_CloseAbortsInFlightRefresh(t *testing.T) {
 // TestSimShutdown_CloseWithConcurrentReaders verifies that concurrent
 // ListIdPs() callers and a Close() do not cause panics or data races.
 func TestSimShutdown_CloseWithConcurrentReaders(t *testing.T) {
+	tra.Require(t, "Adapter.Metadata.ShutdownCloseWithReaders")
 	metadata, err := os.ReadFile("../../../../testdata/idp-metadata.xml")
 	if err != nil {
 		t.Fatalf("read test metadata: %v", err)
@@ -156,6 +160,7 @@ func TestSimShutdown_CloseWithConcurrentReaders(t *testing.T) {
 // TestSimShutdown_DoubleCloseIsIdempotent verifies that calling Close() more
 // than once does not panic.
 func TestSimShutdown_DoubleCloseIsIdempotent(t *testing.T) {
+	tra.Require(t, "Adapter.Metadata.ShutdownDoubleClose")
 	store := NewURLMetadataStoreWithRefresh("http://localhost:1", time.Hour)
 
 	// Neither call should panic.
@@ -167,6 +172,7 @@ func TestSimShutdown_DoubleCloseIsIdempotent(t *testing.T) {
 // to call after Close(): reads return cached data (or an empty set), and a
 // manual Refresh() does not panic.
 func TestSimShutdown_OperationsAfterClose(t *testing.T) {
+	tra.Require(t, "Adapter.Metadata.ShutdownOperationsAfterClose")
 	metadata, err := os.ReadFile("../../../../testdata/idp-metadata.xml")
 	if err != nil {
 		t.Fatalf("read test metadata: %v", err)

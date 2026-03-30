@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/request"
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // TestSimConfigReload_RequestIDLostAfterReload verifies that a config reload (new store
 // instance) cannot see request IDs stored in the previous instance, while the original
 // store retains them.
 func TestSimConfigReload_RequestIDLostAfterReload(t *testing.T) {
+	tra.Require(t, "Adapter.ConfigReload.RequestIDLost")
 	t.Log("Limitation: Caddy config reload creates a fresh request store. Any in-flight SAML flow " +
 		"(AuthnRequest sent, ACS response not yet received) will fail because the new store has no " +
 		"record of the original request ID.")
@@ -39,6 +41,7 @@ func TestSimConfigReload_RequestIDLostAfterReload(t *testing.T) {
 // IDs present in store1 are invisible to store2 (the post-reload instance), while store1
 // itself still reports them all as valid.
 func TestSimConfigReload_MultipleInFlightRequestsLost(t *testing.T) {
+	tra.Require(t, "Adapter.ConfigReload.MultipleRequestsLost")
 	t.Log("Limitation: Caddy config reload creates a fresh request store. Any in-flight SAML flow " +
 		"(AuthnRequest sent, ACS response not yet received) will fail because the new store has no " +
 		"record of the original request ID.")

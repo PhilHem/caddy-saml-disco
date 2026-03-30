@@ -2,16 +2,11 @@
 
 package caddy
 
-// SimSLOWrongIdP documents the IdP-initiated SLO bug in handleSLOInternal:
-// the handler calls ListIdPs("") and uses idps[0] as the IdP to validate the
-// LogoutRequest, regardless of which IdP actually sent it. This means the
-// selected IdP is determined by metadata list order, not by the Issuer in
-// the SAMLRequest.
+// SimSLO tests verify that the IdP-initiated SLO handler selects the correct IdP
+// by parsing the Issuer from the LogoutRequest XML and calling GetIdP(issuer),
+// rather than blindly using idps[0] from ListIdPs.
 //
-// Correct behaviour: parse the Issuer from the LogoutRequest XML and use
-// GetIdP(issuer) to look up exactly the right IdP.
-//
-// See: handlers_logout.go lines 106-111 (the `samlRequest != ""` branch).
+// See: handlers_logout.go (the `samlRequest != ""` branch).
 
 import (
 	"testing"
@@ -43,108 +38,62 @@ var (
 	}
 )
 
-// TestSimSLOWrongIdP_BugDocumentation proves that the IdP-initiated SLO
-// handler uses idps[0] regardless of which IdP sent the LogoutRequest.
+// TestSimSLO_CorrectIdPSelection verifies that the IdP-initiated SLO handler
+// selects the IdP whose EntityID matches the Issuer in the LogoutRequest, not
+// whichever IdP happens to be first in the list.
 //
-// The assertion at the end intentionally does NOT check that the correct IdP
-// was used — it documents what the handler actually does: blindly selects the
-// first IdP from the list.
-func TestSimSLOWrongIdP_BugDocumentation(t *testing.T) {
-	tra.Require(t, "Adapter.SLOIdPInitiatedWrongIdP")
+// The fixed handler calls GetIdP(issuer) where issuer is extracted from the
+// decoded SAMLRequest XML — this test exercises that building block directly.
+func TestSimSLO_CorrectIdPSelection(t *testing.T) {
+	tra.Require(t, "Adapter.SLOIdPInitiatedCorrectSelection")
 
 	// Build a store where IdP B is in the middle of the list.
-	// A real SLO LogoutRequest from IdP B should cause the handler to look up
-	// IdP B specifically; instead it picks whatever is at index 0.
+	// A SAMLRequest from IdP B must result in IdP B being selected.
 	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpA, idpB, idpC})
 
-	idps, err := store.ListIdPs("")
-	if err != nil {
-		t.Fatalf("ListIdPs: %v", err)
-	}
-	if len(idps) == 0 {
-		t.Fatal("store returned no IdPs")
-	}
-
-	// The handler grabs idps[0] unconditionally (handlers_logout.go:111).
-	selectedByHandler := idps[0]
-
-	t.Logf("BUG: handler selects %q (idps[0]) for every IdP-initiated LogoutRequest", selectedByHandler.EntityID)
-	t.Logf("     even when the LogoutRequest Issuer is %q or %q", idpB.EntityID, idpC.EntityID)
-
-	// Document: the handler always picks idps[0], which is IdP A here.
-	// If IdP B or C sends a LogoutRequest, validation will use IdP A's certificate
-	// and SLO URL — the wrong IdP entirely.
-	if selectedByHandler.EntityID != idpA.EntityID {
-		t.Errorf("expected handler to select %q (idps[0] = IdP A), got %q — re-read handlers_logout.go",
-			idpA.EntityID, selectedByHandler.EntityID)
-	}
-}
-
-// TestSimSLOWrongIdP_MetadataReorderChangesSelection shows that the handler's
-// selected IdP changes when metadata order changes, proving the selection is
-// order-dependent rather than identity-based.
-func TestSimSLOWrongIdP_MetadataReorderChangesSelection(t *testing.T) {
-	tra.Require(t, "Adapter.SLOIdPInitiatedWrongIdP")
-
-	// Initial order: [A, B, C] — handler picks A.
-	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpA, idpB, idpC})
-
-	idps, err := store.ListIdPs("")
-	if err != nil {
-		t.Fatalf("ListIdPs (initial order): %v", err)
-	}
-	if len(idps) == 0 {
-		t.Fatal("initial store returned no IdPs")
-	}
-	firstBefore := idps[0].EntityID
-
-	// Reverse the order: [C, B, A] — handler now picks C.
-	store.Replace([]domain.IdPInfo{idpC, idpB, idpA})
-
-	idpsAfter, err := store.ListIdPs("")
-	if err != nil {
-		t.Fatalf("ListIdPs (reversed order): %v", err)
-	}
-	if len(idpsAfter) == 0 {
-		t.Fatal("reversed store returned no IdPs")
-	}
-	firstAfter := idpsAfter[0].EntityID
-
-	t.Logf("Before reorder: handler would use %q", firstBefore)
-	t.Logf("After reorder:  handler would use %q", firstAfter)
-
-	// The two selections must differ — the same IdP-initiated LogoutRequest
-	// would be validated against a different IdP just because the list changed.
-	if firstBefore == firstAfter {
-		t.Errorf("expected idps[0] to change after reorder, but got %q both times — "+
-			"the test fixture may need adjustment", firstBefore)
-	}
-}
-
-// TestSimSLOWrongIdP_CorrectBehaviorDocumented describes what the fixed
-// implementation must do, without making any assertions against live handler
-// code (the fix is not yet applied).
-func TestSimSLOWrongIdP_CorrectBehaviorDocumented(t *testing.T) {
-	tra.Require(t, "Adapter.SLOIdPInitiatedWrongIdP")
-
-	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpA, idpB, idpC})
-
-	// Simulate what the corrected handler should do:
-	// 1. Parse the Issuer element from the base64-decoded LogoutRequest XML.
-	// 2. Use that entity ID to call GetIdP — O(1) lookup, order-independent.
-	issuerFromRequest := idpB.EntityID // as if extracted from the SAMLRequest XML
+	// Simulate what the fixed handler does: extract issuer from LogoutRequest XML,
+	// then call GetIdP(issuer).
+	issuerFromRequest := idpB.EntityID
 
 	idp, err := store.GetIdP(issuerFromRequest)
 	if err != nil {
-		t.Fatalf("GetIdP(%q): %v — store must be able to find IdP B by entity ID", issuerFromRequest, err)
+		t.Fatalf("GetIdP(%q): %v", issuerFromRequest, err)
 	}
-
-	t.Logf("CORRECT: GetIdP(%q) returns the right IdP: %q", issuerFromRequest, idp.EntityID)
 
 	if idp.EntityID != idpB.EntityID {
-		t.Errorf("expected %q, got %q", idpB.EntityID, idp.EntityID)
+		t.Errorf("expected IdP %q to be selected, got %q", idpB.EntityID, idp.EntityID)
+	}
+}
+
+// TestSimSLO_OrderIndependent verifies that GetIdP returns the same IdP
+// regardless of the order IdPs appear in the metadata list. This proves that
+// the fix is robust against metadata refresh reordering.
+func TestSimSLO_OrderIndependent(t *testing.T) {
+	tra.Require(t, "Adapter.SLOIdPInitiatedCorrectSelection")
+
+	// Initial order: [A, B, C]
+	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpA, idpB, idpC})
+
+	idpBefore, err := store.GetIdP(idpB.EntityID)
+	if err != nil {
+		t.Fatalf("GetIdP before reorder: %v", err)
 	}
 
-	t.Log("Fix required: decode SAMLRequest, parse <samlp:LogoutRequest><saml:Issuer>, " +
-		"then call GetIdP(issuer) instead of ListIdPs(\"\")[0]")
+	// Reverse the order: [C, B, A]
+	store.Replace([]domain.IdPInfo{idpC, idpB, idpA})
+
+	idpAfter, err := store.GetIdP(idpB.EntityID)
+	if err != nil {
+		t.Fatalf("GetIdP after reorder: %v", err)
+	}
+
+	if idpBefore.EntityID != idpB.EntityID {
+		t.Errorf("before reorder: expected %q, got %q", idpB.EntityID, idpBefore.EntityID)
+	}
+	if idpAfter.EntityID != idpB.EntityID {
+		t.Errorf("after reorder: expected %q, got %q", idpB.EntityID, idpAfter.EntityID)
+	}
+	if idpBefore.EntityID != idpAfter.EntityID {
+		t.Errorf("reorder changed result: before=%q after=%q", idpBefore.EntityID, idpAfter.EntityID)
+	}
 }

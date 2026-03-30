@@ -7,12 +7,15 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // SimExpiry1: Request valid just before its expiry window closes.
 // Stores a request with a 100ms TTL, waits 90ms, then checks Valid().
 // The request must still be accepted — it has not yet expired.
 func TestSimExpiry_ValidJustBeforeExpiry(t *testing.T) {
+	tra.Require(t, "Adapter.Request.ExpiryValidJustBefore")
 	store := NewInMemoryRequestStore()
 
 	ttl := 100 * time.Millisecond
@@ -31,6 +34,7 @@ func TestSimExpiry_ValidJustBeforeExpiry(t *testing.T) {
 // Stores a request with a 100ms TTL, waits 110ms, then checks Valid().
 // The lazy expiry check in Valid() must reject the entry.
 func TestSimExpiry_InvalidJustAfterExpiry(t *testing.T) {
+	tra.Require(t, "Adapter.Request.ExpiryInvalidJustAfter")
 	store := NewInMemoryRequestStore()
 
 	ttl := 100 * time.Millisecond
@@ -50,6 +54,7 @@ func TestSimExpiry_InvalidJustAfterExpiry(t *testing.T) {
 // waits for expiry and at least one cleanup cycle, then verifies the entry is gone
 // from both GetAll() and Valid().
 func TestSimExpiry_CleanupEvictsBeforeValid(t *testing.T) {
+	tra.Require(t, "Adapter.Request.CleanupEvictsBeforeValid")
 	cleaned := make(chan struct{}, 10)
 	store := NewInMemoryRequestStoreWithCleanup(
 		30*time.Millisecond,
@@ -91,6 +96,7 @@ func TestSimExpiry_CleanupEvictsBeforeValid(t *testing.T) {
 // At most 1 goroutine may receive true (single-use guarantee).
 // No panics or data races are permitted.
 func TestSimExpiry_ConcurrentValidAtBoundary(t *testing.T) {
+	tra.Require(t, "Adapter.Request.ConcurrentValidAtBoundary")
 	store := NewInMemoryRequestStore()
 
 	ttl := 200 * time.Millisecond

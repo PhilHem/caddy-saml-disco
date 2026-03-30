@@ -3,6 +3,7 @@ package caddy
 import (
 	"net/http"
 
+	"github.com/beevik/etree"
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 	"go.uber.org/zap"
 )
@@ -102,13 +103,55 @@ func (s *SAMLDisco) handleSLOInternal(w http.ResponseWriter, r *http.Request, cf
 			s.renderAppError(w, r, domain.ConfigError("Metadata store is not configured"))
 			return nil
 		}
-		// Get first IdP from metadata store (for IdP-initiated logout, we need to identify the IdP)
-		idps, err := cfg.metadataStore.ListIdPs("")
-		if err != nil || len(idps) == 0 {
-			s.renderAppError(w, r, domain.ConfigError("No identity provider is configured"))
+
+		// Decode the SAMLRequest and extract the Issuer to identify which IdP is
+		// sending the LogoutRequest. Using ListIdPs("")[0] would select the wrong
+		// IdP whenever more than one IdP is configured.
+		xmlBytes, err := domain.DecodeSAMLRequest(samlRequest)
+		if err != nil {
+			s.getLogger().Warn("failed to decode SAMLRequest",
+				zap.Error(err),
+				zap.String("remote_addr", r.RemoteAddr),
+			)
+			s.renderAppError(w, r, domain.BadRequestError("Invalid SAMLRequest encoding"))
 			return nil
 		}
-		idp := &idps[0]
+
+		doc := etree.NewDocument()
+		if parseErr := doc.ReadFromBytes(xmlBytes); parseErr != nil || doc.Root() == nil {
+			s.getLogger().Warn("failed to parse LogoutRequest XML",
+				zap.String("remote_addr", r.RemoteAddr),
+			)
+			s.renderAppError(w, r, domain.BadRequestError("Invalid LogoutRequest XML"))
+			return nil
+		}
+
+		// Extract Issuer: try both namespace-prefixed and plain forms.
+		var issuerText string
+		root := doc.Root()
+		for _, tag := range []string{"saml:Issuer", "Issuer"} {
+			if el := root.FindElement(tag); el != nil {
+				issuerText = el.Text()
+				break
+			}
+		}
+		if issuerText == "" {
+			s.getLogger().Warn("LogoutRequest has no Issuer element",
+				zap.String("remote_addr", r.RemoteAddr),
+			)
+			s.renderAppError(w, r, domain.BadRequestError("LogoutRequest missing Issuer"))
+			return nil
+		}
+
+		idp, err := cfg.metadataStore.GetIdP(issuerText)
+		if err != nil {
+			s.getLogger().Warn("unknown IdP in LogoutRequest",
+				zap.String("issuer", issuerText),
+				zap.Error(err),
+			)
+			s.renderAppError(w, r, domain.BadRequestError("Unknown identity provider"))
+			return nil
+		}
 
 		// Parse LogoutRequest
 		result, err := cfg.samlService.HandleLogoutRequest(r, sloURL, idp)
