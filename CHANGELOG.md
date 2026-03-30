@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.5] - 2026-03-30
+
+### Changed
+- Root package public API trimmed to only the types and functions used by external consumers, reducing surface area from ~120 re-exports to 23.
+- Adapter and domain tests relocated from root package to their internal packages.
+
 ## [0.19.4] - 2026-02-25
 
 ### Fixed
@@ -15,7 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.19.3] - 2026-02-25
 
 ### Fixed
-- Discovery page cards use CSS grid layout so text aligns consistently even when logo is absent (e.g., guest entry). Empty logo placeholder `<div>` reserves the grid column.
+- Discovery page cards use CSS grid layout so text aligns consistently even when logo is absent (e.g., guest entry).
+
+## [0.19.2] - 2026-02-25
+
+### Fixed
+- Pinned IdPs now render with the same card style as regular IdPs in the default discovery template.
+
+## [0.19.1] - 2026-02-25
+
+### Fixed
+- Pinned IdPs now appear in the default discovery template.
 
 ## [0.19.0] - 2026-02-25
 
