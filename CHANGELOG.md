@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.7] - 2026-03-31
+
+### Fixed
+- SAML replay protection: ACS handler now rejects duplicate concurrent submissions by checking request ID consumption ([#1](https://github.com/PhilHem/caddy-saml-disco/issues/1))
+- Entitlement bypass: denied users no longer receive a session cookie ([#12](https://github.com/PhilHem/caddy-saml-disco/issues/12))
+- SLO handler now parses the Issuer from the LogoutRequest instead of using the first IdP from the metadata list ([#18](https://github.com/PhilHem/caddy-saml-disco/issues/18))
+
+### Added
+- `request_ttl` Caddyfile directive to configure SAML request ID lifetime, default 10m ([#20](https://github.com/PhilHem/caddy-saml-disco/issues/20))
+- ACS fallback: stores IdP entity ID with each request so authentication survives metadata refreshes ([#22](https://github.com/PhilHem/caddy-saml-disco/issues/22))
+- In-flight SAML flows now survive Caddy config reloads via shared request store ([#24](https://github.com/PhilHem/caddy-saml-disco/issues/24))
+- 13 simulation tests covering concurrency fault injection and cross-component interactions
+
+### Changed
+- All metadata and logo store reads are now lock-free via atomic.Pointer snapshots ([#8](https://github.com/PhilHem/caddy-saml-disco/issues/8), [#9](https://github.com/PhilHem/caddy-saml-disco/issues/9), [#11](https://github.com/PhilHem/caddy-saml-disco/issues/11))
+- Package layout flattened from hexagonal nesting to vertical slices: `internal/metadata/`, `internal/session/`, `internal/saml/`, etc.
+
 ## [0.19.6] - 2026-03-30
 
 ### Changed
