@@ -16,6 +16,35 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
+
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/signature"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/core/ports"
+)
+
+// Internal package aliases for symbols no longer re-exported at root.
+var (
+	ValidateDenyRedirect       = caddyadapter.ValidateDenyRedirect
+	ValidateRelayState         = caddyadapter.ValidateRelayState
+	ParseAcceptLanguage        = caddyadapter.ParseAcceptLanguage
+	ParseDuration              = caddyadapter.ParseDuration
+	MatchesForceAuthnPath      = caddyadapter.MatchesForceAuthnPath
+	ParseMetadata              = metadata.ParseMetadata
+	NewXMLDsigVerifier         = signature.NewXMLDsigVerifier
+	MatchesEntityIDPattern     = domain.MatchesEntityIDPattern
+	ValidateAuthnContextComparison = domain.ValidateAuthnContextComparison
+	ErrSessionNotFound         = ports.ErrSessionNotFound
+	ErrMetadataExpired         = domain.ErrMetadataExpired
+)
+
+// Type aliases for internal types no longer re-exported at root.
+type AppError = domain.AppError
+
+const (
+	ErrCodeSignatureInvalid = domain.ErrCodeSignatureInvalid
+	ErrCodeServiceError     = domain.ErrCodeServiceError
 )
 
 // fuzzTestKey is a shared RSA key for fuzz tests, generated once at init.

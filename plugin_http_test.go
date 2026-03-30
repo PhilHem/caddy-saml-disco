@@ -12,7 +12,25 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
+
+// Internal package aliases for symbols not re-exported at root.
+var (
+	ConfigError                        = domain.ConfigError
+	IdPNotFoundError                   = domain.IdPNotFoundError
+	BadRequestError                    = domain.BadRequestError
+	AuthError                          = domain.AuthError
+	ServiceError                       = domain.ServiceError
+	NewInMemoryMetadataStoreWithValidUntil = metadata.NewInMemoryMetadataStoreWithValidUntil
+	SetVersionGetters                  = caddyadapter.SetVersionGetters
+)
+
+type HealthResponse = caddyadapter.HealthResponse
+type JSONErrorResponse = caddyadapter.JSONErrorResponse
 
 // =============================================================================
 // ServeHTTP Tests - Authentication & Redirects

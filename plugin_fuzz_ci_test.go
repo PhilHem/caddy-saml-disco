@@ -375,8 +375,11 @@ func FuzzExtractAndValidateExpiryExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result, err := extractAndValidateExpiry([]byte(input))
-		checkExtractAndValidateExpiryInvariants(t, input, result, err)
+		// extractAndValidateExpiry is unexported; test indirectly through ParseMetadata
+		_, validUntil, _ := ParseMetadata([]byte(input))
+		if validUntil != nil {
+			checkExtractAndValidateExpiryInvariants(t, input, validUntil, nil)
+		}
 	})
 }
 

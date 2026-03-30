@@ -1,6 +1,12 @@
 package caddysamldisco
 
-import "testing"
+import (
+	"testing"
+
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+)
+
+type AltLoginConfig = caddyadapter.AltLoginConfig
 
 func TestConfig_RememberIdP_Defaults(t *testing.T) {
 	cfg := &Config{}

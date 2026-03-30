@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	samldisco "github.com/philiph/caddy-saml-disco"
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/signature"
 )
 
 // Phase 1: Basic Structure Tests
@@ -87,7 +87,7 @@ func TestSigner_SignedMetadata_VerifiesWithXMLDsigVerifier(t *testing.T) {
 	}
 
 	// Create verifier with signer's certificate
-	verifier := samldisco.NewXMLDsigVerifier(signer.Certificate())
+	verifier := signature.NewXMLDsigVerifier(signer.Certificate())
 
 	// Act
 	validated, err := verifier.Verify(signed)
@@ -112,7 +112,7 @@ func TestSigner_SignedMetadata_FailsWithWrongCert(t *testing.T) {
 	}
 
 	// Verifier uses signer2's cert (wrong one)
-	verifier := samldisco.NewXMLDsigVerifier(signer2.Certificate())
+	verifier := signature.NewXMLDsigVerifier(signer2.Certificate())
 
 	// Act
 	_, err = verifier.Verify(signed)
@@ -168,7 +168,7 @@ func TestSigner_Sign_WorksWithAggregateMetadata(t *testing.T) {
 	}
 
 	// Verify it
-	verifier := samldisco.NewXMLDsigVerifier(signer.Certificate())
+	verifier := signature.NewXMLDsigVerifier(signer.Certificate())
 	_, err = verifier.Verify(signed)
 	if err != nil {
 		t.Fatalf("verification of signed aggregate failed: %v", err)
@@ -191,7 +191,7 @@ func TestSigner_GenerateIdPMetadata_CreatesValidSignedMetadata(t *testing.T) {
 	}
 
 	// Should be verifiable
-	verifier := samldisco.NewXMLDsigVerifier(signer.Certificate())
+	verifier := signature.NewXMLDsigVerifier(signer.Certificate())
 	_, err = verifier.Verify(signed)
 	if err != nil {
 		t.Fatalf("verification failed: %v", err)
@@ -215,7 +215,7 @@ func TestSigner_GenerateAggregateMetadata_CreatesSignedAggregate(t *testing.T) {
 	}
 
 	// Should be verifiable
-	verifier := samldisco.NewXMLDsigVerifier(signer.Certificate())
+	verifier := signature.NewXMLDsigVerifier(signer.Certificate())
 	_, err = verifier.Verify(signed)
 	if err != nil {
 		t.Fatalf("verification failed: %v", err)

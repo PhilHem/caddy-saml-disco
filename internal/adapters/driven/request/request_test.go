@@ -1,6 +1,6 @@
 //go:build unit
 
-package caddysamldisco
+package request
 
 import (
 	"fmt"
@@ -10,12 +10,14 @@ import (
 	"testing"
 	"testing/quick"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
 // Cycle 1: Verify RequestStore interface exists with required methods
 func TestRequestStore_Interface(t *testing.T) {
 	// This test verifies the interface contract exists
-	var _ RequestStore = (*mockRequestStore)(nil)
+	var _ ports.RequestStore = (*mockRequestStore)(nil)
 }
 
 // mockRequestStore is a minimal implementation for interface verification
@@ -35,7 +37,7 @@ func (m *mockRequestStore) GetAll() []string {
 
 // Cycle 2: Verify InMemoryRequestStore implements interface and Store works
 func TestInMemoryRequestStore_Interface(t *testing.T) {
-	var _ RequestStore = (*InMemoryRequestStore)(nil)
+	var _ ports.RequestStore = (*InMemoryRequestStore)(nil)
 }
 
 func TestInMemoryRequestStore_Store(t *testing.T) {

@@ -3,10 +3,19 @@
 package caddysamldisco
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
+
+// Type alias for MetricsRecorder port.
+type MetricsRecorder = ports.MetricsRecorder
 
 // MockMetricsRecorder is a thread-safe test double for MetricsRecorder.
 // Use in any test file that needs to verify metrics recording behavior.
@@ -198,4 +207,31 @@ func TestMockMetricsRecorder_RecordsAllCalls(t *testing.T) {
 	if refreshes[1].Source != "url" || refreshes[1].Success || refreshes[1].IdpCount != 0 {
 		t.Errorf("unexpected second refresh: %+v", refreshes[1])
 	}
+}
+
+// loadTestKey loads the test private key from testdata.
+func loadTestKey(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+
+	keyPEM, err := os.ReadFile("testdata/sp-key.pem")
+	if err != nil {
+		t.Fatalf("read test key: %v", err)
+	}
+
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		t.Fatal("failed to decode PEM block")
+	}
+
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse private key: %v", err)
+	}
+
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		t.Fatalf("expected RSA key, got %T", key)
+	}
+
+	return rsaKey
 }

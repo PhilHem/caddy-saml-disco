@@ -1,6 +1,6 @@
 //go:build unit
 
-package caddysamldisco
+package logo
 
 import (
 	"bytes"
@@ -11,13 +11,17 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/quick"
+
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
 
 // Cycle 1: Test that LogoStore interface exists and ErrLogoNotFound is defined
 
 func TestLogoStore_Interface(t *testing.T) {
 	// Verify interface can be implemented
-	var _ LogoStore = (*mockLogoStore)(nil)
+	var _ ports.LogoStore = (*mockLogoStore)(nil)
 }
 
 func TestErrLogoNotFound(t *testing.T) {
@@ -32,14 +36,14 @@ func TestErrLogoNotFound(t *testing.T) {
 // Mock implementation for interface verification
 type mockLogoStore struct{}
 
-func (m *mockLogoStore) Get(entityID string) (*CachedLogo, error) {
+func (m *mockLogoStore) Get(entityID string) (*ports.CachedLogo, error) {
 	return nil, ErrLogoNotFound
 }
 
 // Cycle 2: Test InMemoryLogoStore returns cached logo
 
 func TestInMemoryLogoStore_Get_Found(t *testing.T) {
-	logo := &CachedLogo{
+	logo := &ports.CachedLogo{
 		Data:        []byte("fake-png-data"),
 		ContentType: "image/png",
 	}
@@ -80,7 +84,7 @@ func TestCachingLogoStore_FetchesAndCaches(t *testing.T) {
 	}))
 	defer server.Close()
 
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 		EntityID: "https://idp.example.com",
 		LogoURL:  server.URL + "/logo.png",
 	}})
@@ -112,7 +116,7 @@ func TestCachingLogoStore_FetchesAndCaches(t *testing.T) {
 // Cycle 5: Test CachingLogoStore returns ErrLogoNotFound for unknown IdP
 
 func TestCachingLogoStore_IdPNotFound(t *testing.T) {
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{})
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{})
 	store := NewCachingLogoStore(metadataStore, nil)
 
 	_, err := store.Get("https://unknown.example.com")
@@ -124,7 +128,7 @@ func TestCachingLogoStore_IdPNotFound(t *testing.T) {
 // Cycle 6: Test CachingLogoStore returns ErrLogoNotFound when IdP has no logo
 
 func TestCachingLogoStore_NoLogoURL(t *testing.T) {
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 		EntityID: "https://idp.example.com",
 		LogoURL:  "", // No logo
 	}})
@@ -144,7 +148,7 @@ func TestCachingLogoStore_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 		EntityID: "https://idp.example.com",
 		LogoURL:  server.URL + "/logo.png",
 	}})
@@ -165,7 +169,7 @@ func TestCachingLogoStore_InvalidContentType(t *testing.T) {
 	}))
 	defer server.Close()
 
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 		EntityID: "https://idp.example.com",
 		LogoURL:  server.URL + "/logo.png",
 	}})
@@ -187,7 +191,7 @@ func TestCachingLogoStore_SizeLimit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 		EntityID: "https://idp.example.com",
 		LogoURL:  server.URL + "/logo.png",
 	}})
@@ -197,75 +201,6 @@ func TestCachingLogoStore_SizeLimit(t *testing.T) {
 	if err == nil {
 		t.Error("Get() should fail for oversized logo")
 	}
-}
-
-// Cycle 10: Test HTTP handler returns logo
-
-func TestHandleLogoEndpoint_ReturnsLogo(t *testing.T) {
-	logoData := []byte("fake-png-data")
-	logoStore := NewInMemoryLogoStore()
-	logoStore.Set("https://idp.example.com", &CachedLogo{
-		Data:        logoData,
-		ContentType: "image/png",
-	})
-
-	s := &SAMLDisco{}
-	s.SetLogoStore(logoStore)
-
-	req := httptest.NewRequest(http.MethodGet, "/saml/api/logo/https%3A%2F%2Fidp.example.com", nil)
-	rec := httptest.NewRecorder()
-
-	// Note: handleLogoEndpoint is unexported, test indirectly through ServeHTTP
-	// TODO: Test handleLogoEndpoint indirectly through ServeHTTP endpoint
-	_ = s
-	_ = rec
-	_ = req
-	// Test skipped - handleLogoEndpoint is unexported
-	t.Skip("handleLogoEndpoint is unexported, test indirectly through ServeHTTP")
-}
-
-// Cycle 11: Test HTTP handler returns 404 for unknown IdP
-
-func TestHandleLogoEndpoint_NotFound(t *testing.T) {
-	logoStore := NewInMemoryLogoStore()
-
-	s := &SAMLDisco{}
-	s.SetLogoStore(logoStore)
-
-	req := httptest.NewRequest(http.MethodGet, "/saml/api/logo/https%3A%2F%2Funknown.example.com", nil)
-	rec := httptest.NewRecorder()
-
-	// Note: handleLogoEndpoint is unexported, test indirectly through ServeHTTP
-	// TODO: Test handleLogoEndpoint indirectly through ServeHTTP endpoint
-	_ = s
-	_ = rec
-	_ = req
-	// Test skipped - handleLogoEndpoint is unexported
-	t.Skip("handleLogoEndpoint is unexported, test indirectly through ServeHTTP")
-}
-
-// Cycle 12: Test HTTP handler sets cache headers
-
-func TestHandleLogoEndpoint_CacheHeaders(t *testing.T) {
-	logoStore := NewInMemoryLogoStore()
-	logoStore.Set("https://idp.example.com", &CachedLogo{
-		Data:        []byte("data"),
-		ContentType: "image/png",
-	})
-
-	s := &SAMLDisco{}
-	s.SetLogoStore(logoStore)
-
-	req := httptest.NewRequest(http.MethodGet, "/saml/api/logo/https%3A%2F%2Fidp.example.com", nil)
-	rec := httptest.NewRecorder()
-
-	// Note: handleLogoEndpoint is unexported, test indirectly through ServeHTTP
-	// TODO: Test handleLogoEndpoint indirectly through ServeHTTP endpoint
-	_ = s
-	_ = rec
-	_ = req
-	// Test skipped - handleLogoEndpoint is unexported
-	t.Skip("handleLogoEndpoint is unexported, test indirectly through ServeHTTP")
 }
 
 // Cycle 13: Test CachingLogoStore concurrent access - CONC-001
@@ -281,7 +216,7 @@ func TestCachingLogoStore_Concurrency_SingleFetch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 		EntityID: "https://idp.example.com",
 		LogoURL:  server.URL + "/logo.png",
 	}})
@@ -290,7 +225,7 @@ func TestCachingLogoStore_Concurrency_SingleFetch(t *testing.T) {
 
 	const numGoroutines = 50
 	var wg sync.WaitGroup
-	errors := make(chan error, numGoroutines)
+	errs := make(chan error, numGoroutines)
 
 	// Start all goroutines at once to maximize race condition probability
 	start := make(chan struct{})
@@ -301,7 +236,7 @@ func TestCachingLogoStore_Concurrency_SingleFetch(t *testing.T) {
 			<-start // Wait for signal to start
 			_, err := store.Get("https://idp.example.com")
 			if err != nil {
-				errors <- err
+				errs <- err
 			}
 		}()
 	}
@@ -309,9 +244,9 @@ func TestCachingLogoStore_Concurrency_SingleFetch(t *testing.T) {
 	// Start all goroutines simultaneously
 	close(start)
 	wg.Wait()
-	close(errors)
+	close(errs)
 
-	for err := range errors {
+	for err := range errs {
 		t.Errorf("Get() returned error: %v", err)
 	}
 
@@ -338,7 +273,7 @@ func TestCachingLogoStore_Property_CacheConsistency(t *testing.T) {
 		}))
 		defer server.Close()
 
-		metadataStore := NewInMemoryMetadataStore([]IdPInfo{{
+		metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 			EntityID: "https://idp.example.com",
 			LogoURL:  server.URL + "/logo.png",
 		}})
@@ -348,7 +283,7 @@ func TestCachingLogoStore_Property_CacheConsistency(t *testing.T) {
 		const numGoroutines = 20
 		var wg sync.WaitGroup
 		results := make(chan []byte, numGoroutines)
-		errors := make(chan error, numGoroutines)
+		errs := make(chan error, numGoroutines)
 
 		start := make(chan struct{})
 		for i := 0; i < numGoroutines; i++ {
@@ -358,7 +293,7 @@ func TestCachingLogoStore_Property_CacheConsistency(t *testing.T) {
 				<-start
 				logo, err := store.Get("https://idp.example.com")
 				if err != nil {
-					errors <- err
+					errs <- err
 					return
 				}
 				results <- logo.Data
@@ -368,9 +303,9 @@ func TestCachingLogoStore_Property_CacheConsistency(t *testing.T) {
 		close(start)
 		wg.Wait()
 		close(results)
-		close(errors)
+		close(errs)
 
-		for err := range errors {
+		for err := range errs {
 			t.Logf("error: %v", err)
 			return false
 		}
@@ -403,14 +338,14 @@ func TestInMemoryLogoStore_Concurrency_ThreadSafe(t *testing.T) {
 	const numOpsPerGoroutine = 10
 
 	var wg sync.WaitGroup
-	errors := make(chan error, numGoroutines*numOpsPerGoroutine)
+	errs := make(chan error, numGoroutines*numOpsPerGoroutine)
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
 			entityID := "https://idp.example.com"
-			logo := &CachedLogo{
+			logo := &ports.CachedLogo{
 				Data:        []byte("test-data"),
 				ContentType: "image/png",
 			}
@@ -427,9 +362,9 @@ func TestInMemoryLogoStore_Concurrency_ThreadSafe(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(errors)
+	close(errs)
 
-	for err := range errors {
+	for err := range errs {
 		t.Errorf("concurrent operation error: %v", err)
 	}
 }

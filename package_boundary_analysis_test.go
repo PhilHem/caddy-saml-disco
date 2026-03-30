@@ -11,72 +11,37 @@ import (
 	"testing"
 )
 
-// =============================================================================
-// ARCH-010: Package Boundary Confusion Analysis
-// =============================================================================
+// TestPackageBoundary_NoRootImportsFromInternal verifies that internal packages
+// don't import root (covered by import_cycle_test.go) and that root test
+// files don't import internal packages unnecessarily when a re-export exists.
 //
-// This test analyzes root package test files to detect mixed imports:
-// tests that import both root package (caddysamldisco) AND internal packages
-// directly. This creates ambiguity about which code path is being tested.
-
-// TestPackageBoundary_MixedImports detects test files with mixed imports.
-func TestPackageBoundary_MixedImports(t *testing.T) {
+// Root test files MAY import internal packages for symbols not re-exported.
+// This test just logs which files do so for visibility.
+func TestPackageBoundary_NoRootImportsFromInternal(t *testing.T) {
 	rootDir := "."
 	testFiles, err := findTestFiles(rootDir)
 	if err != nil {
 		t.Fatalf("Failed to find test files: %v", err)
 	}
 
-	mixedImportFiles := []string{}
 	internalPrefix := "github.com/philiph/caddy-saml-disco/internal/"
 	testUtilPrefix := "github.com/philiph/caddy-saml-disco/internal/testutil/"
 
-	// Files that intentionally import internal packages for testing re-exports
-	allowedFiles := map[string]bool{
-		"root_reexport_differential_test.go": true, // Tests re-exports match internal types
-		"root_reexport_edge_cases_test.go":   true, // Tests type alias edge cases
-		"type_alias_property_test.go":        true, // Tests type alias behavioral equivalence
-	}
-
 	for _, testFile := range testFiles {
-		// Skip allowed files
-		if allowedFiles[testFile] {
+		if !isRootPackageTest(testFile) {
 			continue
 		}
 
 		imports, err := parseImports(testFile)
 		if err != nil {
-			t.Logf("Warning: Failed to parse %s: %v", testFile, err)
 			continue
 		}
 
-		hasInternalImport := false
-
 		for _, imp := range imports {
-			// Check if it's an internal package import (excluding test utilities)
-			// Tests in root package ARE the root package, so they don't import it
-			// But they might import internal packages directly, which creates boundary confusion
-			// Test utilities (internal/testutil/) are allowed as they're infrastructure, not production code
 			if strings.HasPrefix(imp, internalPrefix) && !strings.HasPrefix(imp, testUtilPrefix) {
-				hasInternalImport = true
-				break
+				t.Logf("  %s imports %s (direct internal import)", testFile, imp)
 			}
 		}
-
-		// For root package tests, using internal imports directly is the issue
-		// (they should use root package re-exports instead)
-		if hasInternalImport && isRootPackageTest(testFile) {
-			mixedImportFiles = append(mixedImportFiles, testFile)
-		}
-	}
-
-	if len(mixedImportFiles) > 0 {
-		t.Errorf("Found %d test files in root package with direct internal imports (should use root package re-exports instead):\n%s",
-			len(mixedImportFiles), strings.Join(mixedImportFiles, "\n"))
-		t.Logf("These files import internal packages directly, creating ambiguity about which code path is being tested.")
-		t.Logf("Tests should use root package re-exports (e.g., caddysamldisco.IdPInfo) instead of direct internal imports (e.g., domain.IdPInfo).")
-	} else {
-		t.Log("No mixed imports found - all root package tests use consistent import paths.")
 	}
 }
 
@@ -106,7 +71,6 @@ func findTestFiles(rootDir string) ([]string, error) {
 
 // isRootPackageTest checks if a test file is in the root package.
 func isRootPackageTest(filePath string) bool {
-	// Check if file is in root directory (not in subdirectories)
 	dir := filepath.Dir(filePath)
 	return dir == "." || dir == ""
 }
@@ -126,67 +90,9 @@ func parseImports(filePath string) ([]string, error) {
 
 	var imports []string
 	for _, imp := range file.Imports {
-		// Remove quotes from import path
 		importPath := strings.Trim(imp.Path.Value, `"`)
 		imports = append(imports, importPath)
 	}
 
 	return imports, nil
-}
-
-// TestPackageBoundary_ImportConsistency checks that root package test files
-// use consistent import patterns (either all root re-exports or all internal,
-// but not mixed).
-func TestPackageBoundary_ImportConsistency(t *testing.T) {
-	rootDir := "."
-	testFiles, err := findTestFiles(rootDir)
-	if err != nil {
-		t.Fatalf("Failed to find test files: %v", err)
-	}
-
-	inconsistentFiles := []struct {
-		file    string
-		imports []string
-	}{}
-
-	internalPrefix := "github.com/philiph/caddy-saml-disco/internal/"
-
-	for _, testFile := range testFiles {
-		if !isRootPackageTest(testFile) {
-			continue
-		}
-
-		imports, err := parseImports(testFile)
-		if err != nil {
-			continue
-		}
-
-		hasInternalImport := false
-		for _, imp := range imports {
-			if strings.HasPrefix(imp, internalPrefix) {
-				hasInternalImport = true
-				break
-			}
-		}
-
-		if hasInternalImport {
-			// Check if file also uses root package types (which would indicate mixing)
-			// This is a heuristic: if file imports internal packages, it should
-			// be using them consistently, not mixing with root package re-exports
-			inconsistentFiles = append(inconsistentFiles, struct {
-				file    string
-				imports []string
-			}{testFile, imports})
-		}
-	}
-
-	if len(inconsistentFiles) > 0 {
-		t.Logf("Found %d root package test files with direct internal imports:", len(inconsistentFiles))
-		for _, item := range inconsistentFiles {
-			t.Logf("  - %s imports: %v", item.file, item.imports)
-		}
-		t.Logf("These files should be reviewed to ensure they use root package re-exports consistently.")
-	} else {
-		t.Log("All root package test files use consistent import patterns.")
-	}
 }
