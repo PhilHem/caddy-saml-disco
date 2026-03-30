@@ -106,14 +106,19 @@ func TestSimConcurrentReadsDuringRefresh(t *testing.T) {
 	// After refreshDelay, switch to set B and trigger a Refresh
 	time.AfterFunc(refreshDelay, func() {
 		serveSetB.Store(1)
-		// Expire the cache by using a zero TTL store trick: create a temporary
-		// store pointing at the same server and call doRefresh force path.
-		// Since we own the URLMetadataStore we call Refresh with an expired cache
-		// by directly reaching its refresh path. We have to bypass the TTL — use
-		// the force path by temporarily setting lastFetch to zero.
-		store.mu.Lock()
-		store.lastFetch = time.Time{} // zero it out to force re-fetch
-		store.mu.Unlock()
+		// Expire the cache by zeroing lastFetch in the snapshot so the next
+		// Refresh() bypasses the TTL check and re-fetches from the server.
+		prev := store.data.Load()
+		store.data.Store(newURLSnapshot(
+			prev.idps,
+			time.Time{}, // zero lastFetch to force re-fetch
+			prev.etag,
+			prev.lastModified,
+			prev.isFresh,
+			prev.lastSuccessTime,
+			prev.lastError,
+			prev.validUntil,
+		))
 		if err := store.Refresh(context.Background()); err != nil {
 			// Non-fatal: record but don't stop the test
 			t.Logf("Refresh() error (non-fatal): %v", err)

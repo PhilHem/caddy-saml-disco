@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -13,6 +14,43 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
 )
+
+// urlSnapshot holds an immutable point-in-time view of all URL metadata store state
+// that is accessed on the read path. Once created it is never mutated; the atomic
+// pointer is swapped atomically on each successful or failed refresh.
+type urlSnapshot struct {
+	idps            []domain.IdPInfo
+	byID            map[string]*domain.IdPInfo
+	lastFetch       time.Time
+	etag            string
+	lastModified    string
+	isFresh         bool
+	lastSuccessTime time.Time
+	lastError       error
+	validUntil      *time.Time
+}
+
+// newURLSnapshot builds a urlSnapshot with a pre-computed entity-ID index.
+func newURLSnapshot(idps []domain.IdPInfo, lastFetch time.Time, etag, lastModified string, isFresh bool, lastSuccessTime time.Time, lastError error, validUntil *time.Time) *urlSnapshot {
+	// Copy the slice so the snapshot owns its data independently of the caller.
+	copied := make([]domain.IdPInfo, len(idps))
+	copy(copied, idps)
+	byID := make(map[string]*domain.IdPInfo, len(copied))
+	for i := range copied {
+		byID[copied[i].EntityID] = &copied[i]
+	}
+	return &urlSnapshot{
+		idps:            copied,
+		byID:            byID,
+		lastFetch:       lastFetch,
+		etag:            etag,
+		lastModified:    lastModified,
+		isFresh:         isFresh,
+		lastSuccessTime: lastSuccessTime,
+		lastError:       lastError,
+		validUntil:      validUntil,
+	}
+}
 
 // URLMetadataStore loads IdP metadata from a URL with caching.
 type URLMetadataStore struct {
@@ -30,25 +68,22 @@ type URLMetadataStore struct {
 	clock                        Clock       // for time operations (defaults to RealClock)
 	version                      string      // version for User-Agent header
 
-	mu              sync.RWMutex
-	idps            []domain.IdPInfo
-	lastFetch       time.Time
-	etag            string
-	lastModified    string
-	isFresh         bool       // true if last refresh succeeded
-	lastSuccessTime time.Time  // time of last successful refresh
-	lastError       error      // error from last refresh (nil if success)
-	validUntil      *time.Time // validUntil from metadata (nil if not present)
+	// data holds the current immutable snapshot of all read-path state.
+	// Readers call Load() with no locking; writers swap with Store() under refreshMu.
+	data atomic.Pointer[urlSnapshot]
 
 	// Refresh synchronization - prevents concurrent refreshes
 	refreshMu  sync.Mutex
-	refreshing bool // true when refresh is in progress
+	refreshing bool // true when refresh is in progress; protected by refreshMu
 
-	// Background refresh goroutine management
+	// closed is set to true by Close(); separate from data so it can be written
+	// without constructing a new snapshot.
+	closed atomic.Bool
+
+	// Background refresh goroutine management (write-once lifecycle fields)
 	stopCh        chan struct{}
 	refreshCtx    context.Context    // cancellable context for background refresh
 	refreshCancel context.CancelFunc // cancel function for refreshCtx
-	closed        bool
 }
 
 // NewURLMetadataStore creates a new URLMetadataStore with passive refresh.
@@ -56,7 +91,7 @@ type URLMetadataStore struct {
 // and the cache has expired (based on cacheTTL).
 func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOption) *URLMetadataStore {
 	options := processMetadataOptions(opts)
-	return &URLMetadataStore{
+	s := &URLMetadataStore{
 		url:                          url,
 		cacheTTL:                     cacheTTL,
 		idpFilter:                    options.idpFilter,
@@ -73,6 +108,9 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 			Timeout: 30 * time.Second,
 		},
 	}
+	// Install an empty initial snapshot so Load() always returns a non-nil pointer.
+	s.data.Store(newURLSnapshot(nil, time.Time{}, "", "", false, time.Time{}, nil, nil))
+	return s
 }
 
 // NewURLMetadataStoreWithRefresh creates a new URLMetadataStore with active
@@ -109,11 +147,8 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 						zap.Error(err),
 						zap.Duration("duration", duration))
 				} else {
-					s.mu.RLock()
-					idpCount := len(s.idps)
-					s.mu.RUnlock()
 					s.logger.Info("background metadata refresh succeeded",
-						zap.Int("idp_count", idpCount),
+						zap.Int("idp_count", len(s.data.Load().idps)),
 						zap.Duration("duration", duration))
 				}
 			}
@@ -133,14 +168,12 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 // Safe to call multiple times (idempotent).
 // Safe to call on stores created without background refresh.
 func (s *URLMetadataStore) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.stopCh != nil && !s.closed {
+	// CompareAndSwap ensures only one caller wins the race to close.
+	if s.stopCh != nil && s.closed.CompareAndSwap(false, true) {
 		if s.logger != nil {
 			s.logger.Info("stopping background metadata refresh")
 		}
 		close(s.stopCh)
-		s.closed = true
 		// Cancel refresh context to stop in-progress HTTP requests
 		if s.refreshCancel != nil {
 			s.refreshCancel()
@@ -155,12 +188,9 @@ func (s *URLMetadataStore) Load() error {
 	startTime := s.clock.Now()
 	err := s.Refresh(context.Background())
 	if err == nil && s.logger != nil {
-		s.mu.RLock()
-		idpCount := len(s.idps)
-		s.mu.RUnlock()
 		s.logger.Info("metadata loaded",
 			zap.String("source", s.url),
-			zap.Int("idp_count", idpCount),
+			zap.Int("idp_count", len(s.data.Load().idps)),
 			zap.Duration("duration", s.clock.Now().Sub(startTime)))
 	}
 	return err
@@ -168,16 +198,12 @@ func (s *URLMetadataStore) Load() error {
 
 // GetIdP returns the IdP if the entity ID matches.
 func (s *URLMetadataStore) GetIdP(entityID string) (*domain.IdPInfo, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for i := range s.idps {
-		if s.idps[i].EntityID == entityID {
-			idp := s.idps[i]
-			return &idp, nil
-		}
+	snap := s.data.Load()
+	if idp, ok := snap.byID[entityID]; ok {
+		// Return a copy so callers cannot mutate snapshot internals.
+		result := *idp
+		return &result, nil
 	}
-
 	return nil, domain.ErrIdPNotFound
 }
 
@@ -185,45 +211,38 @@ func (s *URLMetadataStore) GetIdP(entityID string) (*domain.IdPInfo, error) {
 // Searches across EntityID, DisplayName, and all DisplayNames language variants.
 // Always returns an empty slice (not nil) when no IdPs match.
 func (s *URLMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+	snap := s.data.Load()
 	result := make([]domain.IdPInfo, 0)
-	for _, idp := range s.idps {
+	for _, idp := range snap.idps {
+		idp := idp // local copy for pointer stability inside MatchesSearch
 		if domain.MatchesSearch(&idp, filter) {
 			result = append(result, idp)
 		}
 	}
-
 	return result, nil
 }
 
 // IsFresh returns true if the cached metadata is from a successful recent refresh.
 // Returns false before any load, or after a failed refresh (stale data is still served).
 func (s *URLMetadataStore) IsFresh() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.isFresh
+	return s.data.Load().isFresh
 }
 
 // LastError returns the error from the most recent failed refresh, or nil if
 // the last refresh succeeded.
 func (s *URLMetadataStore) LastError() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.lastError
+	return s.data.Load().lastError
 }
 
 // Health returns comprehensive health status for monitoring.
 func (s *URLMetadataStore) Health() domain.MetadataHealth {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	snap := s.data.Load()
 	return domain.MetadataHealth{
-		IsFresh:            s.isFresh,
-		LastSuccessTime:    s.lastSuccessTime,
-		LastError:          s.lastError,
-		IdPCount:           len(s.idps),
-		MetadataValidUntil: s.validUntil,
+		IsFresh:            snap.isFresh,
+		LastSuccessTime:    snap.lastSuccessTime,
+		LastError:          snap.lastError,
+		IdPCount:           len(snap.idps),
+		MetadataValidUntil: snap.validUntil,
 	}
 }
 
@@ -250,14 +269,14 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	}
 
 	// Check if cache is still valid (unless forced) - do this while holding refreshMu
-	// to ensure atomic check with refresh state
-	s.mu.RLock()
+	// to ensure atomic check with refresh state.
+	// A single Load() gives us a consistent view of all read-path fields.
+	snap := s.data.Load()
 	now := s.clock.Now()
-	cacheValid := !force && !s.lastFetch.IsZero() && now.Sub(s.lastFetch) < s.cacheTTL
+	cacheValid := !force && !snap.lastFetch.IsZero() && now.Sub(snap.lastFetch) < s.cacheTTL
 	if cacheValid {
-		ttlRemaining := s.cacheTTL - now.Sub(s.lastFetch)
-		idpCount := len(s.idps)
-		s.mu.RUnlock()
+		ttlRemaining := s.cacheTTL - now.Sub(snap.lastFetch)
+		idpCount := len(snap.idps)
 		s.refreshMu.Unlock()
 		if s.logger != nil {
 			s.logger.Debug("using cached metadata",
@@ -266,10 +285,9 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		}
 		return nil // Cache hit
 	}
-	// Read etag/lastModified while holding both locks to ensure consistency
-	etag := s.etag
-	lastModified := s.lastModified
-	s.mu.RUnlock()
+	// Read etag/lastModified from the snapshot before marking refresh in progress.
+	etag := snap.etag
+	lastModified := snap.lastModified
 
 	// Mark refresh as in progress
 	s.refreshing = true
@@ -322,14 +340,20 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 	}
 	defer resp.Body.Close()
 
-	// Handle 304 Not Modified - data hasn't changed, still counts as success
+	// Handle 304 Not Modified - data hasn't changed, still counts as success.
+	// Build a new snapshot preserving all IdP data, just updating the freshness fields.
 	if resp.StatusCode == http.StatusNotModified {
-		s.mu.Lock()
-		s.lastFetch = s.clock.Now()
-		s.isFresh = true
-		s.lastError = nil
-		// lastSuccessTime stays the same (data itself didn't change)
-		s.mu.Unlock()
+		prev := s.data.Load()
+		s.data.Store(newURLSnapshot(
+			prev.idps,
+			s.clock.Now(), // updated lastFetch
+			prev.etag,
+			prev.lastModified,
+			true,                 // isFresh
+			prev.lastSuccessTime, // lastSuccessTime unchanged (data didn't change)
+			nil,                  // lastError cleared
+			prev.validUntil,
+		))
 		if s.logger != nil {
 			s.logger.Debug("metadata not modified (304)",
 				zap.Duration("response_time", responseTime),
@@ -366,19 +390,19 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		return err
 	}
 
-	// Success - update all state
+	// Success - atomically install a new snapshot with all updated state.
 	successTime := s.clock.Now()
 	newEtag := resp.Header.Get("ETag")
-	s.mu.Lock()
-	s.idps = result.IdPs
-	s.lastFetch = successTime
-	s.etag = newEtag
-	s.lastModified = resp.Header.Get("Last-Modified")
-	s.isFresh = true
-	s.lastSuccessTime = successTime
-	s.lastError = nil
-	s.validUntil = result.ValidUntil
-	s.mu.Unlock()
+	s.data.Store(newURLSnapshot(
+		result.IdPs,
+		successTime,
+		newEtag,
+		resp.Header.Get("Last-Modified"),
+		true, // isFresh
+		successTime,
+		nil, // lastError cleared
+		result.ValidUntil,
+	))
 
 	if s.logger != nil {
 		s.logger.Debug("metadata fetched (200 OK)",
@@ -407,12 +431,20 @@ func (s *URLMetadataStore) applyFiltersAndCollectFailures(idps []domain.IdPInfo)
 	)
 }
 
-// markRefreshFailed updates state when refresh fails, preserving existing data.
+// markRefreshFailed atomically installs a new snapshot with the error recorded
+// and isFresh cleared, while preserving the existing IdP data (stale but served).
 func (s *URLMetadataStore) markRefreshFailed(err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.isFresh = false
-	s.lastError = err
+	prev := s.data.Load()
+	s.data.Store(newURLSnapshot(
+		prev.idps,
+		prev.lastFetch,
+		prev.etag,
+		prev.lastModified,
+		false, // isFresh cleared
+		prev.lastSuccessTime,
+		err, // lastError set
+		prev.validUntil,
+	))
 	if s.metricsRecorder != nil {
 		s.metricsRecorder.RecordMetadataRefresh("url", false, 0)
 	}
