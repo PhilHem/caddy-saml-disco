@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.8] - 2026-03-31
+
+### Changed
+- Root package reduced to a single file (plugin.go). All re-exports eliminated; tests import internal packages directly.
+
 ## [0.19.7] - 2026-03-31
 
 ### Fixed
