@@ -1,6 +1,6 @@
 //go:build unit
 
-package caddysamldisco
+package caddy
 
 import (
 	"testing"

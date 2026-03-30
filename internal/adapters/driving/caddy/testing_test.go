@@ -1,6 +1,6 @@
 //go:build unit
 
-package caddysamldisco
+package caddy
 
 import (
 	"crypto/rand"
@@ -12,6 +12,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/session"
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // =============================================================================
@@ -28,12 +32,12 @@ func TestNewSAMLDiscoForTest_Concurrency_ThreadSafety(t *testing.T) {
 	const numInstancesPerGoroutine = 5
 
 	// Create shared test dependencies (these should be thread-safe)
-	metadataStore := NewInMemoryMetadataStore([]IdPInfo{})
-	testKey, err := LoadPrivateKey("testdata/sp-key.pem")
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{})
+	testKey, err := session.LoadPrivateKey("../../../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load test key: %v", err)
 	}
-	sessionStore := NewCookieSessionStore(testKey, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(testKey, 8*time.Hour)
 
 	// Generate a test key and cert for SAMLService
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

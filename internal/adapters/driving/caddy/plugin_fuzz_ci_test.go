@@ -1,11 +1,16 @@
 //go:build fuzz_extended
 
-package caddysamldisco
+package caddy
 
 import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/session"
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/signature"
+	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 )
 
 // FuzzValidateRelayStateExtended uses the full seed corpus for thorough CI testing.
@@ -116,9 +121,9 @@ func FuzzCookieSessionGetExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		store := NewCookieSessionStore(fuzzTestKey, time.Hour)
-		session, err := store.Get(input)
-		checkSessionGetInvariants(t, input, session, err)
+		store := session.NewCookieSessionStore(fuzzTestKey, time.Hour)
+		sess, err := store.Get(input)
+		checkSessionGetInvariants(t, input, sess, err)
 	})
 }
 
@@ -247,7 +252,7 @@ func FuzzParseMetadataExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, validUntil, err := ParseMetadata([]byte(input))
+		idps, validUntil, err := metadata.ParseMetadata([]byte(input))
 		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
 	})
 }
@@ -361,7 +366,7 @@ func FuzzXMLDsigVerifyExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		verifier := NewXMLDsigVerifier(fuzzTestCert)
+		verifier := signature.NewXMLDsigVerifier(fuzzTestCert)
 		result, err := verifier.Verify([]byte(input))
 		checkXMLDsigVerifyInvariants(t, []byte(input), result, err)
 	})
@@ -376,7 +381,7 @@ func FuzzExtractAndValidateExpiryExtended(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// extractAndValidateExpiry is unexported; test indirectly through ParseMetadata
-		_, validUntil, _ := ParseMetadata([]byte(input))
+		_, validUntil, _ := metadata.ParseMetadata([]byte(input))
 		if validUntil != nil {
 			checkExtractAndValidateExpiryInvariants(t, input, validUntil, nil)
 		}
@@ -498,7 +503,7 @@ func FuzzExtractIdPInfoExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, _, err := ParseMetadata([]byte(input))
+		idps, _, err := metadata.ParseMetadata([]byte(input))
 		checkExtractIdPInfoInvariants(t, []byte(input), idps, err)
 		_ = err
 	})
@@ -696,7 +701,7 @@ func FuzzMatchesEntityIDPatternExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, entityID, pattern string) {
-		result := MatchesEntityIDPattern(entityID, pattern)
+		result := domain.MatchesEntityIDPattern(entityID, pattern)
 		checkMatchesEntityIDPatternInvariants(t, entityID, pattern, result)
 	})
 }

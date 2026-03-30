@@ -1,6 +1,6 @@
 //go:build go1.18
 
-package caddysamldisco
+package caddy
 
 import (
 	"crypto/rand"
@@ -18,33 +18,10 @@ import (
 	"github.com/beevik/etree"
 
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/session"
 	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/signature"
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/core/domain"
 	"github.com/philiph/caddy-saml-disco/internal/core/ports"
-)
-
-// Internal package aliases for symbols no longer re-exported at root.
-var (
-	ValidateDenyRedirect       = caddyadapter.ValidateDenyRedirect
-	ValidateRelayState         = caddyadapter.ValidateRelayState
-	ParseAcceptLanguage        = caddyadapter.ParseAcceptLanguage
-	ParseDuration              = caddyadapter.ParseDuration
-	MatchesForceAuthnPath      = caddyadapter.MatchesForceAuthnPath
-	ParseMetadata              = metadata.ParseMetadata
-	NewXMLDsigVerifier         = signature.NewXMLDsigVerifier
-	MatchesEntityIDPattern     = domain.MatchesEntityIDPattern
-	ValidateAuthnContextComparison = domain.ValidateAuthnContextComparison
-	ErrSessionNotFound         = ports.ErrSessionNotFound
-	ErrMetadataExpired         = domain.ErrMetadataExpired
-)
-
-// Type aliases for internal types no longer re-exported at root.
-type AppError = domain.AppError
-
-const (
-	ErrCodeSignatureInvalid = domain.ErrCodeSignatureInvalid
-	ErrCodeServiceError     = domain.ErrCodeServiceError
 )
 
 // fuzzTestKey is a shared RSA key for fuzz tests, generated once at init.
@@ -247,27 +224,27 @@ func fuzzSessionGetSeeds() []string {
 }
 
 // checkSessionGetInvariants verifies all security invariants for CookieSessionStore.Get output.
-func checkSessionGetInvariants(t *testing.T, input string, session *Session, err error) {
+func checkSessionGetInvariants(t *testing.T, input string, sess *domain.Session, err error) {
 	t.Helper()
 
 	// Invariant 1: Either valid session or ErrSessionNotFound (no other errors exposed)
-	if err != nil && !errors.Is(err, ErrSessionNotFound) {
+	if err != nil && !errors.Is(err, ports.ErrSessionNotFound) {
 		t.Errorf("Get(%q) returned unexpected error type: %v", input, err)
 	}
 
 	// Invariant 2: If session returned, it has valid timestamps
-	if session != nil {
-		if session.IssuedAt.IsZero() {
+	if sess != nil {
+		if sess.IssuedAt.IsZero() {
 			t.Errorf("Get(%q) returned session with zero IssuedAt", input)
 		}
-		if session.ExpiresAt.IsZero() {
+		if sess.ExpiresAt.IsZero() {
 			t.Errorf("Get(%q) returned session with zero ExpiresAt", input)
 		}
 	}
 
 	// Invariant 3: Mutual exclusion - session XOR error
-	if (session == nil) == (err == nil) {
-		t.Errorf("Get(%q) violated XOR: session=%v, err=%v", input, session, err)
+	if (sess == nil) == (err == nil) {
+		t.Errorf("Get(%q) violated XOR: session=%v, err=%v", input, sess, err)
 	}
 }
 
@@ -327,9 +304,9 @@ func FuzzCookieSessionGet(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		store := NewCookieSessionStore(fuzzTestKey, time.Hour)
-		session, err := store.Get(input)
-		checkSessionGetInvariants(t, input, session, err)
+		store := session.NewCookieSessionStore(fuzzTestKey, time.Hour)
+		sess, err := store.Get(input)
+		checkSessionGetInvariants(t, input, sess, err)
 	})
 }
 
@@ -367,7 +344,7 @@ func fuzzParseMetadataSeeds() []string {
 }
 
 // checkParseMetadataInvariants verifies all security invariants for parseMetadata output.
-func checkParseMetadataInvariants(t *testing.T, input []byte, idps []IdPInfo, validUntil *time.Time, err error) {
+func checkParseMetadataInvariants(t *testing.T, input []byte, idps []domain.IdPInfo, validUntil *time.Time, err error) {
 	t.Helper()
 
 	// Invariant 1: Error XOR valid IdPs (when IdPs expected)
@@ -408,7 +385,7 @@ func FuzzParseMetadata(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, validUntil, err := ParseMetadata([]byte(input))
+		idps, validUntil, err := metadata.ParseMetadata([]byte(input))
 		checkParseMetadataInvariants(t, []byte(input), idps, validUntil, err)
 	})
 }
@@ -481,16 +458,16 @@ func checkXMLDsigVerifyInvariants(t *testing.T, input []byte, result []byte, err
 		t.Errorf("Verify violated XOR: result=%v bytes, err=%v", len(result), err)
 	}
 
-	// Invariant 2: All errors must be *AppError
+	// Invariant 2: All errors must be *domain.AppError
 	if err != nil {
-		var appErr *AppError
+		var appErr *domain.AppError
 		if !errors.As(err, &appErr) {
 			t.Errorf("Verify returned non-AppError: %T %v", err, err)
 		}
 
 		// Invariant 3: Error code must be ErrCodeSignatureInvalid or ErrCodeServiceError
 		if appErr != nil {
-			if appErr.Code != ErrCodeSignatureInvalid && appErr.Code != ErrCodeServiceError {
+			if appErr.Code != domain.ErrCodeSignatureInvalid && appErr.Code != domain.ErrCodeServiceError {
 				t.Errorf("Verify returned unexpected error code: %v", appErr.Code)
 			}
 		}
@@ -519,7 +496,7 @@ func FuzzXMLDsigVerify(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		verifier := NewXMLDsigVerifier(fuzzTestCert)
+		verifier := signature.NewXMLDsigVerifier(fuzzTestCert)
 		result, err := verifier.Verify([]byte(input))
 		checkXMLDsigVerifyInvariants(t, []byte(input), result, err)
 	})
@@ -651,7 +628,7 @@ func checkExtractAndValidateExpiryInvariants(t *testing.T, input string, result 
 	// Invariant 3: Expired metadata error uses sentinel
 	if err != nil && result == nil {
 		if strings.Contains(err.Error(), "in the past") {
-			if !errors.Is(err, ErrMetadataExpired) {
+			if !errors.Is(err, domain.ErrMetadataExpired) {
 				t.Errorf("extractAndValidateExpiry(%q): expired error not wrapped with ErrMetadataExpired", truncate(input))
 			}
 		}
@@ -671,7 +648,7 @@ func FuzzExtractAndValidateExpiry(f *testing.F) {
 	// Note: extractAndValidateExpiry is unexported, test indirectly through ParseMetadata
 	f.Fuzz(func(t *testing.T, input string) {
 		// Test indirectly through ParseMetadata which calls extractAndValidateExpiry internally
-		idps, validUntil, err := ParseMetadata([]byte(input))
+		idps, validUntil, err := metadata.ParseMetadata([]byte(input))
 		// Check that validUntil matches what extractAndValidateExpiry would return
 		_ = idps
 		_ = validUntil
@@ -718,7 +695,7 @@ func fuzzExtractIdPInfoSeeds() []string {
 }
 
 // checkExtractIdPInfoInvariants validates security invariants for IdP info extraction.
-func checkExtractIdPInfoInvariants(t *testing.T, input []byte, idps []IdPInfo, err error) {
+func checkExtractIdPInfoInvariants(t *testing.T, input []byte, idps []domain.IdPInfo, err error) {
 	t.Helper()
 
 	// Invariant 1: Each returned IdP has non-empty EntityID
@@ -748,9 +725,9 @@ func checkExtractIdPInfoInvariants(t *testing.T, input []byte, idps []IdPInfo, e
 
 	// Invariant 4: InformationURLs map values are trimmed
 	for i, idp := range idps {
-		for lang, url := range idp.InformationURLs {
-			if strings.TrimSpace(url) != url {
-				t.Errorf("IdP[%d] InformationURLs[%q] has untrimmed value %q", i, lang, url)
+		for lang, u := range idp.InformationURLs {
+			if strings.TrimSpace(u) != u {
+				t.Errorf("IdP[%d] InformationURLs[%q] has untrimmed value %q", i, lang, u)
 			}
 		}
 	}
@@ -767,7 +744,7 @@ func FuzzExtractIdPInfo(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		idps, _, err := ParseMetadata([]byte(input))
+		idps, _, err := metadata.ParseMetadata([]byte(input))
 		checkExtractIdPInfoInvariants(t, []byte(input), idps, err)
 		// Discard err - we only care about invariants on successful parses
 		_ = err
@@ -916,7 +893,7 @@ func FuzzMatchesEntityIDPattern(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, entityID, pattern string) {
-		result := MatchesEntityIDPattern(entityID, pattern)
+		result := domain.MatchesEntityIDPattern(entityID, pattern)
 		checkMatchesEntityIDPatternInvariants(t, entityID, pattern, result)
 	})
 }
@@ -1081,13 +1058,13 @@ func FuzzAuthnContextValidation(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, context, comparison string) {
-		opts := &AuthnOptions{
+		opts := &domain.AuthnOptions{
 			RequestedAuthnContext:  []string{context},
 			AuthnContextComparison: comparison,
 		}
 
 		// Validate comparison value
-		err := ValidateAuthnContextComparison(comparison)
+		err := domain.ValidateAuthnContextComparison(comparison)
 		checkAuthnContextInvariants(t, opts.RequestedAuthnContext, comparison, err)
 	})
 }
@@ -1125,10 +1102,10 @@ func FuzzHandleACS_EncryptedAssertion(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, encryptedData string) {
 		// Create service with test keys
-		service := NewSAMLService("https://sp.example.com", fuzzTestKey, fuzzTestCert)
+		svc := NewSAMLService("https://sp.example.com", fuzzTestKey, fuzzTestCert)
 
 		// Create minimal IdP info
-		idp := &IdPInfo{
+		idp := &domain.IdPInfo{
 			EntityID:     "https://idp.example.com",
 			DisplayName:  "Test IdP",
 			SSOURL:       "https://idp.example.com/sso",
@@ -1150,7 +1127,7 @@ func FuzzHandleACS_EncryptedAssertion(f *testing.F) {
 		}()
 
 		// Try to process (will likely fail with malformed data, which is expected)
-		_, err := service.HandleACS(req, acsURL, idp)
+		_, err := svc.HandleACS(req, acsURL, idp)
 
 		// Property: Should return error for malformed data, or succeed for valid data
 		// Either way, no panic

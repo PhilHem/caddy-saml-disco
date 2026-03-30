@@ -56,6 +56,4 @@ var (
 	NewTemplateRenderer = caddy.NewTemplateRenderer
 	// NewTemplateRendererWithDir creates a renderer with a template directory.
 	NewTemplateRendererWithDir = caddy.NewTemplateRendererWithDir
-	// GetSession retrieves the current session from a request.
-	GetSession = caddy.GetSession
 )
