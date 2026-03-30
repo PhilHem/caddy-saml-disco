@@ -26,6 +26,7 @@ type SAMLService struct {
 	requestStore   ports.RequestStore
 	metadataSigner ports.MetadataSigner // optional signer for SP metadata
 	sloURL         *url.URL             // optional SLO URL for SP metadata
+	requestTTL     time.Duration        // how long a pending AuthnRequest ID is kept
 }
 
 // AuthResult contains the result of processing a SAML assertion.
@@ -49,6 +50,7 @@ func NewSAMLService(entityID string, privateKey *rsa.PrivateKey, certificate *x5
 		privateKey:   privateKey,
 		certificate:  certificate,
 		requestStore: request.NewInMemoryRequestStore(),
+		requestTTL:   10 * time.Minute,
 	}
 }
 
@@ -61,6 +63,7 @@ func NewSAMLServiceWithCleanup(entityID string, privateKey *rsa.PrivateKey, cert
 		privateKey:   privateKey,
 		certificate:  certificate,
 		requestStore: request.NewInMemoryRequestStoreWithCleanup(cleanupInterval),
+		requestTTL:   10 * time.Minute,
 	}
 }
 
@@ -72,6 +75,7 @@ func NewSAMLServiceWithStore(entityID string, privateKey *rsa.PrivateKey, certif
 		privateKey:   privateKey,
 		certificate:  certificate,
 		requestStore: store,
+		requestTTL:   10 * time.Minute,
 	}
 }
 
@@ -94,6 +98,11 @@ func (s *SAMLService) SetMetadataSigner(signer ports.MetadataSigner) {
 // If set, GenerateSPMetadata will include SingleLogoutService endpoint.
 func (s *SAMLService) SetSLOURL(sloURL *url.URL) {
 	s.sloURL = sloURL
+}
+
+// SetRequestTTL sets how long a pending AuthnRequest ID is retained before expiry.
+func (s *SAMLService) SetRequestTTL(ttl time.Duration) {
+	s.requestTTL = ttl
 }
 
 // GenerateSPMetadata creates SP metadata XML for the given ACS URL.
@@ -185,8 +194,8 @@ func (s *SAMLService) StartAuthWithOptions(idp *domain.IdPInfo, acsURL *url.URL,
 		}
 	}
 
-	// Store request ID for later validation (10 minute expiry)
-	s.requestStore.Store(authReq.ID, time.Now().Add(10*time.Minute))
+	// Store request ID for later validation (configurable TTL, default 10 minutes)
+	s.requestStore.Store(authReq.ID, time.Now().Add(s.requestTTL))
 
 	// Build redirect URL
 	redirectURL, err := authReq.Redirect(relayState, sp)

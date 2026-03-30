@@ -225,6 +225,12 @@ func parseConfigDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 		}
 		cfg.SessionDuration = d.Val()
 
+	case "request_ttl":
+		if !d.NextArg() {
+			return true, d.ArgErr()
+		}
+		cfg.RequestTTL = d.Val()
+
 	case "remember_idp_cookie_name":
 		if !d.NextArg() {
 			return true, d.ArgErr()

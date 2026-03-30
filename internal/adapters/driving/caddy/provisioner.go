@@ -276,7 +276,17 @@ func (s *SAMLDisco) initializeSessionAndSAML() (ports.SessionStore, *SAMLService
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("load SP certificate: %w", err)
 		}
-		samlService = NewSAMLServiceWithCleanup(s.EntityID, privateKey, certificate, DefaultRequestCleanupInterval)
+		// Use shared request store that survives config reloads
+		samlService = NewSAMLServiceWithStore(s.EntityID, privateKey, certificate, getSharedRequestStore())
+
+		// Configure request TTL if specified
+		if s.Config.RequestTTL != "" {
+			requestTTL, err := time.ParseDuration(s.Config.RequestTTL)
+			if err != nil {
+				return nil, nil, 0, fmt.Errorf("parse request_ttl: %w", err)
+			}
+			samlService.SetRequestTTL(requestTTL)
+		}
 
 		// Configure metadata signing if enabled
 		if s.SignMetadata {
@@ -397,7 +407,17 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 			if err != nil {
 				return fmt.Errorf("load SP certificate: %w", err)
 			}
-			spCfg.samlService = NewSAMLServiceWithCleanup(spCfg.EntityID, privateKey, certificate, DefaultRequestCleanupInterval)
+			// Use shared request store that survives config reloads
+			spCfg.samlService = NewSAMLServiceWithStore(spCfg.EntityID, privateKey, certificate, getSharedRequestStore())
+
+			// Configure request TTL if specified
+			if spCfg.Config.RequestTTL != "" {
+				requestTTL, err := time.ParseDuration(spCfg.Config.RequestTTL)
+				if err != nil {
+					return fmt.Errorf("parse request_ttl: %w", err)
+				}
+				spCfg.samlService.SetRequestTTL(requestTTL)
+			}
 
 			// Configure metadata signing if enabled
 			if spCfg.SignMetadata {

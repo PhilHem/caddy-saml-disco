@@ -79,6 +79,10 @@ type Config struct {
 	// Defaults to "8h" if not specified.
 	SessionDuration string `json:"session_duration,omitempty"`
 
+	// RequestTTL is how long a pending SAML AuthnRequest ID is kept before expiry (e.g., "10m").
+	// Defaults to "10m" if not specified.
+	RequestTTL string `json:"request_ttl,omitempty"`
+
 	// TemplatesDir is the path to custom template files.
 	// If not set, embedded templates are used.
 	TemplatesDir string `json:"templates_dir,omitempty"`
@@ -358,6 +362,9 @@ func (c *Config) SetDefaults() {
 	}
 	if c.SessionDuration == "" {
 		c.SessionDuration = "8h"
+	}
+	if c.RequestTTL == "" {
+		c.RequestTTL = "10m"
 	}
 	if c.RememberIdPCookieName == "" {
 		c.RememberIdPCookieName = "saml_last_idp"

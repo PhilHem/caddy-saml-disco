@@ -677,6 +677,61 @@ func TestCaddyfile_RememberIdPDuration_RequiresArg(t *testing.T) {
 	}
 }
 
+func TestCaddyfile_RequestTTL(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://example.com/saml
+		metadata_file /path/to/metadata.xml
+		cert_file /path/to/cert.pem
+		key_file /path/to/key.pem
+		request_ttl 30m
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	if s.RequestTTL != "30m" {
+		t.Errorf("RequestTTL = %q, want %q", s.RequestTTL, "30m")
+	}
+}
+
+func TestCaddyfile_RequestTTL_Default(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://example.com/saml
+		metadata_file /path/to/metadata.xml
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err != nil {
+		t.Fatalf("UnmarshalCaddyfile error: %v", err)
+	}
+
+	// SetDefaults is called by UnmarshalCaddyfile; default should be "10m"
+	if s.RequestTTL != "10m" {
+		t.Errorf("RequestTTL = %q, want %q (default)", s.RequestTTL, "10m")
+	}
+}
+
+func TestCaddyfile_RequestTTL_RequiresArg(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://example.com/saml
+		metadata_file /path/to/metadata.xml
+		request_ttl
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Error("UnmarshalCaddyfile should error on request_ttl without argument")
+	}
+}
+
 func TestCaddyfile_InvalidEntityID_RejectsAtParseTime(t *testing.T) {
 	// Test that invalid entity_id values are rejected at parse time.
 	// Note: Missing entity_id is validated in Config.Validate(), not parse time.
