@@ -10,7 +10,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 )
 
 // TestExampleCaddyfile_ParsesCorrectly verifies that the example Caddyfile

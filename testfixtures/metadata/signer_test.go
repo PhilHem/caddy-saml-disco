@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/signature"
+	"github.com/philiph/caddy-saml-disco/internal/signature"
 )
 
 // Phase 1: Basic Structure Tests

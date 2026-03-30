@@ -15,7 +15,7 @@ import (
 	"github.com/cucumber/godog"
 	messages "github.com/cucumber/messages/go/v21"
 
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 

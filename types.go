@@ -5,10 +5,10 @@
 package caddysamldisco
 
 import (
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
-	"github.com/philiph/caddy-saml-disco/internal/core/ports"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/ports"
 )
 
 // Domain Types

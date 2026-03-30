@@ -17,10 +17,10 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metrics"
-	caddy "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/metrics"
+	caddy "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 

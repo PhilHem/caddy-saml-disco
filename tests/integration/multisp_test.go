@@ -13,7 +13,7 @@ import (
 	"time"
 
 	caddysamldisco "github.com/philiph/caddy-saml-disco"
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 

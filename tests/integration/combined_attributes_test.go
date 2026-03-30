@@ -9,9 +9,9 @@ import (
 	"time"
 
 	caddysamldisco "github.com/philiph/caddy-saml-disco"
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/entitlements"
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
 // Cycle 10: Integration Test - End-to-End Combined Headers

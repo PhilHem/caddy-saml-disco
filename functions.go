@@ -6,11 +6,11 @@
 package caddysamldisco
 
 import (
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/logo"
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/metadata"
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/session"
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/logo"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/session"
+	"github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
 // Domain Errors

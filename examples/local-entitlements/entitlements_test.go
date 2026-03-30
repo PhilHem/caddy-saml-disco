@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
 )
 
 // TestExampleEntitlementsJSON_ValidSchema verifies that the example entitlements.json

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/entitlements"
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
 // TestExampleEntitlements_Property_Consistency verifies invariants about

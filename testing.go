@@ -1,6 +1,6 @@
 package caddysamldisco
 
-import caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+import caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 
 // NewSAMLDiscoForTest creates a SAMLDisco instance with injected dependencies.
 // This constructor is intended for testing purposes only.

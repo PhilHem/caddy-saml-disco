@@ -9,7 +9,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 )
 
 // Version information - set via ldflags at build time

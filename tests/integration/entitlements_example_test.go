@@ -13,9 +13,9 @@ import (
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	caddysamldisco "github.com/philiph/caddy-saml-disco"
-	"github.com/philiph/caddy-saml-disco/internal/adapters/driven/entitlements"
-	caddyadapter "github.com/philiph/caddy-saml-disco/internal/adapters/driving/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/core/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
 // TestLocalEntitlementsExample_EndToEndFlow tests the example entitlements.json
