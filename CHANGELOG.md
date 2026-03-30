@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.6] - 2026-03-30
+
+### Changed
+- Root package reduced to 6 files: module registration, re-exports, test constructor, and architectural guards. All test files moved to the internal packages they actually test.
+
 ## [0.19.5] - 2026-03-30
 
 ### Changed
