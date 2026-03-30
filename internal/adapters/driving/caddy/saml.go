@@ -194,8 +194,16 @@ func (s *SAMLService) StartAuthWithOptions(idp *domain.IdPInfo, acsURL *url.URL,
 		}
 	}
 
-	// Store request ID for later validation (configurable TTL, default 10 minutes)
-	s.requestStore.Store(authReq.ID, time.Now().Add(s.requestTTL))
+	// Store request ID for later validation (configurable TTL, default 10 minutes).
+	// Prefer StoreWithEntityID so ACS can recover the IdP after a metadata refresh.
+	expiry := time.Now().Add(s.requestTTL)
+	if store, ok := s.requestStore.(interface {
+		StoreWithEntityID(string, time.Time, string)
+	}); ok {
+		store.StoreWithEntityID(authReq.ID, expiry, idp.EntityID)
+	} else {
+		s.requestStore.Store(authReq.ID, expiry)
+	}
 
 	// Build redirect URL
 	redirectURL, err := authReq.Redirect(relayState, sp)
@@ -242,6 +250,28 @@ func idpInfoToEntityDescriptor(idp *domain.IdPInfo) (*saml.EntityDescriptor, err
 	}
 
 	return ed, nil
+}
+
+// ExtractResponseInResponseTo extracts the InResponseTo attribute from a base64-encoded
+// SAML Response. This is the ID of the AuthnRequest that triggered the response, allowing
+// ACS to map back to the original request even after a metadata refresh.
+// Returns ("", nil) if the field is absent (IdP-initiated flows have no InResponseTo).
+func ExtractResponseInResponseTo(samlResponseB64 string) (string, error) {
+	if samlResponseB64 == "" {
+		return "", fmt.Errorf("empty SAMLResponse")
+	}
+
+	responseXML, err := base64.StdEncoding.DecodeString(samlResponseB64)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode: %w", err)
+	}
+
+	var response saml.Response
+	if err := xml.Unmarshal(responseXML, &response); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+
+	return response.InResponseTo, nil
 }
 
 // ExtractResponseIssuer extracts the Issuer entity ID from a base64-encoded SAML Response.

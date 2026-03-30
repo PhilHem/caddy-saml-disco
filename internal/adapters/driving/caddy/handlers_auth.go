@@ -64,8 +64,33 @@ func (s *SAMLDisco) handleACSInternal(w http.ResponseWriter, r *http.Request, cf
 		return err
 	}
 
-	// Look up IdP by Issuer entity ID
+	// Look up IdP by Issuer entity ID.
+	// If the primary lookup fails (e.g. metadata was refreshed after the AuthnRequest
+	// was dispatched), attempt to recover the original entity ID from the request store
+	// using the InResponseTo field of the SAML response.
 	idp, err := cfg.metadataStore.GetIdP(issuer)
+	if err != nil {
+		// Attempt fallback: recover entity ID stored alongside the request ID.
+		if store, ok := cfg.samlService.requestStore.(interface {
+			GetEntityID(string) (string, bool)
+		}); ok {
+			inResponseTo, extractErr := ExtractResponseInResponseTo(samlResponse)
+			if extractErr == nil && inResponseTo != "" {
+				if storedEntityID, found := store.GetEntityID(inResponseTo); found && storedEntityID != "" {
+					fallbackIdP, fallbackErr := cfg.metadataStore.GetIdP(storedEntityID)
+					if fallbackErr == nil {
+						s.getLogger().Info("ACS IdP lookup recovered via stored entity ID",
+							zap.String("issuer", issuer),
+							zap.String("stored_entity_id", storedEntityID),
+							zap.String("in_response_to", inResponseTo),
+						)
+						idp = fallbackIdP
+						err = nil
+					}
+				}
+			}
+		}
+	}
 	if err != nil {
 		s.getLogger().Warn("unknown IdP issuer in SAML response",
 			zap.String("issuer", issuer),

@@ -13,6 +13,12 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
+// entityIDStoreAccessor is the interface that InMemoryRequestStore satisfies for entity ID operations.
+type entityIDStoreAccessor interface {
+	StoreWithEntityID(string, time.Time, string)
+	GetEntityID(string) (string, bool)
+}
+
 // TestSimACSCertRotation documents the known limitation that a metadata refresh
 // occurring between AuthnRequest dispatch and ACS callback can cause the IdP
 // lookup to fail when the rotated metadata carries different entity IDs.
@@ -115,5 +121,146 @@ func TestSimACSCertRotation(t *testing.T) {
 	// that the request tracking is intact — only the metadata lookup is broken.
 	if !requestStore.Valid(inFlightRequestID) {
 		t.Fatal("post-rotation: in-flight request ID should still be valid in request store")
+	}
+}
+
+// TestSimACSCertRotation_StoreWithEntityID verifies that StoreWithEntityID persists
+// the entity ID and GetEntityID recovers it without consuming the request entry.
+func TestSimACSCertRotation_StoreWithEntityID(t *testing.T) {
+	tra.Require(t, "Adapter.Request.StoreWithEntityID")
+
+	const entityID = "https://idp.example.com/saml"
+	const requestID = "samlrequest-entity-id-001"
+
+	store := request.NewInMemoryRequestStore()
+
+	// Verify the store satisfies the extended interface.
+	extStore, ok := interface{}(store).(entityIDStoreAccessor)
+	if !ok {
+		t.Fatal("InMemoryRequestStore does not implement StoreWithEntityID / GetEntityID")
+	}
+
+	expiry := time.Now().Add(10 * time.Minute)
+	extStore.StoreWithEntityID(requestID, expiry, entityID)
+
+	// GetEntityID must return the stored entity ID without removing the entry.
+	gotEntityID, found := extStore.GetEntityID(requestID)
+	if !found {
+		t.Fatal("GetEntityID returned not-found for a freshly stored request ID")
+	}
+	if gotEntityID != entityID {
+		t.Fatalf("GetEntityID returned %q, want %q", gotEntityID, entityID)
+	}
+
+	// The entry must still be present and valid after the non-destructive read.
+	if !store.Valid(requestID) {
+		t.Error("Valid() returned false after GetEntityID — entry should not have been consumed")
+	}
+
+	// After Valid() consumes the entry, GetEntityID must no longer find it.
+	gotEntityID, found = extStore.GetEntityID(requestID)
+	if found {
+		t.Errorf("GetEntityID returned entity ID %q after entry was consumed by Valid()", gotEntityID)
+	}
+}
+
+// TestSimACSCertRotation_EntityIDNotFoundForExpired verifies that GetEntityID
+// returns ("", false) for an expired entry, so the fallback path cannot be
+// tricked into recovering a stale entity ID.
+func TestSimACSCertRotation_EntityIDNotFoundForExpired(t *testing.T) {
+	tra.Require(t, "Adapter.Request.GetEntityIDRejectsExpired")
+
+	const entityID = "https://idp.example.com/saml"
+	const requestID = "samlrequest-expired-001"
+
+	store := request.NewInMemoryRequestStore()
+	extStore, ok := interface{}(store).(entityIDStoreAccessor)
+	if !ok {
+		t.Fatal("InMemoryRequestStore does not implement StoreWithEntityID / GetEntityID")
+	}
+
+	// Store with a TTL already in the past.
+	expiry := time.Now().Add(-1 * time.Second)
+	extStore.StoreWithEntityID(requestID, expiry, entityID)
+
+	gotEntityID, found := extStore.GetEntityID(requestID)
+	if found {
+		t.Errorf("GetEntityID returned entity ID %q for an expired entry, want not-found", gotEntityID)
+	}
+}
+
+// TestSimACSCertRotation_FallbackLookup documents that after a metadata refresh
+// causes GetIdP(issuer) to fail, the entity ID stored alongside the request ID
+// can be used to find the rotated IdP entry.
+//
+// This test drives the lookup layer directly, without requiring a real SAML
+// response, to verify the fallback logic independently.
+func TestSimACSCertRotation_FallbackLookup(t *testing.T) {
+	tra.Require(t, "Adapter.ACS.EntityIDFallbackLookup")
+
+	const originalEntityID = "https://idp.example.com/saml"
+	const requestID = "samlrequest-fallback-001"
+
+	store := request.NewInMemoryRequestStore()
+	extStore, ok := interface{}(store).(entityIDStoreAccessor)
+	if !ok {
+		t.Fatal("InMemoryRequestStore does not implement StoreWithEntityID / GetEntityID")
+	}
+
+	// Simulate: AuthnRequest dispatched to originalEntityID, entity ID stored.
+	extStore.StoreWithEntityID(requestID, time.Now().Add(10*time.Minute), originalEntityID)
+
+	// Simulate: metadata refresh — store now carries the same entity ID (typical rotation
+	// that preserves entity ID but replaces certificates).
+	rotatedIdP := domain.IdPInfo{
+		EntityID:    originalEntityID,
+		DisplayName: "Example University",
+		SSOURL:      "https://idp.example.com/sso",
+		SSOBinding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+		Certificates: []string{
+			"-----BEGIN CERTIFICATE-----\nMIIBpDCCAQ2gAwIBAgIBATANBgkqhkiG9w0BAQsFADASMRAwDgYDVQQDEwdleDIu\nMA0GCSqGSIb3DQEBCwUAA4IBAQCfakeRotatedCertData\n-----END CERTIFICATE-----",
+		},
+	}
+	metaStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{rotatedIdP})
+
+	// Simulate: ACS primary lookup by issuer succeeds here (entity ID unchanged).
+	// The fallback matters when the primary lookup fails — test that path explicitly.
+	issuer := originalEntityID
+	_, primaryErr := metaStore.GetIdP(issuer)
+	if primaryErr != nil {
+		// Primary lookup failed; use fallback.
+		storedEntityID, found := extStore.GetEntityID(requestID)
+		if !found || storedEntityID == "" {
+			t.Fatal("fallback: GetEntityID returned not-found — cannot recover IdP")
+		}
+		fallbackIdP, fallbackErr := metaStore.GetIdP(storedEntityID)
+		if fallbackErr != nil {
+			t.Fatalf("fallback: GetIdP(%q) failed: %v", storedEntityID, fallbackErr)
+		}
+		if fallbackIdP.EntityID != originalEntityID {
+			t.Fatalf("fallback: recovered IdP entity ID = %q, want %q", fallbackIdP.EntityID, originalEntityID)
+		}
+		t.Logf("fallback: recovered IdP %q via stored entity ID", fallbackIdP.EntityID)
+	} else {
+		// Primary succeeded — simulate a case where issuer changed to test fallback explicitly.
+		changedIssuer := "https://idp.example.com/saml/OLD"
+		_, primaryErr2 := metaStore.GetIdP(changedIssuer)
+		if !errors.Is(primaryErr2, domain.ErrIdPNotFound) {
+			t.Fatalf("expected ErrIdPNotFound for changed issuer, got: %v", primaryErr2)
+		}
+
+		// Fallback: recover via stored entity ID.
+		storedEntityID, found := extStore.GetEntityID(requestID)
+		if !found || storedEntityID == "" {
+			t.Fatal("fallback: GetEntityID returned not-found")
+		}
+		fallbackIdP, fallbackErr := metaStore.GetIdP(storedEntityID)
+		if fallbackErr != nil {
+			t.Fatalf("fallback: GetIdP(%q) failed: %v", storedEntityID, fallbackErr)
+		}
+		if fallbackIdP.EntityID != originalEntityID {
+			t.Fatalf("fallback: recovered IdP entity ID = %q, want %q", fallbackIdP.EntityID, originalEntityID)
+		}
+		t.Logf("fallback: recovered IdP %q via stored entity ID after issuer change", fallbackIdP.EntityID)
 	}
 }
