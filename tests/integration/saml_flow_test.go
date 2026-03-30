@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
@@ -23,21 +25,21 @@ func TestSAMLFlow_StartAuth_GeneratesRedirect(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Create IdPInfo from test IdP
 	// Note: In a real test, we'd fetch and parse the IdP metadata
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
@@ -77,9 +79,9 @@ func TestSAMLFlow_SPMetadata_CanBeRegisteredWithIdP(t *testing.T) {
 	defer testIdP.Close()
 
 	// Create SP server that serves metadata
-	key, _ := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
-	cert, _ := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	key, _ := session.LoadPrivateKey("../../testdata/sp-key.pem")
+	cert, _ := session.LoadCertificate("../../testdata/sp-cert.pem")
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Create a test server to serve SP metadata
 	spServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,9 +120,9 @@ func TestSAMLFlow_FullAuthentication(t *testing.T) {
 	testIdP.AddUser("testuser", "password123")
 
 	// Load SP credentials
-	key, _ := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
-	cert, _ := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	key, _ := session.LoadPrivateKey("../../testdata/sp-key.pem")
+	cert, _ := session.LoadCertificate("../../testdata/sp-cert.pem")
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Register SP with IdP
 	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
@@ -128,7 +130,7 @@ func TestSAMLFlow_FullAuthentication(t *testing.T) {
 	testIdP.AddServiceProviderMetadata("https://sp.example.com", metadata)
 
 	// Create IdPInfo from test IdP
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),

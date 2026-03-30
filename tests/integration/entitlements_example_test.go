@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
-	"github.com/philiph/caddy-saml-disco/internal/entitlements"
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 // TestLocalEntitlementsExample_EndToEndFlow tests the example entitlements.json
@@ -52,16 +52,16 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 	}
 
 	// Load SP credentials for session store
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Test Case 1: Admin user can access (has admin role)
 	t.Run("AdminUserAccess", func(t *testing.T) {
-		session := &caddysamldisco.Session{
+		sess := &domain.Session{
 			Subject:     "admin@example.edu",
 			Attributes:  map[string]string{"mail": "admin@example.edu"},
 			IdPEntityID: "https://idp.example.com",
@@ -69,13 +69,13 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 			ExpiresAt:   time.Now().Add(8 * time.Hour),
 		}
 
-		token, err := sessionStore.Create(session)
+		token, err := sessionStore.Create(sess)
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
 
-		disco := &caddysamldisco.SAMLDisco{
-			Config: caddysamldisco.Config{
+		disco := &caddyadapter.SAMLDisco{
+			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
 				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
@@ -117,7 +117,7 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 	// Note: require_entitlement is only checked during ACS, not on regular requests.
 	// For regular requests, the application should check X-Entitlement-Roles header.
 	t.Run("RegularUserGetsUserRole", func(t *testing.T) {
-		session := &caddysamldisco.Session{
+		sess := &domain.Session{
 			Subject:     "user@example.edu",
 			Attributes:  map[string]string{"mail": "user@example.edu"},
 			IdPEntityID: "https://idp.example.com",
@@ -125,13 +125,13 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 			ExpiresAt:   time.Now().Add(8 * time.Hour),
 		}
 
-		token, err := sessionStore.Create(session)
+		token, err := sessionStore.Create(sess)
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
 
-		disco := &caddysamldisco.SAMLDisco{
-			Config: caddysamldisco.Config{
+		disco := &caddyadapter.SAMLDisco{
+			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
 				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
@@ -160,7 +160,7 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 
 	// Test Case 3: Pattern matching works (staff@*)
 	t.Run("PatternMatching", func(t *testing.T) {
-		session := &caddysamldisco.Session{
+		sess := &domain.Session{
 			Subject:     "staff@anywhere.com",
 			Attributes:  map[string]string{"mail": "staff@anywhere.com"},
 			IdPEntityID: "https://idp.example.com",
@@ -168,13 +168,13 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 			ExpiresAt:   time.Now().Add(8 * time.Hour),
 		}
 
-		token, err := sessionStore.Create(session)
+		token, err := sessionStore.Create(sess)
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
 
-		disco := &caddysamldisco.SAMLDisco{
-			Config: caddysamldisco.Config{
+		disco := &caddyadapter.SAMLDisco{
+			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
 				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
@@ -206,7 +206,7 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 	// Note: Entitlement checking happens during ACS, not on regular requests.
 	// For regular requests, entitlements are just injected as headers (or not).
 	t.Run("ExternalUserNoEntitlements", func(t *testing.T) {
-		session := &caddysamldisco.Session{
+		sess := &domain.Session{
 			Subject:     "external@other.com",
 			Attributes:  map[string]string{"mail": "external@other.com"},
 			IdPEntityID: "https://idp.example.com",
@@ -214,13 +214,13 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 			ExpiresAt:   time.Now().Add(8 * time.Hour),
 		}
 
-		token, err := sessionStore.Create(session)
+		token, err := sessionStore.Create(sess)
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
 
-		disco := &caddysamldisco.SAMLDisco{
-			Config: caddysamldisco.Config{
+		disco := &caddyadapter.SAMLDisco{
+			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
 				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
@@ -270,15 +270,15 @@ func TestLocalEntitlementsExample_HeaderInjection(t *testing.T) {
 		entitlementStore.Add(entry)
 	}
 
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Test manager@example.edu (has department metadata)
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject:     "manager@example.edu",
 		Attributes:  map[string]string{"mail": "manager@example.edu"},
 		IdPEntityID: "https://idp.example.com",
@@ -286,14 +286,14 @@ func TestLocalEntitlementsExample_HeaderInjection(t *testing.T) {
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
 
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// Use example Caddyfile configuration
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
 			EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
 				{Field: "roles", HeaderName: "X-Entitlement-Roles", Separator: ";"},

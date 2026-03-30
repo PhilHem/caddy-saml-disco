@@ -17,7 +17,9 @@ import (
 	"testing"
 	"time"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
@@ -101,7 +103,7 @@ func TestCertificateRotation_Integration_MultipleCerts(t *testing.T) {
 	}
 
 	// Create IdPInfo with multiple certificates (simulating rotation)
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:    testIdP.BaseURL(),
 		DisplayName: "Test IdP",
 		SSOURL:      testIdP.SSOURL(),
@@ -114,17 +116,17 @@ func TestCertificateRotation_Integration_MultipleCerts(t *testing.T) {
 	}
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Verify that StartAuth works with multiple certificates
 	// This tests that idpInfoToEntityDescriptor correctly includes all certificates
@@ -187,7 +189,7 @@ func TestCertificateRotation_Integration_EmptyCertificates(t *testing.T) {
 	testIdP := idp.New(t)
 	defer testIdP.Close()
 
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
@@ -195,16 +197,16 @@ func TestCertificateRotation_Integration_EmptyCertificates(t *testing.T) {
 		Certificates: []string{}, // Empty
 	}
 
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
 
 	// Should not panic

@@ -1,8 +1,7 @@
 //go:build integration
 
 // Package integration contains integration tests for caddy-saml-disco.
-// These tests are in a separate package but use the caddysamldisco package
-// name to access internal fields for testing.
+// These tests are in a separate package but access the plugin via internal packages.
 package integration
 
 import (
@@ -14,7 +13,9 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 // mockNextHandler tracks if request passed through middleware.
@@ -32,19 +33,19 @@ var _ caddyhttp.Handler = (*mockNextHandler)(nil)
 
 // mockMetadataStore provides IdP info for redirects.
 type mockMetadataStore struct {
-	idps []caddysamldisco.IdPInfo
+	idps []domain.IdPInfo
 }
 
-func (m *mockMetadataStore) GetIdP(entityID string) (*caddysamldisco.IdPInfo, error) {
+func (m *mockMetadataStore) GetIdP(entityID string) (*domain.IdPInfo, error) {
 	for i := range m.idps {
 		if m.idps[i].EntityID == entityID {
 			return &m.idps[i], nil
 		}
 	}
-	return nil, caddysamldisco.ErrIdPNotFound
+	return nil, domain.ErrIdPNotFound
 }
 
-func (m *mockMetadataStore) ListIdPs(filter string) ([]caddysamldisco.IdPInfo, error) {
+func (m *mockMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, error) {
 	return m.idps, nil
 }
 
@@ -52,8 +53,8 @@ func (m *mockMetadataStore) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockMetadataStore) Health() caddysamldisco.MetadataHealth {
-	return caddysamldisco.MetadataHealth{IsFresh: true, IdPCount: len(m.idps)}
+func (m *mockMetadataStore) Health() domain.MetadataHealth {
+	return domain.MetadataHealth{IsFresh: true, IdPCount: len(m.idps)}
 }
 
 // TestSessionExpiry_ValidThenExpired_RedirectsToIdP verifies that a valid session
@@ -63,40 +64,40 @@ func (m *mockMetadataStore) Health() caddysamldisco.MetadataHealth {
 // second precision. Sub-second durations may expire immediately due to rounding.
 func TestSessionExpiry_ValidThenExpired_RedirectsToIdP(t *testing.T) {
 	// 1. Setup - Load credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load cert: %v", err)
 	}
 
 	// 2. Create store with 2 second duration
-	store := caddysamldisco.NewCookieSessionStore(key, 2*time.Second)
+	store := session.NewCookieSessionStore(key, 2*time.Second)
 
 	// 3. Create valid session token
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject:     "testuser",
 		IdPEntityID: "https://idp.example.com",
 	}
-	token, err := store.Create(session)
+	token, err := store.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// 4. Create SAMLDisco middleware
-	samlService := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	samlService := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 	metadataStore := &mockMetadataStore{
-		idps: []caddysamldisco.IdPInfo{{
+		idps: []domain.IdPInfo{{
 			EntityID:   "https://idp.example.com",
 			SSOURL:     "https://idp.example.com/sso",
 			SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		}},
 	}
 
-	s := caddysamldisco.NewSAMLDiscoForTest(
-		caddysamldisco.Config{
+	s := caddyadapter.NewSAMLDiscoForTest(
+		caddyadapter.Config{
 			EntityID:          "https://sp.example.com",
 			SessionCookieName: "saml_session",
 		},

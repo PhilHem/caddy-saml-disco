@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
@@ -25,46 +27,46 @@ func TestMultiSP_EndToEndFlow(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create in-memory metadata store with test IdP
-	idpInfo := caddysamldisco.IdPInfo{
+	idpInfo := domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
 		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{},
 	}
-	metadataStore := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{idpInfo})
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpInfo})
 
 	// Create session stores for each SP
-	sessionStore1 := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
-	sessionStore2 := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore1 := session.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore2 := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Create SAML services for each SP
-	service1 := caddysamldisco.NewSAMLService("https://app1.example.com/saml", key, cert)
-	service2 := caddysamldisco.NewSAMLService("https://app2.example.com/saml", key, cert)
+	service1 := caddyadapter.NewSAMLService("https://app1.example.com/saml", key, cert)
+	service2 := caddyadapter.NewSAMLService("https://app2.example.com/saml", key, cert)
 
 	// Create multi-SP plugin instance
-	disco := &caddysamldisco.SAMLDisco{
+	disco := &caddyadapter.SAMLDisco{
 		SPConfigs: []*caddyadapter.SPConfig{
 			{
 				Hostname: "app1.example.com",
-				Config: caddysamldisco.Config{
+				Config: caddyadapter.Config{
 					EntityID:          "https://app1.example.com/saml",
 					SessionCookieName: "app1_session",
 				},
 			},
 			{
 				Hostname: "app2.example.com",
-				Config: caddysamldisco.Config{
+				Config: caddyadapter.Config{
 					EntityID:          "https://app2.example.com/saml",
 					SessionCookieName: "app2_session",
 				},
@@ -198,17 +200,17 @@ func TestMultiSP_EndToEndFlow(t *testing.T) {
 // This verifies that cookie names and session stores are properly isolated.
 func TestMultiSP_SessionIsolation(t *testing.T) {
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
 	// Create session stores for each SP (with different cookie names)
-	sessionStore1 := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
-	sessionStore2 := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore1 := session.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore2 := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Create sessions for each SP
-	session1 := &caddysamldisco.Session{
+	sess1 := &domain.Session{
 		Subject:     "user1@example.com",
 		IdPEntityID: "https://idp1.example.com",
 		Attributes:  map[string]string{"mail": "user1@example.com"},
@@ -216,7 +218,7 @@ func TestMultiSP_SessionIsolation(t *testing.T) {
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
 
-	session2 := &caddysamldisco.Session{
+	sess2 := &domain.Session{
 		Subject:     "user2@example.com",
 		IdPEntityID: "https://idp2.example.com",
 		Attributes:  map[string]string{"mail": "user2@example.com"},
@@ -225,29 +227,29 @@ func TestMultiSP_SessionIsolation(t *testing.T) {
 	}
 
 	// Create session tokens
-	token1, err := sessionStore1.Create(session1)
+	token1, err := sessionStore1.Create(sess1)
 	if err != nil {
 		t.Fatalf("create session1 token: %v", err)
 	}
 
-	token2, err := sessionStore2.Create(session2)
+	token2, err := sessionStore2.Create(sess2)
 	if err != nil {
 		t.Fatalf("create session2 token: %v", err)
 	}
 
 	// Create multi-SP plugin instance
-	disco := &caddysamldisco.SAMLDisco{
+	disco := &caddyadapter.SAMLDisco{
 		SPConfigs: []*caddyadapter.SPConfig{
 			{
 				Hostname: "app1.example.com",
-				Config: caddysamldisco.Config{
+				Config: caddyadapter.Config{
 					EntityID:          "https://app1.example.com/saml",
 					SessionCookieName: "app1_session",
 				},
 			},
 			{
 				Hostname: "app2.example.com",
-				Config: caddysamldisco.Config{
+				Config: caddyadapter.Config{
 					EntityID:          "https://app2.example.com/saml",
 					SessionCookieName: "app2_session",
 				},

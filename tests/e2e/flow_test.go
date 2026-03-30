@@ -15,7 +15,10 @@ import (
 	"testing"
 	"time"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/ports"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
@@ -29,11 +32,11 @@ func TestE2E_ProtectedRoute_RedirectsToIdP(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
@@ -104,11 +107,11 @@ func TestE2E_ValidSession_AccessesProtectedResource(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
@@ -118,15 +121,15 @@ func TestE2E_ValidSession_AccessesProtectedResource(t *testing.T) {
 	defer spServer.Close()
 
 	// Create a valid session token
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
-	session := &caddysamldisco.Session{
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
+	sess := &domain.Session{
 		Subject:     "testuser@example.com",
 		IdPEntityID: testIdP.BaseURL(),
 		Attributes:  map[string]string{"email": "testuser@example.com"},
 		IssuedAt:    time.Now(),
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session token: %v", err)
 	}
@@ -172,11 +175,11 @@ func TestE2E_ExpiredSession_RedirectsToIdP(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
@@ -186,12 +189,12 @@ func TestE2E_ExpiredSession_RedirectsToIdP(t *testing.T) {
 	defer spServer.Close()
 
 	// Create an expired session token (using very short duration)
-	shortStore := caddysamldisco.NewCookieSessionStore(key, 1*time.Millisecond)
-	session := &caddysamldisco.Session{
+	shortStore := session.NewCookieSessionStore(key, 1*time.Millisecond)
+	sess := &domain.Session{
 		Subject:     "testuser@example.com",
 		IdPEntityID: testIdP.BaseURL(),
 	}
-	token, err := shortStore.Create(session)
+	token, err := shortStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session token: %v", err)
 	}
@@ -242,11 +245,11 @@ func TestE2E_LogoutEndpoint_ClearsCookieAndRedirects(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
@@ -306,11 +309,11 @@ func TestE2E_SPMetadata_ValidXML(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
@@ -357,9 +360,9 @@ func createTestSPServer(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificat
 	// Handler function - we'll update spURL after server starts
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := &testSPHandler{
-			sessionStore: caddysamldisco.NewCookieSessionStore(key, 8*time.Hour),
+			sessionStore: session.NewCookieSessionStore(key, 8*time.Hour),
 			metadataStore: &testMetadataStore{
-				idps: []caddysamldisco.IdPInfo{
+				idps: []domain.IdPInfo{
 					{
 						EntityID:     testIdP.BaseURL(),
 						DisplayName:  "Test IdP",
@@ -369,7 +372,7 @@ func createTestSPServer(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificat
 					},
 				},
 			},
-			samlService:       caddysamldisco.NewSAMLService(spURL, key, cert),
+			samlService:       caddyadapter.NewSAMLService(spURL, key, cert),
 			sessionCookieName: "saml_session",
 			sessionDuration:   8 * time.Hour,
 			spURL:             spURL,
@@ -385,9 +388,9 @@ func createTestSPServer(t *testing.T, key *rsa.PrivateKey, cert *x509.Certificat
 
 // testSPHandler simulates the SAML plugin behavior for E2E testing.
 type testSPHandler struct {
-	sessionStore      caddysamldisco.SessionStore
-	metadataStore     caddysamldisco.MetadataStore
-	samlService       *caddysamldisco.SAMLService
+	sessionStore      domain.SessionStore
+	metadataStore     ports.MetadataStore
+	samlService       *caddyadapter.SAMLService
 	sessionCookieName string
 	sessionDuration   time.Duration
 	spURL             string
@@ -433,7 +436,7 @@ func (h *testSPHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create session
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject:     result.Subject,
 		Attributes:  result.Attributes,
 		IdPEntityID: result.IdPEntityID,
@@ -441,7 +444,7 @@ func (h *testSPHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:   time.Now().Add(h.sessionDuration),
 	}
 
-	token, err := h.sessionStore.Create(session)
+	token, err := h.sessionStore.Create(sess)
 	if err != nil {
 		http.Error(w, "session creation failed", http.StatusInternalServerError)
 		return
@@ -523,24 +526,28 @@ func (h *testSPHandler) redirectToIdP(w http.ResponseWriter, r *http.Request) {
 
 // testMetadataStore implements MetadataStore for testing.
 type testMetadataStore struct {
-	idps []caddysamldisco.IdPInfo
+	idps []domain.IdPInfo
 }
 
-func (s *testMetadataStore) GetIdP(entityID string) (*caddysamldisco.IdPInfo, error) {
+func (s *testMetadataStore) GetIdP(entityID string) (*domain.IdPInfo, error) {
 	for i := range s.idps {
 		if s.idps[i].EntityID == entityID {
 			return &s.idps[i], nil
 		}
 	}
-	return nil, caddysamldisco.ErrIdPNotFound
+	return nil, domain.ErrIdPNotFound
 }
 
-func (s *testMetadataStore) ListIdPs(filter string) ([]caddysamldisco.IdPInfo, error) {
+func (s *testMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, error) {
 	return s.idps, nil
 }
 
 func (s *testMetadataStore) Refresh(ctx context.Context) error {
 	return nil
+}
+
+func (s *testMetadataStore) Health() domain.MetadataHealth {
+	return domain.MetadataHealth{IsFresh: true, IdPCount: len(s.idps)}
 }
 
 func mustParseURL(rawURL string) *url.URL {

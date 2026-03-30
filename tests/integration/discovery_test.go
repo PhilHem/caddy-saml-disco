@@ -13,13 +13,16 @@ import (
 	"testing"
 	"time"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
 // loadFileMetadataStore is a helper that creates and loads a file metadata store.
-func loadFileMetadataStore(t *testing.T, path string) *caddysamldisco.FileMetadataStore {
-	store := caddysamldisco.NewFileMetadataStore(path)
+func loadFileMetadataStore(t *testing.T, path string) *metadata.FileMetadataStore {
+	store := metadata.NewFileMetadataStore(path)
 	if err := store.Load(); err != nil {
 		t.Fatalf("load metadata: %v", err)
 	}
@@ -27,9 +30,9 @@ func loadFileMetadataStore(t *testing.T, path string) *caddysamldisco.FileMetada
 }
 
 // testTemplateRenderer creates a template renderer for integration tests.
-func testTemplateRenderer(t *testing.T) *caddysamldisco.TemplateRenderer {
+func testTemplateRenderer(t *testing.T) *caddyadapter.TemplateRenderer {
 	t.Helper()
-	renderer, err := caddysamldisco.NewTemplateRenderer()
+	renderer, err := caddyadapter.NewTemplateRenderer()
 	if err != nil {
 		t.Fatalf("create template renderer: %v", err)
 	}
@@ -40,7 +43,7 @@ func testTemplateRenderer(t *testing.T) *caddysamldisco.TemplateRenderer {
 // lists multiple IdPs from the metadata store.
 func TestDiscoveryFlow_ListIdPs_ReturnsMultipleIdPs(t *testing.T) {
 	// Create plugin with file metadata store (DFN sample has multiple IdPs)
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 
 	// Create test server
@@ -62,7 +65,7 @@ func TestDiscoveryFlow_ListIdPs_ReturnsMultipleIdPs(t *testing.T) {
 
 	// Parse response
 	var result struct {
-		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs []domain.IdPInfo `json:"idps"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
@@ -91,7 +94,7 @@ func TestDiscoveryFlow_ListIdPs_ReturnsMultipleIdPs(t *testing.T) {
 // returns only matching results.
 func TestDiscoveryFlow_SearchIdPs_FiltersResults(t *testing.T) {
 	// Create plugin with file metadata store
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +110,7 @@ func TestDiscoveryFlow_SearchIdPs_FiltersResults(t *testing.T) {
 	defer resp.Body.Close()
 
 	var result struct {
-		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs []domain.IdPInfo `json:"idps"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
@@ -131,30 +134,30 @@ func TestDiscoveryFlow_SelectIdP_StartsAuth(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create in-memory metadata store with test IdP
-	idpInfo := caddysamldisco.IdPInfo{
+	idpInfo := domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
 		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{},
 	}
-	store := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{idpInfo})
+	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpInfo})
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Create plugin
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(store)
 	disco.SetSAMLService(service)
 
@@ -213,28 +216,28 @@ func TestDiscoveryFlow_DiscoUI_SingleIdP_AutoRedirect(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create in-memory store with single IdP
-	idpInfo := caddysamldisco.IdPInfo{
+	idpInfo := domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
 		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{},
 	}
-	store := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{idpInfo})
+	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpInfo})
 
 	// Create SAML service and plugin
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
-	disco := &caddysamldisco.SAMLDisco{}
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(store)
 	disco.SetSAMLService(service)
 
@@ -272,7 +275,7 @@ func TestDiscoveryFlow_DiscoUI_SingleIdP_AutoRedirect(t *testing.T) {
 // shows the selection page when there are multiple IdPs.
 func TestDiscoveryFlow_DiscoUI_MultipleIdPs_ShowsPage(t *testing.T) {
 	// Create plugin with file metadata store (multiple IdPs)
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 	disco.SetTemplateRenderer(testTemplateRenderer(t))
 
@@ -307,7 +310,7 @@ func TestDiscoveryFlow_DiscoUI_MultipleIdPs_ShowsPage(t *testing.T) {
 // TestDiscoveryFlow_SessionInfo_Unauthenticated tests that session info endpoint
 // returns unauthenticated status when there's no session.
 func TestDiscoveryFlow_SessionInfo_Unauthenticated(t *testing.T) {
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		disco.ServeHTTP(w, r, nil)
@@ -345,33 +348,33 @@ func TestDiscoveryFlow_FullFlow_SelectAndAuthenticate(t *testing.T) {
 	testIdP.AddUser("testuser", "password123")
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create in-memory metadata store with test IdP
-	idpInfo := caddysamldisco.IdPInfo{
+	idpInfo := domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
 		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{},
 	}
-	store := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{idpInfo})
+	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpInfo})
 
 	// Create SAML service and register SP with IdP
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
 	metadata, _ := service.GenerateSPMetadata(acsURL)
 	testIdP.AddServiceProviderMetadata("https://sp.example.com", metadata)
 
 	// Create plugin
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(store)
 	disco.SetSAMLService(service)
 
@@ -396,7 +399,7 @@ func TestDiscoveryFlow_FullFlow_SelectAndAuthenticate(t *testing.T) {
 		t.Fatalf("GET /saml/api/idps: %v", err)
 	}
 	var idpResult struct {
-		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs []domain.IdPInfo `json:"idps"`
 	}
 	json.NewDecoder(resp.Body).Decode(&idpResult)
 	resp.Body.Close()
@@ -470,17 +473,17 @@ func TestDiscoveryFlow_FullFlow_SelectAndAuthenticate(t *testing.T) {
 // are redirected to the custom login URL instead of the IdP.
 func TestDiscoveryFlow_LoginRedirect_RedirectsToCustomURL(t *testing.T) {
 	// Load SP credentials for session store
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
 	// Create session store (needed for session checking)
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*3600*1000000000) // 8 hours
+	sessionStore := session.NewCookieSessionStore(key, 8*3600*1000000000) // 8 hours
 
 	// Create plugin with LoginRedirect configured
-	discoWithConfig := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	discoWithConfig := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
 			LoginRedirect:     "/my-custom-login",
 		},
@@ -541,31 +544,31 @@ func TestSelectIdP_SetsRememberCookie(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create in-memory metadata store with test IdP
-	idpInfo := caddysamldisco.IdPInfo{
+	idpInfo := domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
 		SSOBinding:   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
 		Certificates: []string{},
 	}
-	store := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{idpInfo})
+	store := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{idpInfo})
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Create plugin with remember IdP cookie configured
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			RememberIdPCookieName: "saml_last_idp",
 			RememberIdPDuration:   "30d",
 		},
@@ -630,8 +633,8 @@ func TestSelectIdP_SetsRememberCookie(t *testing.T) {
 // the remembered IdP cookie and passes it to the template.
 func TestDiscoveryPage_ReadsRememberCookie(t *testing.T) {
 	// Create plugin with file metadata store (multiple IdPs)
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			RememberIdPCookieName: "saml_last_idp",
 		},
 	}
@@ -672,8 +675,8 @@ func TestDiscoveryPage_ReadsRememberCookie(t *testing.T) {
 // the remembered IdP ID when the cookie is set.
 func TestListIdPs_IncludesRememberedIdP(t *testing.T) {
 	// Create plugin with file metadata store
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			RememberIdPCookieName: "saml_last_idp",
 		},
 	}
@@ -703,7 +706,7 @@ func TestListIdPs_IncludesRememberedIdP(t *testing.T) {
 
 	// Parse response - should now be an object with idps and remembered_idp_id
 	var result struct {
-		IdPs          []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs          []domain.IdPInfo `json:"idps"`
 		RememberedIdP string                   `json:"remembered_idp_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -723,17 +726,17 @@ func TestListIdPs_IncludesRememberedIdP(t *testing.T) {
 // remembered IdP cookie.
 func TestLogout_ClearsRememberCookie(t *testing.T) {
 	// Load SP key for session store
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
 	// Create session store
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Create plugin with remember IdP cookie configured
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName:     "saml_session",
 			RememberIdPCookieName: "saml_last_idp",
 		},
@@ -789,7 +792,7 @@ func TestLogout_ClearsRememberCookie(t *testing.T) {
 // returns German display names when Accept-Language: de is set.
 func TestDiscoveryFlow_MultiLanguage_GermanPreference(t *testing.T) {
 	// Create plugin with DFN sample metadata (has German/English variants)
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -813,14 +816,14 @@ func TestDiscoveryFlow_MultiLanguage_GermanPreference(t *testing.T) {
 	}
 
 	var result struct {
-		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs []domain.IdPInfo `json:"idps"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
 
 	// Find TUM which has different German/English names
-	var tumIdP *caddysamldisco.IdPInfo
+	var tumIdP *domain.IdPInfo
 	for i := range result.IdPs {
 		if result.IdPs[i].EntityID == "https://tumidp.lrz.de/idp/shibboleth" {
 			tumIdP = &result.IdPs[i]
@@ -848,7 +851,7 @@ func TestDiscoveryFlow_MultiLanguage_GermanPreference(t *testing.T) {
 // TestDiscoveryFlow_MultiLanguage_EnglishDefault tests that the JSON API
 // returns English display names by default (no Accept-Language header).
 func TestDiscoveryFlow_MultiLanguage_EnglishDefault(t *testing.T) {
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -864,14 +867,14 @@ func TestDiscoveryFlow_MultiLanguage_EnglishDefault(t *testing.T) {
 	defer resp.Body.Close()
 
 	var result struct {
-		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs []domain.IdPInfo `json:"idps"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
 
 	// Find TUM
-	var tumIdP *caddysamldisco.IdPInfo
+	var tumIdP *domain.IdPInfo
 	for i := range result.IdPs {
 		if result.IdPs[i].EntityID == "https://tumidp.lrz.de/idp/shibboleth" {
 			tumIdP = &result.IdPs[i]
@@ -893,7 +896,7 @@ func TestDiscoveryFlow_MultiLanguage_EnglishDefault(t *testing.T) {
 // TestDiscoveryFlow_MultiLanguage_IncludesAllVariants tests that the JSON API
 // includes the DisplayNames map with all language variants.
 func TestDiscoveryFlow_MultiLanguage_IncludesAllVariants(t *testing.T) {
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -908,14 +911,14 @@ func TestDiscoveryFlow_MultiLanguage_IncludesAllVariants(t *testing.T) {
 	defer resp.Body.Close()
 
 	var result struct {
-		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs []domain.IdPInfo `json:"idps"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
 
 	// Find TUM
-	var tumIdP *caddysamldisco.IdPInfo
+	var tumIdP *domain.IdPInfo
 	for i := range result.IdPs {
 		if result.IdPs[i].EntityID == "https://tumidp.lrz.de/idp/shibboleth" {
 			tumIdP = &result.IdPs[i]
@@ -948,7 +951,7 @@ func TestDiscoveryFlow_MultiLanguage_IncludesAllVariants(t *testing.T) {
 // TestDiscoveryFlow_ListIdPs_ReturnsRegistrationInfo verifies that registration
 // info from mdrpi:RegistrationInfo is included in the API response.
 func TestDiscoveryFlow_ListIdPs_ReturnsRegistrationInfo(t *testing.T) {
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -963,14 +966,14 @@ func TestDiscoveryFlow_ListIdPs_ReturnsRegistrationInfo(t *testing.T) {
 	defer resp.Body.Close()
 
 	var result struct {
-		IdPs []caddysamldisco.IdPInfo `json:"idps"`
+		IdPs []domain.IdPInfo `json:"idps"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
 
 	// Find FU Berlin IdP (has full RegistrationInfo with policies)
-	var fuBerlin *caddysamldisco.IdPInfo
+	var fuBerlin *domain.IdPInfo
 	for i := range result.IdPs {
 		if result.IdPs[i].EntityID == "https://identity.fu-berlin.de/idp-fub" {
 			fuBerlin = &result.IdPs[i]

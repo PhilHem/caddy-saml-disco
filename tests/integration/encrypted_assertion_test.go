@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
@@ -24,17 +26,17 @@ func TestEncryptedAssertion_EndToEnd(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Register SP with IdP (SP metadata includes encryption KeyDescriptor)
 	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
@@ -74,17 +76,17 @@ func TestEncryptedAssertion_EndToEnd(t *testing.T) {
 // TestEncryptedAssertion_ErrorHandling verifies error cases for encrypted assertions.
 func TestEncryptedAssertion_ErrorHandling(t *testing.T) {
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
-	idp := &caddysamldisco.IdPInfo{
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
+	idp := &domain.IdPInfo{
 		EntityID:     "https://idp.example.com",
 		DisplayName:  "Test IdP",
 		SSOURL:       "https://idp.example.com/sso",

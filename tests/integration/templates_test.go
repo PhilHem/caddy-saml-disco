@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 )
 
 // TestTemplates_CustomDir_UsesCustomDiscoveryTemplate verifies that
@@ -39,13 +39,13 @@ func TestTemplates_CustomDir_UsesCustomDiscoveryTemplate(t *testing.T) {
 	}
 
 	// Create renderer with custom directory
-	renderer, err := caddysamldisco.NewTemplateRendererWithDir(tmpDir)
+	renderer, err := caddyadapter.NewTemplateRendererWithDir(tmpDir)
 	if err != nil {
 		t.Fatalf("create renderer: %v", err)
 	}
 
 	// Create plugin with custom renderer
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 	disco.SetTemplateRenderer(renderer)
 
@@ -86,7 +86,7 @@ func TestTemplates_CustomDir_UsesCustomDiscoveryTemplate(t *testing.T) {
 // TestTemplates_DefaultTemplate_HasExpectedStructure verifies that
 // the embedded default template renders with expected elements.
 func TestTemplates_DefaultTemplate_HasExpectedStructure(t *testing.T) {
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 	disco.SetTemplateRenderer(testTemplateRenderer(t))
 
@@ -135,13 +135,13 @@ func TestTemplates_CustomDir_FallsBackForMissingTemplate(t *testing.T) {
 	}
 
 	// Should succeed even without error.html
-	renderer, err := caddysamldisco.NewTemplateRendererWithDir(tmpDir)
+	renderer, err := caddyadapter.NewTemplateRendererWithDir(tmpDir)
 	if err != nil {
 		t.Fatalf("create renderer should succeed with partial custom templates: %v", err)
 	}
 
 	// Verify disco uses custom
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(loadFileMetadataStore(t, "../../testdata/dfn-aai-sample.xml"))
 	disco.SetTemplateRenderer(renderer)
 

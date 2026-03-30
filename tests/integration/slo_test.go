@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
@@ -23,17 +26,17 @@ func TestSLOFlow_SPInitiated(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create metadata store with IdP that has SLO
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
@@ -43,17 +46,17 @@ func TestSLOFlow_SPInitiated(t *testing.T) {
 		Certificates: []string{}, // Will be populated from IdP
 	}
 
-	metadataStore := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{*idpInfo})
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{*idpInfo})
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Create plugin instance (simplified for testing)
 	// Note: Full integration would require setting up Caddy server
 	// This test verifies the SLO flow components work together
 
 	// Test CreateLogoutRequest
-	session := &caddysamldisco.Session{
+	session := &domain.Session{
 		Subject:      "testuser@example.com",
 		NameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
 		SessionIndex: "session-123",
@@ -90,17 +93,17 @@ func TestSLOFlow_IdPInitiated(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create IdPInfo with SLO
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
@@ -111,7 +114,7 @@ func TestSLOFlow_IdPInitiated(t *testing.T) {
 	}
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Test CreateLogoutResponse
 	sloURL, _ := url.Parse("https://sp.example.com/saml/slo")
@@ -139,7 +142,7 @@ func TestSLOFlow_LogoutEndpoint_RedirectsToSLO(t *testing.T) {
 	defer testIdP.Close()
 
 	// Create IdPInfo with SLO
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
@@ -149,7 +152,7 @@ func TestSLOFlow_LogoutEndpoint_RedirectsToSLO(t *testing.T) {
 		Certificates: []string{},
 	}
 
-	metadataStore := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{*idpInfo})
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{*idpInfo})
 
 	// Verify IdP has SLO URL
 	idps, err := metadataStore.ListIdPs("")

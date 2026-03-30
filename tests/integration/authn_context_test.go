@@ -13,7 +13,9 @@ import (
 
 	"github.com/crewjam/saml"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
 
@@ -61,20 +63,20 @@ func TestAuthnContextFlow_MFARequest(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
-	cert, err := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
 	if err != nil {
 		t.Fatalf("load SP cert: %v", err)
 	}
 
 	// Create SAML service
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
 	// Create IdPInfo from test IdP
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
@@ -85,7 +87,7 @@ func TestAuthnContextFlow_MFARequest(t *testing.T) {
 	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
 
 	// Test with MFA context request
-	opts := &caddysamldisco.AuthnOptions{
+	opts := &domain.AuthnOptions{
 		RequestedAuthnContext:  []string{"urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract"},
 		AuthnContextComparison: "minimum",
 	}
@@ -130,11 +132,11 @@ func TestAuthnContextFlow_WithoutContext(t *testing.T) {
 	defer testIdP.Close()
 
 	// Load SP credentials
-	key, _ := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
-	cert, _ := caddysamldisco.LoadCertificate("../../testdata/sp-cert.pem")
-	service := caddysamldisco.NewSAMLService("https://sp.example.com", key, cert)
+	key, _ := session.LoadPrivateKey("../../testdata/sp-key.pem")
+	cert, _ := session.LoadCertificate("../../testdata/sp-cert.pem")
+	service := caddyadapter.NewSAMLService("https://sp.example.com", key, cert)
 
-	idpInfo := &caddysamldisco.IdPInfo{
+	idpInfo := &domain.IdPInfo{
 		EntityID:     testIdP.BaseURL(),
 		DisplayName:  "Test IdP",
 		SSOURL:       testIdP.SSOURL(),
@@ -145,7 +147,7 @@ func TestAuthnContextFlow_WithoutContext(t *testing.T) {
 	acsURL, _ := url.Parse("https://sp.example.com/saml/acs")
 
 	// Test without AuthnContext
-	opts := &caddysamldisco.AuthnOptions{
+	opts := &domain.AuthnOptions{
 		RequestedAuthnContext: []string{}, // empty
 	}
 

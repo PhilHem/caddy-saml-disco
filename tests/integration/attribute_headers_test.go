@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 // capturedHeaders records headers seen by downstream handler
@@ -33,16 +35,16 @@ var _ caddyhttp.Handler = (*capturedHeaders)(nil)
 // are correctly mapped to HTTP headers and reach downstream handlers.
 func TestAttributeHeaders_ReachDownstreamHandler(t *testing.T) {
 	// Load SP credentials for session store
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
 	// Create session store
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Create session with attributes
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"mail": "user@example.com",
@@ -53,16 +55,16 @@ func TestAttributeHeaders_ReachDownstreamHandler(t *testing.T) {
 	}
 
 	// Create session token
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// Create SAMLDisco with attribute_headers configured
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
 		},
@@ -101,15 +103,15 @@ func TestAttributeHeaders_ReachDownstreamHandler(t *testing.T) {
 // TestAttributeHeaders_OIDResolution tests that attribute mapping works
 // regardless of whether the IdP sends OID or friendly name.
 func TestAttributeHeaders_OIDResolution(t *testing.T) {
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Session has OID form, config uses friendly name
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"urn:oid:0.9.2342.19200300.100.1.3": "user@example.com", // mail OID
@@ -119,16 +121,16 @@ func TestAttributeHeaders_OIDResolution(t *testing.T) {
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
 
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// Config maps friendly name "mail" → X-Mail
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Mail"},
 			},
 		},
@@ -163,14 +165,14 @@ func TestAttributeHeaders_OIDResolution(t *testing.T) {
 // TestAttributeHeaders_StripsIncomingHeaders tests that incoming spoofed
 // headers are stripped before downstream handlers receive the request.
 func TestAttributeHeaders_StripsIncomingHeaders(t *testing.T) {
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"role": "member",
@@ -180,15 +182,15 @@ func TestAttributeHeaders_StripsIncomingHeaders(t *testing.T) {
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
 
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "role", HeaderName: "X-Role"},
 			},
 		},
@@ -225,16 +227,16 @@ func TestAttributeHeaders_StripsIncomingHeaders(t *testing.T) {
 // TestAttributeHeaders_MultipleMappings_CustomSeparator tests multiple
 // attribute mappings with custom separator.
 func TestAttributeHeaders_MultipleMappings_CustomSeparator(t *testing.T) {
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Note: Session stores single values, but we'll simulate multiple values
 	// by using the entitlement attribute which can have multiple values
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"urn:oid:1.3.6.1.4.1.5923.1.1.1.7": "admin;user;editor", // eduPersonEntitlement
@@ -245,16 +247,16 @@ func TestAttributeHeaders_MultipleMappings_CustomSeparator(t *testing.T) {
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
 
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// Map entitlement with custom separator (comma instead of semicolon)
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{
 					SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.7",
 					HeaderName:    "X-Entitlements",
@@ -304,7 +306,7 @@ func TestAttributeHeaders_MultipleMappings_CustomSeparator(t *testing.T) {
 // TestAttributeHeaders_Property_NoHeaderInjection uses property-based testing
 // to verify that no header injection is possible via attribute values.
 func TestAttributeHeaders_Property_NoHeaderInjection(t *testing.T) {
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
@@ -315,9 +317,9 @@ func TestAttributeHeaders_Property_NoHeaderInjection(t *testing.T) {
 			return true
 		}
 
-		sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+		sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
-		session := &caddysamldisco.Session{
+		sess := &domain.Session{
 			Subject: "user@example.com",
 			Attributes: map[string]string{
 				"test": attrValue,
@@ -327,15 +329,15 @@ func TestAttributeHeaders_Property_NoHeaderInjection(t *testing.T) {
 			ExpiresAt:   time.Now().Add(8 * time.Hour),
 		}
 
-		token, err := sessionStore.Create(session)
+		token, err := sessionStore.Create(sess)
 		if err != nil {
 			return true // Skip on error
 		}
 
-		disco := &caddysamldisco.SAMLDisco{
-			Config: caddysamldisco.Config{
+		disco := &caddyadapter.SAMLDisco{
+			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				AttributeHeaders: []caddysamldisco.AttributeMapping{
+				AttributeHeaders: []caddyadapter.AttributeMapping{
 					{SAMLAttribute: "test", HeaderName: "X-Test"},
 				},
 			},
@@ -376,7 +378,7 @@ func TestAttributeHeaders_Property_NoHeaderInjection(t *testing.T) {
 // TestAttributeHeaders_Property_OnlyConfiguredHeaders uses property-based testing
 // to verify that only configured headers appear in downstream requests.
 func TestAttributeHeaders_Property_OnlyConfiguredHeaders(t *testing.T) {
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
@@ -393,9 +395,9 @@ func TestAttributeHeaders_Property_OnlyConfiguredHeaders(t *testing.T) {
 			return true
 		}
 
-		sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+		sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
-		session := &caddysamldisco.Session{
+		sess := &domain.Session{
 			Subject: "user@example.com",
 			Attributes: map[string]string{
 				attrKey: attrValue,
@@ -405,15 +407,15 @@ func TestAttributeHeaders_Property_OnlyConfiguredHeaders(t *testing.T) {
 			ExpiresAt:   time.Now().Add(8 * time.Hour),
 		}
 
-		token, err := sessionStore.Create(session)
+		token, err := sessionStore.Create(sess)
 		if err != nil {
 			return true // Skip on error
 		}
 
-		disco := &caddysamldisco.SAMLDisco{
-			Config: caddysamldisco.Config{
+		disco := &caddyadapter.SAMLDisco{
+			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				AttributeHeaders: []caddysamldisco.AttributeMapping{
+				AttributeHeaders: []caddyadapter.AttributeMapping{
 					{SAMLAttribute: attrKey, HeaderName: headerName},
 				},
 			},
@@ -473,14 +475,14 @@ func sanitizeForHeaderName(s string) string {
 
 // TestAttributeHeaders_HeaderPrefix tests that header prefix is correctly applied.
 func TestAttributeHeaders_HeaderPrefix(t *testing.T) {
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"mail": "user@example.com",
@@ -490,17 +492,17 @@ func TestAttributeHeaders_HeaderPrefix(t *testing.T) {
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
 
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// Configure with header prefix
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
 			HeaderPrefix:      "X-Saml-",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "User"}, // No X- needed with prefix
 			},
 		},
@@ -540,14 +542,14 @@ func TestAttributeHeaders_HeaderPrefix(t *testing.T) {
 // TestAttributeHeaders_HeaderPrefix_StripsIncomingHeaders tests that incoming
 // headers with prefixed names are stripped.
 func TestAttributeHeaders_HeaderPrefix_StripsIncomingHeaders(t *testing.T) {
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"role": "member",
@@ -557,16 +559,16 @@ func TestAttributeHeaders_HeaderPrefix_StripsIncomingHeaders(t *testing.T) {
 		ExpiresAt:   time.Now().Add(8 * time.Hour),
 	}
 
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
 			HeaderPrefix:      "X-Saml-",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "role", HeaderName: "Role"},
 			},
 		},

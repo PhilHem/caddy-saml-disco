@@ -8,23 +8,23 @@ import (
 	"testing"
 	"time"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
-	"github.com/philiph/caddy-saml-disco/internal/entitlements"
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 // Cycle 10: Integration Test - End-to-End Combined Headers
 // Tests that SAML attributes and local entitlements are combined and both reach downstream handlers
 func TestCombinedAttributes_ReachDownstreamHandler(t *testing.T) {
 	// Load SP credentials for session store
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
 	// Create session store
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Create entitlement store with test data
 	entitlementStore := entitlements.NewInMemoryEntitlementStore()
@@ -41,7 +41,7 @@ func TestCombinedAttributes_ReachDownstreamHandler(t *testing.T) {
 	}
 
 	// Create session with SAML attributes
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"mail":                   "user@example.com",
@@ -53,16 +53,16 @@ func TestCombinedAttributes_ReachDownstreamHandler(t *testing.T) {
 	}
 
 	// Create session token
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// Create SAMLDisco with both attribute_headers and entitlement_headers configured
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
 			EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
@@ -119,16 +119,16 @@ func TestCombinedAttributes_ReachDownstreamHandler(t *testing.T) {
 // SAML attributes still work when entitlements are not configured
 func TestCombinedAttributes_WorksWithoutEntitlements(t *testing.T) {
 	// Load SP credentials for session store
-	key, err := caddysamldisco.LoadPrivateKey("../../testdata/sp-key.pem")
+	key, err := session.LoadPrivateKey("../../testdata/sp-key.pem")
 	if err != nil {
 		t.Fatalf("load SP key: %v", err)
 	}
 
 	// Create session store
-	sessionStore := caddysamldisco.NewCookieSessionStore(key, 8*time.Hour)
+	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	// Create session with SAML attributes
-	session := &caddysamldisco.Session{
+	sess := &domain.Session{
 		Subject: "user@example.com",
 		Attributes: map[string]string{
 			"mail": "user@example.com",
@@ -139,16 +139,16 @@ func TestCombinedAttributes_WorksWithoutEntitlements(t *testing.T) {
 	}
 
 	// Create session token
-	token, err := sessionStore.Create(session)
+	token, err := sessionStore.Create(sess)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	// Create SAMLDisco with only attribute_headers (no entitlements)
-	disco := &caddysamldisco.SAMLDisco{
-		Config: caddysamldisco.Config{
+	disco := &caddyadapter.SAMLDisco{
+		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddysamldisco.AttributeMapping{
+			AttributeHeaders: []caddyadapter.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
 		},

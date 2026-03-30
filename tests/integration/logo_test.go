@@ -9,7 +9,10 @@ import (
 	"net/url"
 	"testing"
 
-	caddysamldisco "github.com/philiph/caddy-saml-disco"
+	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/logo"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
 )
 
 // TestLogoProxy_FullFlow tests the complete logo proxy flow:
@@ -29,17 +32,17 @@ func TestLogoProxy_FullFlow(t *testing.T) {
 	defer logoServer.Close()
 
 	// Create metadata store with IdP that has logo URL
-	metadataStore := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{{
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{{
 		EntityID:    "https://idp.example.com",
 		DisplayName: "Example IdP",
 		LogoURL:     logoServer.URL + "/logo.png",
 	}})
 
 	// Create caching logo store
-	logoStore := caddysamldisco.NewCachingLogoStore(metadataStore, nil)
+	logoStore := logo.NewCachingLogoStore(metadataStore, nil)
 
 	// Create plugin
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(metadataStore)
 	disco.SetLogoStore(logoStore)
 
@@ -94,10 +97,10 @@ func TestLogoProxy_FullFlow(t *testing.T) {
 
 // TestLogoProxy_NotFound tests 404 response for unknown IdP.
 func TestLogoProxy_NotFound(t *testing.T) {
-	metadataStore := caddysamldisco.NewInMemoryMetadataStore([]caddysamldisco.IdPInfo{})
-	logoStore := caddysamldisco.NewCachingLogoStore(metadataStore, nil)
+	metadataStore := metadata.NewInMemoryMetadataStore([]domain.IdPInfo{})
+	logoStore := logo.NewCachingLogoStore(metadataStore, nil)
 
-	disco := &caddysamldisco.SAMLDisco{}
+	disco := &caddyadapter.SAMLDisco{}
 	disco.SetMetadataStore(metadataStore)
 	disco.SetLogoStore(logoStore)
 

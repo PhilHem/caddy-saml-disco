@@ -1,8 +1,5 @@
 // Package caddysamldisco provides a Caddy v2 plugin for SAML Service Provider
 // authentication with Discovery Service support.
-//
-// Type and function re-exports are in types.go and functions.go.
-// Test helpers are in testing.go.
 package caddysamldisco
 
 import (
