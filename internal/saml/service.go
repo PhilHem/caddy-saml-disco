@@ -10,7 +10,9 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/crewjam/saml"
+	"go.uber.org/zap"
 
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
@@ -25,6 +27,7 @@ type SAMLService struct {
 	metadataSigner ports.MetadataSigner // optional signer for SP metadata
 	sloURL         *url.URL             // optional SLO URL for SP metadata
 	requestTTL     time.Duration        // how long a pending AuthnRequest ID is kept
+	logger         *zap.Logger          // optional structured logger
 }
 
 // AuthResult contains the result of processing a SAML assertion.
@@ -76,6 +79,20 @@ func (s *SAMLService) SetSLOURL(sloURL *url.URL) {
 // SetRequestTTL sets how long a pending AuthnRequest ID is retained before expiry.
 func (s *SAMLService) SetRequestTTL(ttl time.Duration) {
 	s.requestTTL = ttl
+}
+
+// SetLogger sets the structured logger used for diagnostic output.
+// If not set, logging is suppressed (no-op logger).
+func (s *SAMLService) SetLogger(logger *zap.Logger) {
+	s.logger = logger
+}
+
+// log returns the logger or a no-op logger when none is configured.
+func (s *SAMLService) log() *zap.Logger {
+	if s.logger != nil {
+		return s.logger
+	}
+	return zap.NewNop()
 }
 
 // GetEntityIDStore returns the request store cast to the EntityID-aware interface,
@@ -418,20 +435,103 @@ func (s *SAMLService) CreateLogoutRequest(session *domain.Session, idp *domain.I
 	return sp.MakeRedirectLogoutRequest(session.Subject, relayState)
 }
 
+// samlStatusSuccess is the SAML 2.0 status code URI for a successful operation.
+const samlStatusSuccess = "urn:oasis:names:tc:SAML:2.0:status:Success"
+
 // HandleLogoutResponse validates a LogoutResponse from the IdP.
 // This is called when the IdP redirects back after processing a LogoutRequest.
+//
+// Validation failures are logged as warnings but do not prevent the caller
+// from continuing with local logout — the logout flow must complete even when
+// the IdP response is malformed or carries a non-success status.
 func (s *SAMLService) HandleLogoutResponse(r *http.Request, sloURL *url.URL, idp *domain.IdPInfo) error {
-	// Parse LogoutResponse from query parameter
 	samlResponse := r.URL.Query().Get("SAMLResponse")
 	if samlResponse == "" {
 		return fmt.Errorf("missing SAMLResponse parameter")
 	}
 
-	// For now, we just verify the response exists
-	// Full validation would require parsing the SAML XML and checking status
-	// This is a basic implementation - can be enhanced with full XML parsing if needed
-	if len(samlResponse) == 0 {
-		return fmt.Errorf("empty SAMLResponse")
+	// Base64-decode the response (redirect binding uses standard base64).
+	xmlBytes, err := base64.StdEncoding.DecodeString(samlResponse)
+	if err != nil {
+		return fmt.Errorf("base64 decode LogoutResponse: %w", err)
+	}
+
+	// Parse the XML with etree for namespace-aware element access.
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(xmlBytes); err != nil {
+		return fmt.Errorf("parse LogoutResponse XML: %w", err)
+	}
+	root := doc.Root()
+	if root == nil {
+		return fmt.Errorf("LogoutResponse has no root element")
+	}
+
+	// Validate Issuer — the response must come from the expected IdP.
+	var issuerText string
+	for _, tag := range []string{"saml:Issuer", "Issuer"} {
+		if el := root.FindElement(tag); el != nil {
+			issuerText = el.Text()
+			break
+		}
+	}
+	if issuerText == "" {
+		s.log().Warn("LogoutResponse has no Issuer element",
+			zap.String("idp_entity_id", idp.EntityID),
+		)
+		return fmt.Errorf("LogoutResponse missing Issuer")
+	}
+	if issuerText != idp.EntityID {
+		s.log().Warn("LogoutResponse Issuer does not match expected IdP",
+			zap.String("expected", idp.EntityID),
+			zap.String("got", issuerText),
+		)
+		return fmt.Errorf("LogoutResponse Issuer %q does not match IdP %q", issuerText, idp.EntityID)
+	}
+
+	// Check InResponseTo — if present, it should match a pending logout request ID.
+	// We check but do not hard-fail if the store doesn't contain the ID, because
+	// the request store may have expired it or the implementation may not track
+	// logout request IDs separately from authn request IDs.
+	inResponseTo := root.SelectAttrValue("InResponseTo", "")
+	if inResponseTo != "" {
+		ids := s.requestStore.GetAll()
+		found := false
+		for _, id := range ids {
+			if id == inResponseTo {
+				found = true
+				break
+			}
+		}
+		if !found {
+			s.log().Warn("LogoutResponse InResponseTo not found in pending requests",
+				zap.String("in_response_to", inResponseTo),
+				zap.String("idp_entity_id", idp.EntityID),
+			)
+			// Defense-in-depth: log the warning but don't block the logout.
+		}
+	}
+
+	// Validate StatusCode — must be Success for a clean SLO round-trip.
+	statusCode := ""
+	// Try both prefixed and unprefixed paths.
+	for _, path := range []string{"samlp:Status/samlp:StatusCode", "Status/StatusCode"} {
+		if el := root.FindElement(path); el != nil {
+			statusCode = el.SelectAttrValue("Value", "")
+			break
+		}
+	}
+	if statusCode == "" {
+		s.log().Warn("LogoutResponse has no StatusCode element",
+			zap.String("idp_entity_id", idp.EntityID),
+		)
+		return fmt.Errorf("LogoutResponse missing StatusCode")
+	}
+	if statusCode != samlStatusSuccess {
+		s.log().Warn("LogoutResponse StatusCode is not Success",
+			zap.String("status_code", statusCode),
+			zap.String("idp_entity_id", idp.EntityID),
+		)
+		return fmt.Errorf("LogoutResponse StatusCode %q is not Success", statusCode)
 	}
 
 	return nil

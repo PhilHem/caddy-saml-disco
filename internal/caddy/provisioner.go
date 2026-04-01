@@ -94,6 +94,7 @@ func newSessionAndSAMLFromConfig(cfg *config.Config, logger *zap.Logger, signMet
 			return nil, nil, 0, fmt.Errorf("load SP certificate: %w", err)
 		}
 		samlService = samlsvc.NewSAMLServiceWithStore(cfg.EntityID, privateKey, certificate, getSharedRequestStore())
+		samlService.SetLogger(logger)
 		if cfg.RequestTTL != "" {
 			requestTTL, err := time.ParseDuration(cfg.RequestTTL)
 			if err != nil {
