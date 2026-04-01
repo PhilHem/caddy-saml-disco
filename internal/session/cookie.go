@@ -15,6 +15,11 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/ports"
 )
 
+// currentSessionVersion is the JWT schema version written to all new tokens.
+// Tokens with a different or missing version are rejected at decode time,
+// forcing re-authentication after a binary upgrade that changes the schema.
+const currentSessionVersion = 1
+
 // CookieSessionStore implements SessionStore using JWT tokens.
 // Tokens are signed with RSA (RS256) and are stateless.
 type CookieSessionStore struct {
@@ -25,6 +30,7 @@ type CookieSessionStore struct {
 // sessionClaims defines the JWT claims structure for sessions.
 type sessionClaims struct {
 	jwt.RegisteredClaims
+	Version      int               `json:"ver"`
 	IdPEntityID  string            `json:"idp"`
 	Attributes   map[string]string `json:"attrs,omitempty"`
 	NameIDFormat string            `json:"nameid_format,omitempty"`
@@ -48,6 +54,7 @@ func (s *CookieSessionStore) Create(session *domain.Session) (string, error) {
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.duration)),
 		},
+		Version:      currentSessionVersion,
 		IdPEntityID:  session.IdPEntityID,
 		Attributes:   session.Attributes,
 		NameIDFormat: session.NameIDFormat,
@@ -72,6 +79,10 @@ func (s *CookieSessionStore) Get(token string) (*domain.Session, error) {
 
 	claims, ok := parsed.Claims.(*sessionClaims)
 	if !ok || !parsed.Valid {
+		return nil, ports.ErrSessionNotFound
+	}
+
+	if claims.Version != currentSessionVersion {
 		return nil, ports.ErrSessionNotFound
 	}
 
