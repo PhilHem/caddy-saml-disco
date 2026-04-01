@@ -26,9 +26,8 @@ type FileMetadataStore struct {
 	metricsRecorder              ports.MetricsRecorder
 	clock                        Clock // for time operations (defaults to RealClock)
 
-	mu         sync.RWMutex
-	idps       []domain.IdPInfo // Supports multiple IdPs from aggregate metadata
-	validUntil *time.Time       // validUntil from metadata (nil if not present)
+	mu       sync.RWMutex
+	snapshot domain.TimeBound[[]domain.IdPInfo] // IdP data with optional expiry
 }
 
 // NewFileMetadataStore creates a new FileMetadataStore.
@@ -54,7 +53,8 @@ func (s *FileMetadataStore) Load() error {
 	err := s.Refresh(context.Background())
 	if err == nil && s.logger != nil {
 		s.mu.RLock()
-		idpCount := len(s.idps)
+		idps, _ := s.snapshot.ValueWithGrace(s.clock.Now())
+		idpCount := len(idps)
 		s.mu.RUnlock()
 		s.logger.Info("metadata loaded",
 			zap.String("source", s.path),
@@ -65,14 +65,23 @@ func (s *FileMetadataStore) Load() error {
 }
 
 // GetIdP returns the IdP if the entity ID matches.
+// Uses stale-serve policy: returns data even if validUntil has passed, but logs a warning.
 func (s *FileMetadataStore) GetIdP(entityID string) (*domain.IdPInfo, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	idps, fresh := s.snapshot.ValueWithGrace(s.clock.Now())
+	validUntil := s.snapshot.ValidUntil()
+	s.mu.RUnlock()
 
-	for i := range s.idps {
-		if s.idps[i].EntityID == entityID {
+	if !fresh && s.logger != nil {
+		s.logger.Warn("serving stale metadata: validUntil has passed",
+			zap.String("source", s.path),
+			zap.Time("valid_until", validUntil))
+	}
+
+	for i := range idps {
+		if idps[i].EntityID == entityID {
 			// Return a copy to prevent mutation
-			idp := s.idps[i]
+			idp := idps[i]
 			return &idp, nil
 		}
 	}
@@ -83,12 +92,21 @@ func (s *FileMetadataStore) GetIdP(entityID string) (*domain.IdPInfo, error) {
 // ListIdPs returns all IdPs, optionally filtered by a search term.
 // Searches across EntityID, DisplayName, and all DisplayNames language variants.
 // Always returns an empty slice (not nil) when no IdPs match.
+// Uses stale-serve policy: returns data even if validUntil has passed, but logs a warning.
 func (s *FileMetadataStore) ListIdPs(filter string) ([]domain.IdPInfo, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	idps, fresh := s.snapshot.ValueWithGrace(s.clock.Now())
+	validUntil := s.snapshot.ValidUntil()
+	s.mu.RUnlock()
+
+	if !fresh && s.logger != nil {
+		s.logger.Warn("serving stale metadata: validUntil has passed",
+			zap.String("source", s.path),
+			zap.Time("valid_until", validUntil))
+	}
 
 	result := make([]domain.IdPInfo, 0)
-	for _, idp := range s.idps {
+	for _, idp := range idps {
 		if domain.MatchesSearch(&idp, filter) {
 			result = append(result, idp)
 		}
@@ -124,9 +142,12 @@ func (s *FileMetadataStore) Refresh(ctx context.Context) error {
 		return err
 	}
 
+	var validUntil time.Time
+	if result.ValidUntil != nil {
+		validUntil = *result.ValidUntil
+	}
 	s.mu.Lock()
-	s.idps = result.IdPs
-	s.validUntil = result.ValidUntil
+	s.snapshot = domain.NewTimeBound(result.IdPs, validUntil)
 	s.mu.Unlock()
 
 	if s.metricsRecorder != nil {
@@ -239,11 +260,18 @@ func applyFiltersAndCollectFailures(
 // Health returns the health status of the file metadata store.
 func (s *FileMetadataStore) Health() domain.MetadataHealth {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	idps, _ := s.snapshot.ValueWithGrace(s.clock.Now())
+	validUntil := s.snapshot.ValidUntil()
+	s.mu.RUnlock()
+
+	var validUntilPtr *time.Time
+	if !validUntil.IsZero() {
+		validUntilPtr = &validUntil
+	}
 	return domain.MetadataHealth{
-		IsFresh:            len(s.idps) > 0,
-		IdPCount:           len(s.idps),
-		MetadataValidUntil: s.validUntil,
+		IsFresh:            len(idps) > 0,
+		IdPCount:           len(idps),
+		MetadataValidUntil: validUntilPtr,
 	}
 }
 
