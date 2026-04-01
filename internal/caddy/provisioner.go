@@ -172,8 +172,7 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 			if err != nil {
 				return fmt.Errorf("parse entitlements_refresh_interval: %w", err)
 			}
-			cancel := entitlements.StartRefresh(entitlementStore, interval, s.logger)
-			spCfg.entitlementRefreshCancel = cancel
+			spCfg.entitlementRefreshWorker = entitlements.StartRefresh(entitlementStore, interval, s.logger)
 			s.logger.Info("entitlements background refresh enabled",
 				zap.String("hostname", spCfg.Hostname), zap.String("file", spCfg.EntitlementsFile),
 				zap.Duration("interval", interval))
@@ -210,8 +209,8 @@ func (s *SAMLDisco) Cleanup() error {
 				return err
 			}
 		}
-		if sp.entitlementRefreshCancel != nil {
-			sp.entitlementRefreshCancel()
+		if sp.entitlementRefreshWorker != nil {
+			sp.entitlementRefreshWorker.Close()
 		}
 	}
 	return nil

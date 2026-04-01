@@ -1,7 +1,6 @@
 package caddy
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
 	samlsvc "github.com/philiph/caddy-saml-disco/internal/saml"
+	"github.com/philiph/caddy-saml-disco/internal/worker"
 )
 
 type SPConfig struct {
@@ -25,7 +25,7 @@ type SPConfig struct {
 	headerPrefixSnapshot       string
 	attributeHeadersSnapshot   []domain.AttributeMapping
 	entitlementHeadersSnapshot []httputil.EntitlementHeaderMapping
-	entitlementRefreshCancel   context.CancelFunc
+	entitlementRefreshWorker   *worker.SupervisedWorker
 }
 
 func (c *SPConfig) Validate() error {
