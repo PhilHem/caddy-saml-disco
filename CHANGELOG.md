@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.10] - 2026-04-02
+
+### Added
+- Background goroutines (metadata refresh, request cleanup, entitlement refresh) now recover from panics and restart automatically ([#80](https://github.com/PhilHem/caddy-saml-disco/issues/80), [#81](https://github.com/PhilHem/caddy-saml-disco/issues/81), [#82](https://github.com/PhilHem/caddy-saml-disco/issues/82), [#83](https://github.com/PhilHem/caddy-saml-disco/issues/83))
+- Logo cache is now bounded with LRU eviction, preventing unbounded memory growth ([#84](https://github.com/PhilHem/caddy-saml-disco/issues/84), [#85](https://github.com/PhilHem/caddy-saml-disco/issues/85))
+- SLO LogoutResponse is now validated: base64 decode, XML parse, Issuer match, and StatusCode check ([#51](https://github.com/PhilHem/caddy-saml-disco/issues/51), [#86](https://github.com/PhilHem/caddy-saml-disco/issues/86))
+- Expired metadata is detected at serve time with structured warning logs, not just at parse time ([#87](https://github.com/PhilHem/caddy-saml-disco/issues/87))
+- JWT sessions include a schema version claim; tokens from older schemas force re-authentication instead of silent degradation ([#88](https://github.com/PhilHem/caddy-saml-disco/issues/88))
+
 ## [0.19.9] - 2026-04-01
 
 ### Changed
