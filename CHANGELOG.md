@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.9] - 2026-04-01
+
+### Changed
+- Single-SP and multi-SP modes unified into one codepath; single-SP is now a wildcard entry in the SP registry ([#64](https://github.com/PhilHem/caddy-saml-disco/issues/64), [#65](https://github.com/PhilHem/caddy-saml-disco/issues/65))
+- Entitlement header rollback is now always strict: on entitlement lookup failure, no partial headers reach downstream ([#66](https://github.com/PhilHem/caddy-saml-disco/issues/66))
+- SP configuration extracted to `internal/config/` package, decoupled from Caddy types ([#69](https://github.com/PhilHem/caddy-saml-disco/issues/69), [#71](https://github.com/PhilHem/caddy-saml-disco/issues/71))
+- Authentication and discovery slices now own their HTTP lifecycle via adapters ([#72](https://github.com/PhilHem/caddy-saml-disco/issues/72), [#74](https://github.com/PhilHem/caddy-saml-disco/issues/74))
+- Shared request store isolated behind `internal/caddy/internal/sharedstate/` ([#70](https://github.com/PhilHem/caddy-saml-disco/issues/70))
+- SAML service accepts request store via constructor instead of creating its own
+- Caddyfile parser decomposed into grouped sub-parsers (auth, metadata, session, headers, entitlements, UI, metrics)
+
+### Removed
+- All re-export shims and type aliases from caddy/ ([#44](https://github.com/PhilHem/caddy-saml-disco/issues/44), [#59](https://github.com/PhilHem/caddy-saml-disco/issues/59), [#61](https://github.com/PhilHem/caddy-saml-disco/issues/61), [#62](https://github.com/PhilHem/caddy-saml-disco/issues/62))
+- Duplicate ForSP method variants and snapshot fallback pattern ([#67](https://github.com/PhilHem/caddy-saml-disco/issues/67))
+- Duplicate template sources (caddy/templates/ deleted; discovery/ is the single source) ([#45](https://github.com/PhilHem/caddy-saml-disco/issues/45))
+
 ## [0.19.8] - 2026-03-31
 
 ### Changed
