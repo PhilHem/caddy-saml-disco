@@ -10,8 +10,10 @@ import (
 	"testing/quick"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // generateTestKey generates a test RSA key pair.
@@ -311,5 +313,110 @@ func TestCookieSessionStore_Property_Roundtrip(t *testing.T) {
 
 	if err := quick.Check(f, &quick.Config{MaxCount: 100}); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestCookieSessionStore_Version_Roundtrip verifies that a token created with the
+// current schema version can be decoded successfully.
+func TestCookieSessionStore_Version_Roundtrip(t *testing.T) {
+	tra.RequireLegacy(t)
+
+	key := generateTestKey(t)
+	store := NewCookieSessionStore(key, time.Hour)
+
+	session := &domain.Session{
+		Subject:     "user@example.com",
+		IdPEntityID: "https://idp.example.com",
+	}
+
+	token, err := store.Create(session)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	retrieved, err := store.Get(token)
+	if err != nil {
+		t.Fatalf("Get() returned error for current-version token: %v", err)
+	}
+	if retrieved.Subject != session.Subject {
+		t.Errorf("Subject = %q, want %q", retrieved.Subject, session.Subject)
+	}
+}
+
+// TestCookieSessionStore_Version_MissingRejectsToken verifies that a JWT without a
+// "ver" claim (e.g. produced by an older binary) is rejected with ErrSessionNotFound.
+func TestCookieSessionStore_Version_MissingRejectsToken(t *testing.T) {
+	tra.RequireLegacy(t)
+
+	key := generateTestKey(t)
+	store := NewCookieSessionStore(key, time.Hour)
+
+	// Craft a token using a claims struct that has no ver field, mimicking an old binary.
+	type legacyClaims struct {
+		jwt.RegisteredClaims
+		IdPEntityID string `json:"idp"`
+	}
+
+	now := time.Now()
+	claims := legacyClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "user@example.com",
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		},
+		IdPEntityID: "https://idp.example.com",
+	}
+
+	raw, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		t.Fatalf("failed to sign legacy token: %v", err)
+	}
+
+	_, err = store.Get(raw)
+	if err == nil {
+		t.Fatal("Get() should reject token with missing ver claim")
+	}
+	if err != ports.ErrSessionNotFound {
+		t.Errorf("Get() error = %v, want %v", err, ports.ErrSessionNotFound)
+	}
+}
+
+// TestCookieSessionStore_Version_WrongVersionRejectsToken verifies that a JWT with a
+// ver claim that doesn't match currentSessionVersion is rejected.
+func TestCookieSessionStore_Version_WrongVersionRejectsToken(t *testing.T) {
+	tra.RequireLegacy(t)
+
+	key := generateTestKey(t)
+	store := NewCookieSessionStore(key, time.Hour)
+
+	// Craft a token with a future/unknown version number.
+	type futureVersionClaims struct {
+		jwt.RegisteredClaims
+		Version     int    `json:"ver"`
+		IdPEntityID string `json:"idp"`
+	}
+
+	now := time.Now()
+	claims := futureVersionClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "user@example.com",
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		},
+		Version:     currentSessionVersion + 1,
+		IdPEntityID: "https://idp.example.com",
+	}
+
+	raw, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
+	if err != nil {
+		t.Fatalf("failed to sign future-version token: %v", err)
+	}
+
+	_, err = store.Get(raw)
+	if err == nil {
+		t.Fatal("Get() should reject token with wrong ver claim")
+	}
+	if err != ports.ErrSessionNotFound {
+		t.Errorf("Get() error = %v, want %v", err, ports.ErrSessionNotFound)
 	}
 }
