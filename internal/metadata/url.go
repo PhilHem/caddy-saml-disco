@@ -13,6 +13,7 @@ import (
 
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
+	"github.com/philiph/caddy-saml-disco/internal/worker"
 )
 
 // urlSnapshot holds an immutable point-in-time view of all URL metadata store state
@@ -82,14 +83,8 @@ type URLMetadataStore struct {
 	refreshMu  sync.Mutex
 	refreshing bool // true when refresh is in progress; protected by refreshMu
 
-	// closed is set to true by Close(); separate from data so it can be written
-	// without constructing a new snapshot.
-	closed atomic.Bool
-
-	// Background refresh goroutine management (write-once lifecycle fields)
-	stopCh        chan struct{}
-	refreshCtx    context.Context    // cancellable context for background refresh
-	refreshCancel context.CancelFunc // cancel function for refreshCtx
+	// worker manages the background refresh goroutine lifecycle (nil for passive stores).
+	worker *worker.SupervisedWorker
 }
 
 // NewURLMetadataStore creates a new URLMetadataStore with passive refresh.
@@ -125,27 +120,23 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 // Call Close() to stop the background goroutine.
 func NewURLMetadataStoreWithRefresh(url string, refreshInterval time.Duration, opts ...MetadataOption) *URLMetadataStore {
 	s := NewURLMetadataStore(url, refreshInterval, opts...)
-	s.stopCh = make(chan struct{})
-	s.refreshCtx, s.refreshCancel = context.WithCancel(context.Background())
 	if s.logger != nil {
 		s.logger.Info("starting background metadata refresh",
 			zap.Duration("interval", refreshInterval),
 			zap.String("url", url))
 	}
-	go s.refreshLoop(refreshInterval)
-	return s
-}
 
-// refreshLoop runs periodic metadata refresh in the background.
-func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			// Use cancellable context for background refresh
+	workerOpts := []worker.Option{}
+	if s.onRefresh != nil {
+		workerOpts = append(workerOpts, worker.WithOnTick(s.onRefresh))
+	}
+
+	w := worker.NewSupervisedWorker(
+		"metadata-refresh",
+		refreshInterval,
+		func(ctx context.Context) error {
 			startTime := s.clock.Now()
-			err := s.doRefresh(s.refreshCtx, true) // force=true bypasses cache TTL
+			err := s.doRefresh(ctx, true) // force=true bypasses cache TTL
 			duration := s.clock.Now().Sub(startTime)
 			if s.logger != nil {
 				if err != nil {
@@ -158,32 +149,25 @@ func (s *URLMetadataStore) refreshLoop(interval time.Duration) {
 						zap.Duration("duration", duration))
 				}
 			}
-			if s.onRefresh != nil {
-				s.onRefresh(err)
-			}
-		case <-s.stopCh:
-			return
-		case <-s.refreshCtx.Done():
-			// Context was cancelled (e.g., by Close())
-			return
-		}
-	}
+			return err
+		},
+		s.logger,
+		workerOpts...,
+	)
+	w.Start()
+	s.worker = w
+	return s
 }
 
 // Close stops the background refresh goroutine if running.
 // Safe to call multiple times (idempotent).
 // Safe to call on stores created without background refresh.
 func (s *URLMetadataStore) Close() error {
-	// CompareAndSwap ensures only one caller wins the race to close.
-	if s.stopCh != nil && s.closed.CompareAndSwap(false, true) {
+	if s.worker != nil {
 		if s.logger != nil {
 			s.logger.Info("stopping background metadata refresh")
 		}
-		close(s.stopCh)
-		// Cancel refresh context to stop in-progress HTTP requests
-		if s.refreshCancel != nil {
-			s.refreshCancel()
-		}
+		s.worker.Close()
 	}
 	return nil
 }
