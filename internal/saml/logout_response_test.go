@@ -10,8 +10,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
-	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
@@ -78,28 +76,18 @@ func makeTestSAMLService(t *testing.T, logger *zap.Logger) *SAMLService {
 // makeTestIdP returns a minimal IdPInfo for use in tests.
 func makeTestIdP() *domain.IdPInfo {
 	return &domain.IdPInfo{
-		EntityID: "https://idp.example.com",
-		SSOURL:   "https://idp.example.com/sso",
+		EntityID:   "https://idp.example.com",
+		SSOURL:     "https://idp.example.com/sso",
 		SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 	}
 }
 
-// makeLogoutResponseRequest creates an *http.Request with a SAMLResponse query parameter.
-func makeLogoutResponseRequest(samlResponseB64 string) *http.Request {
-	u := &url.URL{
-		Scheme:   "https",
-		Host:     "sp.example.com",
-		Path:     "/saml/slo",
-		RawQuery: "SAMLResponse=" + url.QueryEscape(samlResponseB64),
+// makeRawLogoutResponse builds a RawLogoutResponse for use in tests.
+func makeRawLogoutResponse(encoded string) domain.RawLogoutResponse {
+	return domain.RawLogoutResponse{
+		Encoded: encoded,
+		Binding: "redirect",
 	}
-	req, _ := http.NewRequest(http.MethodGet, u.String(), nil)
-	return req
-}
-
-// sloTestURL returns a dummy SLO URL for use in tests.
-func sloTestURL() *url.URL {
-	u, _ := url.Parse("https://sp.example.com/saml/slo")
-	return u
 }
 
 // -----------------------------------------------------------------------------
@@ -113,17 +101,23 @@ func TestHandleLogoutResponse_ValidResponse(t *testing.T) {
 	logger := zap.New(core)
 	svc := makeTestSAMLService(t, logger)
 
-	xml := makeLogoutResponseXML("https://idp.example.com", samlStatusSuccess, "")
-	encoded := encodeLogoutResponse(xml)
-	r := makeLogoutResponseRequest(encoded)
+	xmlStr := makeLogoutResponseXML("https://idp.example.com", samlStatusSuccess, "")
+	encoded := encodeLogoutResponse(xmlStr)
+	raw := makeRawLogoutResponse(encoded)
 	idp := makeTestIdP()
 
-	err := svc.HandleLogoutResponse(r, sloTestURL(), idp)
+	validated, err := svc.ValidateLogoutResponse(raw, idp)
 	if err != nil {
-		t.Errorf("HandleLogoutResponse() unexpected error: %v", err)
+		t.Errorf("ValidateLogoutResponse() unexpected error: %v", err)
 	}
 	if logs.Len() != 0 {
 		t.Errorf("expected no warning logs, got %d: %v", logs.Len(), logs.All())
+	}
+	if validated.StatusCode != samlStatusSuccess {
+		t.Errorf("expected StatusCode %q, got %q", samlStatusSuccess, validated.StatusCode)
+	}
+	if validated.Issuer != "https://idp.example.com" {
+		t.Errorf("expected Issuer %q, got %q", "https://idp.example.com", validated.Issuer)
 	}
 }
 
@@ -132,8 +126,8 @@ func TestHandleLogoutResponse_MissingSAMLResponse(t *testing.T) {
 
 	svc := makeTestSAMLService(t, zap.NewNop())
 
-	req, _ := http.NewRequest(http.MethodGet, "https://sp.example.com/saml/slo", nil)
-	err := svc.HandleLogoutResponse(req, sloTestURL(), makeTestIdP())
+	raw := domain.RawLogoutResponse{Encoded: "", Binding: "redirect"}
+	_, err := svc.ValidateLogoutResponse(raw, makeTestIdP())
 	if err == nil {
 		t.Fatal("expected error for missing SAMLResponse, got nil")
 	}
@@ -144,8 +138,8 @@ func TestHandleLogoutResponse_BadBase64(t *testing.T) {
 
 	svc := makeTestSAMLService(t, zap.NewNop())
 
-	r := makeLogoutResponseRequest("not-valid-base64!!!")
-	err := svc.HandleLogoutResponse(r, sloTestURL(), makeTestIdP())
+	raw := makeRawLogoutResponse("not-valid-base64!!!")
+	_, err := svc.ValidateLogoutResponse(raw, makeTestIdP())
 	if err == nil {
 		t.Fatal("expected error for invalid base64, got nil")
 	}
@@ -157,8 +151,8 @@ func TestHandleLogoutResponse_MalformedXML(t *testing.T) {
 	svc := makeTestSAMLService(t, zap.NewNop())
 
 	encoded := encodeLogoutResponse("<this is not valid xml>>>")
-	r := makeLogoutResponseRequest(encoded)
-	err := svc.HandleLogoutResponse(r, sloTestURL(), makeTestIdP())
+	raw := makeRawLogoutResponse(encoded)
+	_, err := svc.ValidateLogoutResponse(raw, makeTestIdP())
 	if err == nil {
 		t.Fatal("expected error for malformed XML, got nil")
 	}
@@ -171,12 +165,12 @@ func TestHandleLogoutResponse_NonSuccessStatusCode(t *testing.T) {
 	logger := zap.New(core)
 	svc := makeTestSAMLService(t, logger)
 
-	xml := makeLogoutResponseXML("https://idp.example.com",
+	xmlStr := makeLogoutResponseXML("https://idp.example.com",
 		"urn:oasis:names:tc:SAML:2.0:status:Responder", "")
-	encoded := encodeLogoutResponse(xml)
-	r := makeLogoutResponseRequest(encoded)
+	encoded := encodeLogoutResponse(xmlStr)
+	raw := makeRawLogoutResponse(encoded)
 
-	err := svc.HandleLogoutResponse(r, sloTestURL(), makeTestIdP())
+	_, err := svc.ValidateLogoutResponse(raw, makeTestIdP())
 	if err == nil {
 		t.Fatal("expected error for non-Success StatusCode, got nil")
 	}
@@ -195,11 +189,11 @@ func TestHandleLogoutResponse_MismatchedIssuer(t *testing.T) {
 	svc := makeTestSAMLService(t, logger)
 
 	// Issuer does not match idp.EntityID
-	xml := makeLogoutResponseXML("https://wrong-idp.example.com", samlStatusSuccess, "")
-	encoded := encodeLogoutResponse(xml)
-	r := makeLogoutResponseRequest(encoded)
+	xmlStr := makeLogoutResponseXML("https://wrong-idp.example.com", samlStatusSuccess, "")
+	encoded := encodeLogoutResponse(xmlStr)
+	raw := makeRawLogoutResponse(encoded)
 
-	err := svc.HandleLogoutResponse(r, sloTestURL(), makeTestIdP())
+	_, err := svc.ValidateLogoutResponse(raw, makeTestIdP())
 	if err == nil {
 		t.Fatal("expected error for mismatched Issuer, got nil")
 	}
@@ -218,14 +212,17 @@ func TestHandleLogoutResponse_InResponseToWarning(t *testing.T) {
 	svc := makeTestSAMLService(t, logger)
 
 	// Valid response but InResponseTo references an ID not in the request store.
-	xml := makeLogoutResponseXML("https://idp.example.com", samlStatusSuccess, "unknown-request-id")
-	encoded := encodeLogoutResponse(xml)
-	r := makeLogoutResponseRequest(encoded)
+	xmlStr := makeLogoutResponseXML("https://idp.example.com", samlStatusSuccess, "unknown-request-id")
+	encoded := encodeLogoutResponse(xmlStr)
+	raw := makeRawLogoutResponse(encoded)
 
 	// Should succeed (InResponseTo mismatch is a warning, not a hard failure).
-	err := svc.HandleLogoutResponse(r, sloTestURL(), makeTestIdP())
+	validated, err := svc.ValidateLogoutResponse(raw, makeTestIdP())
 	if err != nil {
-		t.Errorf("HandleLogoutResponse() unexpected error: %v", err)
+		t.Errorf("ValidateLogoutResponse() unexpected error: %v", err)
+	}
+	if validated.InResponseTo != "unknown-request-id" {
+		t.Errorf("expected InResponseTo %q, got %q", "unknown-request-id", validated.InResponseTo)
 	}
 
 	warnLogs := logs.FilterMessage("LogoutResponse InResponseTo not found in pending requests")

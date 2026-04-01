@@ -18,6 +18,7 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/ports"
 )
 
+
 // SAMLService provides SAML Service Provider operations.
 type SAMLService struct {
 	entityID       string
@@ -438,32 +439,31 @@ func (s *SAMLService) CreateLogoutRequest(session *domain.Session, idp *domain.I
 // samlStatusSuccess is the SAML 2.0 status code URI for a successful operation.
 const samlStatusSuccess = "urn:oasis:names:tc:SAML:2.0:status:Success"
 
-// HandleLogoutResponse validates a LogoutResponse from the IdP.
-// This is called when the IdP redirects back after processing a LogoutRequest.
+// ValidateLogoutResponse validates a LogoutResponse from the IdP.
+// The raw response must have been extracted from the HTTP request by the caller.
 //
 // Validation failures are logged as warnings but do not prevent the caller
 // from continuing with local logout — the logout flow must complete even when
 // the IdP response is malformed or carries a non-success status.
-func (s *SAMLService) HandleLogoutResponse(r *http.Request, sloURL *url.URL, idp *domain.IdPInfo) error {
-	samlResponse := r.URL.Query().Get("SAMLResponse")
-	if samlResponse == "" {
-		return fmt.Errorf("missing SAMLResponse parameter")
+func (s *SAMLService) ValidateLogoutResponse(raw domain.RawLogoutResponse, idp *domain.IdPInfo) (domain.ValidatedLogoutResponse, error) {
+	if raw.Encoded == "" {
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("missing SAMLResponse parameter")
 	}
 
 	// Base64-decode the response (redirect binding uses standard base64).
-	xmlBytes, err := base64.StdEncoding.DecodeString(samlResponse)
+	xmlBytes, err := base64.StdEncoding.DecodeString(raw.Encoded)
 	if err != nil {
-		return fmt.Errorf("base64 decode LogoutResponse: %w", err)
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("base64 decode LogoutResponse: %w", err)
 	}
 
 	// Parse the XML with etree for namespace-aware element access.
 	doc := etree.NewDocument()
 	if err := doc.ReadFromBytes(xmlBytes); err != nil {
-		return fmt.Errorf("parse LogoutResponse XML: %w", err)
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("parse LogoutResponse XML: %w", err)
 	}
 	root := doc.Root()
 	if root == nil {
-		return fmt.Errorf("LogoutResponse has no root element")
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse has no root element")
 	}
 
 	// Validate Issuer — the response must come from the expected IdP.
@@ -478,14 +478,14 @@ func (s *SAMLService) HandleLogoutResponse(r *http.Request, sloURL *url.URL, idp
 		s.log().Warn("LogoutResponse has no Issuer element",
 			zap.String("idp_entity_id", idp.EntityID),
 		)
-		return fmt.Errorf("LogoutResponse missing Issuer")
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse missing Issuer")
 	}
 	if issuerText != idp.EntityID {
 		s.log().Warn("LogoutResponse Issuer does not match expected IdP",
 			zap.String("expected", idp.EntityID),
 			zap.String("got", issuerText),
 		)
-		return fmt.Errorf("LogoutResponse Issuer %q does not match IdP %q", issuerText, idp.EntityID)
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse Issuer %q does not match IdP %q", issuerText, idp.EntityID)
 	}
 
 	// Check InResponseTo — if present, it should match a pending logout request ID.
@@ -524,17 +524,21 @@ func (s *SAMLService) HandleLogoutResponse(r *http.Request, sloURL *url.URL, idp
 		s.log().Warn("LogoutResponse has no StatusCode element",
 			zap.String("idp_entity_id", idp.EntityID),
 		)
-		return fmt.Errorf("LogoutResponse missing StatusCode")
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse missing StatusCode")
 	}
 	if statusCode != samlStatusSuccess {
 		s.log().Warn("LogoutResponse StatusCode is not Success",
 			zap.String("status_code", statusCode),
 			zap.String("idp_entity_id", idp.EntityID),
 		)
-		return fmt.Errorf("LogoutResponse StatusCode %q is not Success", statusCode)
+		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse StatusCode %q is not Success", statusCode)
 	}
 
-	return nil
+	return domain.ValidatedLogoutResponse{
+		StatusCode:   statusCode,
+		InResponseTo: inResponseTo,
+		Issuer:       issuerText,
+	}, nil
 }
 
 // LogoutRequestResult contains information extracted from a LogoutRequest.

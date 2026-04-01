@@ -151,7 +151,11 @@ func (h *LogoutHandler) handleLogoutResponse(w http.ResponseWriter, r *http.Requ
 		return nil
 	}
 
-	if err := h.SAMLService.HandleLogoutResponse(r, sloURL, idp); err != nil {
+	raw := domain.RawLogoutResponse{
+		Encoded: r.URL.Query().Get("SAMLResponse"),
+		Binding: "redirect",
+	}
+	if _, err := h.SAMLService.ValidateLogoutResponse(raw, idp); err != nil {
 		h.logger().Warn("logout response validation failed",
 			zap.Error(err),
 			zap.String("remote_addr", r.RemoteAddr),
