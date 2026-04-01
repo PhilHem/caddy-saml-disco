@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/philiph/caddy-saml-disco/internal/session"
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 func TestServeHTTP_NoSession_NoMetadataStore_ReturnsError(t *testing.T) {
@@ -150,28 +152,28 @@ func TestServeHTTP_NoSession_NoSAMLService_ReturnsError(t *testing.T) {
 
 func TestRootPackageReExports(t *testing.T) {
 	// Test ValidateRelayState is accessible from root package
-	result := ValidateRelayState("/test")
+	result := httputil.ValidateRelayState("/test")
 	if result != "/test" {
 		t.Errorf("ValidateRelayState from root package failed: got %q, want %q", result, "/test")
 	}
 
-	// Test ParseAcceptLanguage is accessible from root package
-	langs := ParseAcceptLanguage("en, de;q=0.9")
+	// Test ParseAcceptLanguage is accessible from discovery package
+	langs := discovery.ParseAcceptLanguage("en, de;q=0.9")
 	if len(langs) == 0 {
-		t.Error("ParseAcceptLanguage from root package failed: got empty result")
+		t.Error("discovery.ParseAcceptLanguage failed: got empty result")
 	}
 
-	// Test ParseDuration is accessible from root package
-	dur, err := ParseDuration("1d")
+	// Test ParseDuration is accessible from httputil package
+	dur, err := httputil.ParseDuration("1d")
 	if err != nil {
-		t.Errorf("ParseDuration from root package failed: %v", err)
+		t.Errorf("httputil.ParseDuration failed: %v", err)
 	}
 	if dur != 24*time.Hour {
-		t.Errorf("ParseDuration from root package: got %v, want 24h", dur)
+		t.Errorf("httputil.ParseDuration: got %v, want 24h", dur)
 	}
 
 	// Test MatchesForceAuthnPath is accessible from root package
-	matched := MatchesForceAuthnPath("/admin/settings", []string{"/admin/*"})
+	matched := httputil.MatchesForceAuthnPath("/admin/settings", []string{"/admin/*"})
 	if !matched {
 		t.Error("MatchesForceAuthnPath from root package failed: expected match")
 	}
@@ -306,7 +308,7 @@ func TestDiscoveryAPI_ListIdPs_NoMetadataStore_ReturnsJSONError(t *testing.T) {
 	}
 
 	// Verify JSON error structure
-	var resp JSONErrorResponse
+	var resp httputil.JSONErrorResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
@@ -351,7 +353,7 @@ func TestDiscoveryAPI_SelectIdP_NotFound_ReturnsJSONError(t *testing.T) {
 	}
 
 	// Verify JSON error structure
-	var resp JSONErrorResponse
+	var resp httputil.JSONErrorResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}

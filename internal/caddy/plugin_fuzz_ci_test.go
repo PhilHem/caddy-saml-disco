@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/internal/signature"
-	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
 // FuzzValidateRelayStateExtended uses the full seed corpus for thorough CI testing.
@@ -577,7 +579,7 @@ func FuzzParseAcceptLanguageExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := ParseAcceptLanguage(input)
+		result := discovery.ParseAcceptLanguage(input)
 		checkParseAcceptLanguageInvariants(t, input, result)
 	})
 }
@@ -748,7 +750,7 @@ func FuzzParseDurationExtended(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		dur, err := ParseDuration(input)
+		dur, err := httputil.ParseDuration(input)
 		checkParseDurationInvariants(t, input, dur, err)
 	})
 }

@@ -4,9 +4,18 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
+	"github.com/philiph/caddy-saml-disco/internal/config"
 )
 
-// CaddyModule returns the Caddy module information.
+type Config = config.Config
+type MetadataSource = config.MetadataSource
+type AltLoginConfig = config.AltLoginConfig
+
+const GuestEntityID = config.GuestEntityID
+
+func boolPtr(v bool) *bool { b := v; return &b }
+
 func (SAMLDisco) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.handlers.saml_disco",
@@ -14,7 +23,6 @@ func (SAMLDisco) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Interface guards
 var (
 	_ caddy.Module                = (*SAMLDisco)(nil)
 	_ caddy.Provisioner           = (*SAMLDisco)(nil)

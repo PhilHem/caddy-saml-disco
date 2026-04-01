@@ -81,34 +81,71 @@ Before releasing, check if these files need updates based on commits since last 
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Core Domain
+### Package Layout
 
-- **Pure Go only** - no Caddy imports, no HTTP, no I/O
-- Contains: data models, interfaces (ports), domain logic
-- Models: `Session`, `IdPInfo`, `SAMLConfig`, `ErrorCode`, `AppError`
+```
+internal/
+├── domain/          # Pure domain models and logic (Session, IdPInfo, AppError, ...)
+├── ports/           # Interface definitions (MetadataStore, SessionStore, LogoStore, ...)
+├── config/          # SP configuration structs, validation, defaults (no Caddy imports)
+├── authentication/  # SAML AuthN slice: ACS handler, metadata endpoint, HTTP adapter
+├── discovery/       # IdP discovery slice: list/select API, discovery UI, HTTP adapter
+├── logout/          # SLO slice: local logout + SAML Single Logout
+├── saml/            # Canonical SAMLService (AuthnRequest, assertion processing)
+├── metadata/        # Metadata store implementations (URL + file, TTL refresh)
+├── session/         # JWT cookie session store
+├── logo/            # Logo proxy and caching
+├── signature/       # XML signature verification (goxmldsig)
+├── metrics/         # Prometheus metrics recorder
+├── request/         # In-memory SAML request ID store
+├── httputil/        # Shared HTTP utilities (cookies, headers, errors, URLs)
+├── entitlements/    # File-based entitlement store
+└── caddy/           # Caddy module shell: wiring, config parsing, dispatch
+    └── internal/
+        └── sharedstate/  # Request store singleton (survives config reloads)
+```
+
+### Domain
+
+- **Pure Go only** — no Caddy imports, no HTTP, no I/O
+- Contains: data models, domain functions, error types
+- Key models: `Session`, `IdPInfo`, `SAMLConfig`, `ErrorCode`, `AppError`
 
 ### Ports (Interfaces)
 
-Core interfaces: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `SignatureVerifier`, `MetricsRecorder`. See individual `.go` files for definitions.
+Core interfaces in `internal/ports/`: `MetadataStore`, `SessionStore`, `LogoStore`, `RequestStore`, `SignatureVerifier`, `MetricsRecorder`, `AttributeMapper`. Implementations must be safe for concurrent use.
 
-### Adapters
+### Config
 
-- **Metadata**: `url_metadata.go` (HTTP fetch), `file_metadata.go` (local file)
-- **Session**: `cookie_session.go` (JWT in cookies)
-- **Logo**: `logo.go` (InMemoryLogoStore, CachingLogoStore)
-- **Signature**: `signature.go` (XMLDsigVerifier using goxmldsig, NoopVerifier for testing)
-- **Metrics**: `metrics.go` (PrometheusMetricsRecorder, NoopMetricsRecorder)
-- **Caddy**: `plugin.go` (module registration), `caddyfile.go` (config parsing)
+`internal/config/` holds the `Config`, `SPConfig`, `MetadataSource`, and `AltLoginConfig` types with validation and defaults. Imports only `domain/`, `httputil/`, and stdlib — no Caddy dependency. The caddy package re-exports these as type aliases for backward compatibility.
+
+### Feature Slices
+
+Each feature slice (`authentication`, `discovery`, `logout`) owns its HTTP handler. `authentication` and `discovery` provide HTTP adapters that encapsulate callback wiring — caddy/ constructs adapters from SPConfig dependencies rather than building callbacks itself. Feature slices never import `caddy/` or each other.
+
+### Caddy Package
+
+`internal/caddy/` is the module shell. Single-SP mode is normalized to a one-entry `[]*SPConfig` with a wildcard hostname during `Provision()` — there is only one codepath.
+
+Key files:
+- `plugin.go` — `SAMLDisco` struct (embeds Config, holds SPConfigs + registry + logger + metrics)
+- `request_handler.go` — `ServeHTTP` dispatch + session middleware
+- `provisioner.go` — `Provision()`, `Validate()`, `Cleanup()`
+- `caddyfile.go` — Caddyfile directive parsing
+- `discovery_bridge.go` — constructs `discovery.HTTPAdapter` from SPConfig
+- `handlers_auth.go` — constructs `authentication.HTTPAdapter` from SPConfig
+- `handlers_logout.go` — constructs `logout.LogoutHandler` with injected callbacks
+- `handlers_session.go`, `handlers_health.go`, `handlers_logo.go` — small handlers with no separate slice
 
 ### Concurrency Model
 
-Concurrency follows hexagonal architecture boundaries:
+Concurrency is confined to adapter implementations:
 
 | Layer | Concurrency | Rationale |
 |-------|-------------|-----------|
-| **Domain** (`internal/core/domain/`) | None | Pure functions, no I/O, no shared mutable state. Thread-safe by design (stateless). |
-| **Ports** (`internal/core/ports/`) | Interface-agnostic | Ports define *what*, not *how*. Implementations must be safe for concurrent use. |
-| **Adapters** (`internal/adapters/`) | All concurrency lives here | Adapters manage I/O, caching, background workers, and synchronization. |
+| **Domain** (`internal/domain/`) | None | Pure functions, stateless. Thread-safe by design. |
+| **Ports** (`internal/ports/`) | Interface-agnostic | Ports define *what*, not *how*. Implementations must be safe for concurrent use. |
+| **Feature slices + adapters** | All concurrency lives here | Adapters manage I/O, caching, background workers, and synchronization. |
 
 **Standard Adapter Pattern** (based on `URLMetadataStore`):
 

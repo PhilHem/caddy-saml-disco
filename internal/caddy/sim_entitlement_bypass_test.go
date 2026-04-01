@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/philiph/caddy-saml-disco/internal/config"
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/entitlements"
 	"github.com/philiph/caddy-saml-disco/internal/session"
-	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
@@ -39,16 +41,16 @@ func TestSimEntitlementBypass_DeniedUserGetsNoCookie(t *testing.T) {
 	key := loadTestKey(t)
 	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
-	renderer, err := NewTemplateRenderer()
+	renderer, err := discovery.NewTemplateRenderer()
 	if err != nil {
 		t.Fatalf("new template renderer: %v", err)
 	}
 
 	cfg := &SPConfig{
-		Config: Config{
+		SPConfig: config.SPConfig{Config: Config{
 			SessionCookieName:       cookieName,
 			EntitlementDenyRedirect: denyRedirect,
-		},
+		}},
 		entitlementStore: entitlementStore,
 		sessionStore:     sessionStore,
 		sessionDuration:  8 * time.Hour,
@@ -76,7 +78,7 @@ func TestSimEntitlementBypass_DeniedUserGetsNoCookie(t *testing.T) {
 		_, lookupErr := cfg.entitlementStore.Lookup(sess.Subject)
 		if lookupErr != nil {
 			if errors.Is(lookupErr, domain.ErrEntitlementNotFound) {
-				s.handleDeniedForSP(rec, req, cfg, sess.Subject)
+				s.handleDenied(rec, req, cfg, sess.Subject)
 				denied = true
 			}
 		}
@@ -88,7 +90,7 @@ func TestSimEntitlementBypass_DeniedUserGetsNoCookie(t *testing.T) {
 		if createErr != nil {
 			t.Fatalf("session create: %v", createErr)
 		}
-		s.setSessionCookieForSP(rec, req, cfg, token)
+		s.setSessionCookie(rec, req, cfg, token)
 		http.Redirect(rec, req, "/", http.StatusFound)
 	}
 	// ──────────────────────────────────────────────────────────────────────────
@@ -130,9 +132,9 @@ func TestSimEntitlementBypass_AllowedUserGetsCookie(t *testing.T) {
 	sessionStore := session.NewCookieSessionStore(key, 8*time.Hour)
 
 	cfg := &SPConfig{
-		Config: Config{
+		SPConfig: config.SPConfig{Config: Config{
 			SessionCookieName: cookieName,
-		},
+		}},
 		entitlementStore: entitlementStore,
 		sessionStore:     sessionStore,
 		sessionDuration:  8 * time.Hour,
@@ -155,7 +157,7 @@ func TestSimEntitlementBypass_AllowedUserGetsCookie(t *testing.T) {
 		_, lookupErr := cfg.entitlementStore.Lookup(sess.Subject)
 		if lookupErr != nil {
 			if errors.Is(lookupErr, domain.ErrEntitlementNotFound) {
-				s.handleDeniedForSP(rec, req, cfg, sess.Subject)
+				s.handleDenied(rec, req, cfg, sess.Subject)
 				denied = true
 			}
 		}
@@ -166,7 +168,7 @@ func TestSimEntitlementBypass_AllowedUserGetsCookie(t *testing.T) {
 		if createErr != nil {
 			t.Fatalf("session create: %v", createErr)
 		}
-		s.setSessionCookieForSP(rec, req, cfg, token)
+		s.setSessionCookie(rec, req, cfg, token)
 		http.Redirect(rec, req, "/", http.StatusFound)
 	}
 

@@ -11,8 +11,10 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/config"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 )
 
 // TestValidateDenyRedirect verifies that deny redirect URL validation prevents open redirects.
@@ -59,7 +61,7 @@ func TestValidateDenyRedirect(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidateDenyRedirect(tc.input)
+			got := httputil.ValidateDenyRedirect(tc.input)
 			if got != tc.expected {
 				t.Errorf("ValidateDenyRedirect(%q) = %q, want %q", tc.input, got, tc.expected)
 			}
@@ -72,7 +74,7 @@ func TestValidateDenyRedirect(t *testing.T) {
 // Cycle 3: RED - Property-Based Test for Open Redirect Prevention
 func TestValidateDenyRedirect_Property_NoOpenRedirect(t *testing.T) {
 	f := func(input string) bool {
-		result := ValidateDenyRedirect(input)
+		result := httputil.ValidateDenyRedirect(input)
 		if result == "" {
 			return true // rejection is safe
 		}
@@ -110,16 +112,17 @@ func TestHandleDenied(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &SAMLDisco{
-				Config: Config{
+			sp := &SPConfig{
+				SPConfig: config.SPConfig{Config: Config{
 					EntitlementDenyRedirect: tc.denyRedirect,
-				},
+				}},
 			}
+			s := &SAMLDisco{}
 
 			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			rec := httptest.NewRecorder()
 
-			s.handleDenied(rec, req, "user@example.com")
+			s.handleDenied(rec, req, sp, "user@example.com")
 
 			if rec.Code != tc.wantStatusCode {
 				t.Errorf("handleDenied() status code = %d, want %d", rec.Code, tc.wantStatusCode)
@@ -154,13 +157,13 @@ func TestHandleACS_DeniesUnauthorizedUser(t *testing.T) {
 	})
 	// unauthorized@example.com is NOT in the store
 
-	// Create SAMLDisco with entitlement store
-	s := &SAMLDisco{
-		Config: Config{
+	// Create SPConfig with entitlement store
+	sp := &SPConfig{
+		SPConfig: config.SPConfig{Config: Config{
 			EntitlementDenyRedirect: "", // Use 403, not redirect
-		},
-		entitlementStore: entitlementStore,
+		}},
 	}
+	s := &SAMLDisco{}
 
 	// Create a mock request (simulating successful SAML auth)
 	// Note: This is a simplified test - a full integration test would
@@ -171,7 +174,7 @@ func TestHandleACS_DeniesUnauthorizedUser(t *testing.T) {
 
 	// Simulate that authentication succeeded and session was created
 	// by directly calling handleDenied for unauthorized user
-	s.handleDenied(rec, req, "unauthorized@example.com")
+	s.handleDenied(rec, req, sp, "unauthorized@example.com")
 
 	// Should return 403
 	if rec.Code != http.StatusForbidden {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 )
 
 func TestParseCaddyfile_Entitlements(t *testing.T) {
@@ -80,7 +81,7 @@ func TestConfig_Validate_Entitlements(t *testing.T) {
 				EntityID:         "https://sp.example.com",
 				MetadataFile:     "/etc/metadata.xml",
 				EntitlementsFile: "/etc/entitlements.json",
-				EntitlementHeaders: []EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 				},
 			},
@@ -92,7 +93,7 @@ func TestConfig_Validate_Entitlements(t *testing.T) {
 				EntityID:         "https://sp.example.com",
 				MetadataFile:     "/etc/metadata.xml",
 				EntitlementsFile: "/etc/entitlements.json",
-				EntitlementHeaders: []EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "Invalid-Header"},
 				},
 			},

@@ -9,18 +9,16 @@ import (
 )
 
 func TestBuildMetadataStore_SingleSource(t *testing.T) {
-	cfg := &Config{
-		MetadataSources: []MetadataSource{
-			{
-				URL:             "https://example.com/metadata.xml",
-				RefreshInterval: 10 * time.Minute,
-			},
+	sources := []MetadataSource{
+		{
+			URL:             "https://example.com/metadata.xml",
+			RefreshInterval: 10 * time.Minute,
 		},
 	}
 
-	store, err := BuildMetadataStore(cfg, nil)
+	store, err := metadata.BuildStore(sources, nil)
 	if err != nil {
-		t.Fatalf("BuildMetadataStore() error = %v", err)
+		t.Fatalf("metadata.BuildStore() error = %v", err)
 	}
 
 	// Single source should return a single store (not wrapped in Composite)
@@ -30,21 +28,19 @@ func TestBuildMetadataStore_SingleSource(t *testing.T) {
 }
 
 func TestBuildMetadataStore_MultipleSources(t *testing.T) {
-	cfg := &Config{
-		MetadataSources: []MetadataSource{
-			{
-				URL:             "https://example.com/metadata1.xml",
-				RefreshInterval: 10 * time.Minute,
-			},
-			{
-				File: "/tmp/metadata2.xml",
-			},
+	sources := []MetadataSource{
+		{
+			URL:             "https://example.com/metadata1.xml",
+			RefreshInterval: 10 * time.Minute,
+		},
+		{
+			File: "/tmp/metadata2.xml",
 		},
 	}
 
-	store, err := BuildMetadataStore(cfg, nil)
+	store, err := metadata.BuildStore(sources, nil)
 	if err != nil {
-		t.Fatalf("BuildMetadataStore() error = %v", err)
+		t.Fatalf("metadata.BuildStore() error = %v", err)
 	}
 
 	// Multiple sources should return a CompositeMetadataStore
@@ -54,18 +50,16 @@ func TestBuildMetadataStore_MultipleSources(t *testing.T) {
 }
 
 func TestBuildMetadataStore_PerSourceFilter(t *testing.T) {
-	cfg := &Config{
-		MetadataSources: []MetadataSource{
-			{
-				URL:       "https://example.com/metadata.xml",
-				IdPFilter: "*.example.edu",
-			},
+	sources := []MetadataSource{
+		{
+			URL:       "https://example.com/metadata.xml",
+			IdPFilter: "*.example.edu",
 		},
 	}
 
-	store, err := BuildMetadataStore(cfg, nil)
+	store, err := metadata.BuildStore(sources, nil)
 	if err != nil {
-		t.Fatalf("BuildMetadataStore() error = %v", err)
+		t.Fatalf("metadata.BuildStore() error = %v", err)
 	}
 
 	if store == nil {
@@ -74,13 +68,9 @@ func TestBuildMetadataStore_PerSourceFilter(t *testing.T) {
 }
 
 func TestBuildMetadataStore_EmptySources(t *testing.T) {
-	cfg := &Config{
-		MetadataSources: []MetadataSource{},
-	}
-
-	store, err := BuildMetadataStore(cfg, nil)
+	store, err := metadata.BuildStore([]MetadataSource{}, nil)
 	if err != nil {
-		t.Fatalf("BuildMetadataStore() error = %v", err)
+		t.Fatalf("metadata.BuildStore() error = %v", err)
 	}
 
 	if store != nil {
@@ -89,11 +79,9 @@ func TestBuildMetadataStore_EmptySources(t *testing.T) {
 }
 
 func TestBuildMetadataStore_InheritBaseOptions(t *testing.T) {
-	cfg := &Config{
-		MetadataSources: []MetadataSource{
-			{
-				URL: "https://example.com/metadata.xml",
-			},
+	sources := []MetadataSource{
+		{
+			URL: "https://example.com/metadata.xml",
 		},
 	}
 
@@ -102,9 +90,9 @@ func TestBuildMetadataStore_InheritBaseOptions(t *testing.T) {
 		metadata.WithIdPFilter("*.base.edu"),
 	}
 
-	store, err := BuildMetadataStore(cfg, baseOpts)
+	store, err := metadata.BuildStore(sources, baseOpts)
 	if err != nil {
-		t.Fatalf("BuildMetadataStore() error = %v", err)
+		t.Fatalf("metadata.BuildStore() error = %v", err)
 	}
 
 	if store == nil {

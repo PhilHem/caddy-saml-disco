@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	samlsvc "github.com/philiph/caddy-saml-disco/internal/saml"
 )
 
 // Property-Based Tests for Certificate Rotation
@@ -119,7 +120,7 @@ func TestCertificateRotation_Property_AnyValidCertWorks(t *testing.T) {
 
 		// Verify all certificates are added to metadata
 		// This tests that idpInfoToEntityDescriptor includes all certificates
-		idpMetadata, err := idpInfoToEntityDescriptor(idp)
+		idpMetadata, err := samlsvc.IdPInfoToEntityDescriptor(idp)
 		if err != nil {
 			return false
 		}
@@ -205,12 +206,12 @@ func TestCertificateRotation_Property_OrderIndependent(t *testing.T) {
 	}
 
 	// Convert both to EntityDescriptor
-	metadata1, err := idpInfoToEntityDescriptor(idp1)
+	metadata1, err := samlsvc.IdPInfoToEntityDescriptor(idp1)
 	if err != nil {
 		t.Fatalf("failed to build metadata1: %v", err)
 	}
 
-	metadata2, err := idpInfoToEntityDescriptor(idp2)
+	metadata2, err := samlsvc.IdPInfoToEntityDescriptor(idp2)
 	if err != nil {
 		t.Fatalf("failed to build metadata2: %v", err)
 	}
@@ -305,7 +306,7 @@ func TestCertificateRotation_Property_ExpiryHandling(t *testing.T) {
 		}
 
 		// Convert to EntityDescriptor
-		metadata, err := idpInfoToEntityDescriptor(idp)
+		metadata, err := samlsvc.IdPInfoToEntityDescriptor(idp)
 		if err != nil {
 			return false
 		}
@@ -371,7 +372,7 @@ func TestCertificateRotation_Property_EmptyCertificates(t *testing.T) {
 			}
 		}()
 
-		_, err = idpInfoToEntityDescriptor(idp)
+		_, err = samlsvc.IdPInfoToEntityDescriptor(idp)
 	}()
 
 	// Property: Should not panic, may return error or succeed (empty certs allowed in metadata)
@@ -414,7 +415,7 @@ func TestCertificateRotation_Property_InvalidCertificateFormat(t *testing.T) {
 				}
 			}()
 
-			_, err = idpInfoToEntityDescriptor(idp)
+			_, err = samlsvc.IdPInfoToEntityDescriptor(idp)
 		}()
 
 		// Property: Should not panic

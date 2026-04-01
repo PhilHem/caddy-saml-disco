@@ -677,6 +677,85 @@ func TestCaddyfile_RememberIdPDuration_RequiresArg(t *testing.T) {
 	}
 }
 
+func TestCaddyfile_CookieSecure(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"auto is accepted", "auto", false},
+		{"always is accepted", "always", false},
+		{"never is accepted", "never", false},
+		{"invalid value rejected", "yes", true},
+		{"on rejected", "on", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := `saml_disco {
+				entity_id https://sp.example.com
+				metadata_file /path/to/metadata.xml
+				cookie_secure ` + tt.value + `
+			}`
+
+			d := caddyfile.NewTestDispenser(input)
+			var s SAMLDisco
+			err := s.UnmarshalCaddyfile(d)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("UnmarshalCaddyfile() error = %v, wantErr = %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && s.CookieSecure != tt.value {
+				t.Errorf("CookieSecure = %q, want %q", s.CookieSecure, tt.value)
+			}
+		})
+	}
+}
+
+func TestCaddyfile_CookieSecure_RequiresArg(t *testing.T) {
+	input := `saml_disco {
+		entity_id https://sp.example.com
+		metadata_file /path/to/metadata.xml
+		cookie_secure
+	}`
+
+	d := caddyfile.NewTestDispenser(input)
+	var s SAMLDisco
+	err := s.UnmarshalCaddyfile(d)
+	if err == nil {
+		t.Error("UnmarshalCaddyfile should error on cookie_secure without argument")
+	}
+}
+
+func TestConfig_Validate_CookieSecure(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"empty defaults to auto — valid", "", false},
+		{"auto is valid", "auto", false},
+		{"always is valid", "always", false},
+		{"never is valid", "never", false},
+		{"invalid value rejected", "true", true},
+		{"invalid value rejected", "on", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				EntityID:     "https://sp.example.com",
+				MetadataFile: "/tmp/meta.xml",
+				CookieSecure: tt.value,
+			}
+			cfg.MetadataSources = append(cfg.MetadataSources, MetadataSource{File: "/tmp/meta.xml"})
+			err := cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestCaddyfile_RequestTTL(t *testing.T) {
 	input := `saml_disco {
 		entity_id https://example.com/saml

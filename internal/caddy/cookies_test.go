@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 )
 
 // TestCookieHelper_SetSessionCookie works for both single-SP and multi-SP
@@ -54,7 +56,7 @@ func TestCookieHelper_SetSessionCookie(t *testing.T) {
 				sessionDuration:     tt.duration,
 			}
 
-			setSessionCookieWithConfig(w, r, config, tt.token)
+			httputil.SetSessionCookieWithConfig(w, r, config, tt.token)
 
 			cookies := w.Result().Cookies()
 			if len(cookies) != 1 {
@@ -110,7 +112,7 @@ func TestCookieHelper_ClearSessionCookie(t *testing.T) {
 				sessionCookieDomain: tt.cookieDomain,
 			}
 
-			clearSessionCookieWithConfig(w, r, config)
+			httputil.ClearSessionCookieWithConfig(w, r, config)
 
 			cookies := w.Result().Cookies()
 			if len(cookies) != 1 {
@@ -175,7 +177,7 @@ func TestCookieHelper_SetRememberIdPCookie(t *testing.T) {
 				rememberIdPDuration:   tt.duration,
 			}
 
-			setRememberIdPCookieWithConfig(w, r, config, tt.entityID)
+			httputil.SetRememberIdPCookieWithConfig(w, r, config, tt.entityID)
 
 			cookies := w.Result().Cookies()
 			if len(cookies) != 1 {
@@ -203,24 +205,12 @@ type testCookieConfig struct {
 	sessionDuration       time.Duration
 	rememberIdPCookieName string
 	rememberIdPDuration   time.Duration
+	cookieSecureMode      string
 }
 
-func (c *testCookieConfig) SessionCookieName() string {
-	return c.sessionCookieName
-}
-
-func (c *testCookieConfig) SessionCookieDomain() string {
-	return c.sessionCookieDomain
-}
-
-func (c *testCookieConfig) SessionDuration() time.Duration {
-	return c.sessionDuration
-}
-
-func (c *testCookieConfig) RememberIdPCookieName() string {
-	return c.rememberIdPCookieName
-}
-
-func (c *testCookieConfig) RememberIdPDuration() time.Duration {
-	return c.rememberIdPDuration
-}
+func (c *testCookieConfig) SessionCookieName() string          { return c.sessionCookieName }
+func (c *testCookieConfig) SessionCookieDomain() string        { return c.sessionCookieDomain }
+func (c *testCookieConfig) SessionDuration() time.Duration     { return c.sessionDuration }
+func (c *testCookieConfig) RememberIdPCookieName() string      { return c.rememberIdPCookieName }
+func (c *testCookieConfig) RememberIdPDuration() time.Duration { return c.rememberIdPDuration }
+func (c *testCookieConfig) CookieSecureMode() string           { return c.cookieSecureMode }

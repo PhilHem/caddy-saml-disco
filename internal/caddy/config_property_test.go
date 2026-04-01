@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 	"testing/quick"
+
+	"github.com/philiph/caddy-saml-disco/internal/config"
 )
 
 // Cycle 9: Property-Based Test - Configuration Validation
@@ -22,8 +24,10 @@ func TestSPConfigs_Property_AllValidWhenInstanceValid(t *testing.T) {
 		spConfigs := make([]*SPConfig, len(configs))
 		for i := range configs {
 			spConfigs[i] = &SPConfig{
-				Hostname: fmt.Sprintf("app%d.example.com", i),
-				Config:   configs[i],
+				SPConfig: config.SPConfig{
+					Hostname: fmt.Sprintf("app%d.example.com", i),
+					Config:   configs[i],
+				},
 			}
 		}
 
@@ -86,8 +90,10 @@ func TestSPConfigs_Property_UniqueCookieNames(t *testing.T) {
 
 		for i := range configs {
 			spConfigs[i] = &SPConfig{
-				Hostname: fmt.Sprintf("app%d.example.com", i),
-				Config:   configs[i],
+				SPConfig: config.SPConfig{
+					Hostname: fmt.Sprintf("app%d.example.com", i),
+					Config:   configs[i],
+				},
 			}
 			cookieName := spConfigs[i].SessionCookieName
 			if cookieName == "" {
@@ -112,7 +118,7 @@ func TestSPConfigs_Property_UniqueCookieNames(t *testing.T) {
 	}
 
 	// Custom generator to create configs with controlled cookie names
-	config := &quick.Config{
+	quickCfg := &quick.Config{
 		Values: func(values []reflect.Value, r *rand.Rand) {
 			numConfigs := 1 + r.Intn(5)
 			configs := make([]Config, numConfigs)
@@ -129,7 +135,7 @@ func TestSPConfigs_Property_UniqueCookieNames(t *testing.T) {
 		},
 	}
 
-	if err := quick.Check(f, config); err != nil {
+	if err := quick.Check(f, quickCfg); err != nil {
 		t.Error(err)
 	}
 }

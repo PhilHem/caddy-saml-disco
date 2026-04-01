@@ -1,40 +1,33 @@
 package caddy
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/philiph/caddy-saml-disco/internal/config"
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
+	samlsvc "github.com/philiph/caddy-saml-disco/internal/saml"
 )
 
-// SPConfig represents a single SP configuration within a multi-SP instance.
-// Each SP config has its own hostname, configuration, and runtime state.
 type SPConfig struct {
-	// Hostname is the hostname this SP config handles (e.g., "app1.example.com").
-	// Requests with this hostname will route to this SP config.
-	Hostname string
-
-	// Config contains the SAML SP configuration for this hostname.
-	Config
-
-	// Per-SP runtime state (initialized in Provision)
-	// These fields are populated during provisioning and are not serialized.
-	metadataStore    ports.MetadataStore
-	sessionStore     ports.SessionStore
-	entitlementStore ports.EntitlementStore
-	logoStore        ports.LogoStore
-	samlService      *SAMLService
-	sessionDuration  time.Duration
-	templateRenderer *TemplateRenderer
-
-	// Config snapshots (immutable copies taken during Provision to prevent mutation)
-	// These are used in applyAttributeHeadersForSP() to ensure header names match validation-time expectations.
+	config.SPConfig
+	metadataStore              ports.MetadataStore
+	sessionStore               ports.SessionStore
+	entitlementStore           ports.EntitlementStore
+	logoStore                  ports.LogoStore
+	samlService                *samlsvc.SAMLService
+	sessionDuration            time.Duration
+	templateRenderer           *discovery.TemplateRenderer
 	headerPrefixSnapshot       string
-	attributeHeadersSnapshot   []AttributeMapping
-	entitlementHeadersSnapshot []EntitlementHeaderMapping
+	attributeHeadersSnapshot   []domain.AttributeMapping
+	entitlementHeadersSnapshot []httputil.EntitlementHeaderMapping
+	entitlementRefreshCancel   context.CancelFunc
 }
 
-// Validate checks if the SP config is valid.
 func (c *SPConfig) Validate() error {
 	if c.Hostname == "" {
 		return fmt.Errorf("hostname is required")
@@ -42,41 +35,22 @@ func (c *SPConfig) Validate() error {
 	return c.Config.Validate()
 }
 
-// SetMetadataStore sets the metadata store for testing.
-func (c *SPConfig) SetMetadataStore(store ports.MetadataStore) {
-	c.metadataStore = store
+func (c *SPConfig) snapshotConfig() {
+	c.headerPrefixSnapshot = c.HeaderPrefix
+	c.attributeHeadersSnapshot = make([]domain.AttributeMapping, len(c.AttributeHeaders))
+	copy(c.attributeHeadersSnapshot, c.AttributeHeaders)
+	c.entitlementHeadersSnapshot = make([]httputil.EntitlementHeaderMapping, len(c.EntitlementHeaders))
+	copy(c.entitlementHeadersSnapshot, c.EntitlementHeaders)
 }
 
-// SetSessionStore sets the session store for testing.
-func (c *SPConfig) SetSessionStore(store ports.SessionStore) {
-	c.sessionStore = store
-}
-
-// SetSAMLService sets the SAML service for testing.
-func (c *SPConfig) SetSAMLService(service *SAMLService) {
-	c.samlService = service
-}
-
-// SetEntitlementStore sets the entitlement store for testing.
-func (c *SPConfig) SetEntitlementStore(store ports.EntitlementStore) {
-	c.entitlementStore = store
-}
-
-// SetLogoStore sets the logo store for testing.
-func (c *SPConfig) SetLogoStore(store ports.LogoStore) {
-	c.logoStore = store
-}
-
-// validateSPConfigs validates a slice of SP configs and ensures cookie names are unique.
 func validateSPConfigs(configs []*SPConfig) error {
-	cookieNames := make(map[string]string) // cookie name -> hostname
+	cookieNames := make(map[string]string)
 	for _, cfg := range configs {
 		if err := cfg.Validate(); err != nil {
 			return fmt.Errorf("sp config for %s: %w", cfg.Hostname, err)
 		}
 		cookieName := cfg.Config.SessionCookieName
 		if cookieName == "" {
-			// Use default if not set
 			cookieName = "saml_session"
 		}
 		if existingHost := cookieNames[cookieName]; existingHost != "" {

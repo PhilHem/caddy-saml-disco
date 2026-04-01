@@ -15,9 +15,10 @@ import (
 	"testing/quick"
 	"time"
 
-	"github.com/philiph/caddy-saml-disco/internal/session"
+	"github.com/philiph/caddy-saml-disco/internal/config"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 // TestSAMLDisco_MultiSP_Property_SessionIsolation tests that session tokens
@@ -49,10 +50,12 @@ func TestSAMLDisco_MultiSP_Property_SessionIsolation(t *testing.T) {
 			sessionStores[i] = session.NewCookieSessionStore(key, 8*time.Hour)
 
 			spConfigs[i] = &SPConfig{
-				Hostname: fmt.Sprintf("app%d.example.com", i),
-				Config: Config{
-					EntityID:          fmt.Sprintf("https://app%d.example.com/saml", i),
-					SessionCookieName: fmt.Sprintf("sp%d_session", i), // Unique cookie name
+				SPConfig: config.SPConfig{
+					Hostname: fmt.Sprintf("app%d.example.com", i),
+					Config: Config{
+						EntityID:          fmt.Sprintf("https://app%d.example.com/saml", i),
+						SessionCookieName: fmt.Sprintf("sp%d_session", i), // Unique cookie name
+					},
 				},
 			}
 			spConfigs[i].SetSessionStore(sessionStores[i])
@@ -125,10 +128,12 @@ func TestSAMLDisco_MultiSP_Property_SessionIsolation_CustomGenerator(t *testing.
 			sessionStores[i] = session.NewCookieSessionStore(key, 8*time.Hour)
 
 			spConfigs[i] = &SPConfig{
-				Hostname: fmt.Sprintf("app%d.example.com", i),
-				Config: Config{
-					EntityID:          fmt.Sprintf("https://app%d.example.com/saml", i),
-					SessionCookieName: fmt.Sprintf("sp%d_session", i), // Unique cookie name
+				SPConfig: config.SPConfig{
+					Hostname: fmt.Sprintf("app%d.example.com", i),
+					Config: Config{
+						EntityID:          fmt.Sprintf("https://app%d.example.com/saml", i),
+						SessionCookieName: fmt.Sprintf("sp%d_session", i), // Unique cookie name
+					},
 				},
 			}
 			spConfigs[i].SetSessionStore(sessionStores[i])
@@ -170,7 +175,7 @@ func TestSAMLDisco_MultiSP_Property_SessionIsolation_CustomGenerator(t *testing.
 	}
 
 	// Custom generator for more realistic test cases
-	config := &quick.Config{
+	quickCfg := &quick.Config{
 		Values: func(values []reflect.Value, r *rand.Rand) {
 			// Generate 2-5 SP configs
 			numSPs := 2 + r.Intn(4)
@@ -184,7 +189,7 @@ func TestSAMLDisco_MultiSP_Property_SessionIsolation_CustomGenerator(t *testing.
 		},
 	}
 
-	if err := quick.Check(f, config); err != nil {
+	if err := quick.Check(f, quickCfg); err != nil {
 		t.Error(err)
 	}
 }

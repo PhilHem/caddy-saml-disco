@@ -4,6 +4,9 @@ package domain
 
 import (
 	"bytes"
+	"compress/flate"
+	"encoding/base64"
+	"net/url"
 	"testing"
 )
 
@@ -87,5 +90,50 @@ func TestEncodeSAMLRequest_EmptyInput(t *testing.T) {
 
 	if len(decoded) != 0 {
 		t.Errorf("expected empty decoded, got %d bytes", len(decoded))
+	}
+}
+
+// encodeForRedirect compresses data with deflate, base64-encodes it, then
+// URL-encodes it — the exact inverse of DecodeSAMLRequest.
+func encodeForRedirect(t *testing.T, data []byte) string {
+	t.Helper()
+	var buf bytes.Buffer
+	w, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	if err != nil {
+		t.Fatalf("flate.NewWriter: %v", err)
+	}
+	if _, err := w.Write(data); err != nil {
+		t.Fatalf("flate write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("flate close: %v", err)
+	}
+	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return url.QueryEscape(b64)
+}
+
+func TestDecodeSAMLRequest_DecompressionBombRejected(t *testing.T) {
+	// Build a payload that compresses well but decompresses to well over 10 MB.
+	// Repeating a single byte compresses to nearly nothing but expands hugely.
+	payload := bytes.Repeat([]byte{'A'}, maxSAMLRequestSize+1)
+	encoded := encodeForRedirect(t, payload)
+
+	_, err := DecodeSAMLRequest(encoded)
+	if err == nil {
+		t.Fatal("expected error for decompressed payload exceeding maxSAMLRequestSize, got nil")
+	}
+}
+
+func TestDecodeSAMLRequest_AtLimitAccepted(t *testing.T) {
+	// A payload exactly at the limit must pass.
+	payload := bytes.Repeat([]byte{'B'}, maxSAMLRequestSize)
+	encoded := encodeForRedirect(t, payload)
+
+	decoded, err := DecodeSAMLRequest(encoded)
+	if err != nil {
+		t.Fatalf("expected no error for payload at exactly maxSAMLRequestSize, got: %v", err)
+	}
+	if int64(len(decoded)) != maxSAMLRequestSize {
+		t.Errorf("decoded length = %d, want %d", len(decoded), maxSAMLRequestSize)
 	}
 }

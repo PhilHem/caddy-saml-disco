@@ -2,6 +2,8 @@ package caddy
 
 import (
 	"testing"
+
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
 func TestConfig_RememberIdP_Defaults(t *testing.T) {
@@ -173,7 +175,7 @@ func TestConfig_Validate_HeaderPrefixMustStartWithX(t *testing.T) {
 		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "Saml-", // Missing X-
-		AttributeHeaders: []AttributeMapping{
+		AttributeHeaders: []domain.AttributeMapping{
 			{SAMLAttribute: "mail", HeaderName: "User"},
 		},
 	}
@@ -188,7 +190,7 @@ func TestConfig_Validate_HeaderPrefixAllowsSimpleNames(t *testing.T) {
 		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "X-Saml-",
-		AttributeHeaders: []AttributeMapping{
+		AttributeHeaders: []domain.AttributeMapping{
 			{SAMLAttribute: "mail", HeaderName: "User"}, // No X- needed
 		},
 	}
@@ -203,7 +205,7 @@ func TestConfig_Validate_HeaderPrefixValidatesFinalName(t *testing.T) {
 		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "X-Saml-",
-		AttributeHeaders: []AttributeMapping{
+		AttributeHeaders: []domain.AttributeMapping{
 			{SAMLAttribute: "mail", HeaderName: "User-Header"}, // Valid when combined
 		},
 	}
@@ -219,7 +221,7 @@ func TestConfig_Validate_HeaderPrefixEmpty_RequiresXPrefix(t *testing.T) {
 		EntityID:     "https://test.example.com",
 		MetadataFile: "test.xml",
 		HeaderPrefix: "", // Empty prefix
-		AttributeHeaders: []AttributeMapping{
+		AttributeHeaders: []domain.AttributeMapping{
 			{SAMLAttribute: "mail", HeaderName: "User"}, // Missing X- should fail
 		},
 	}

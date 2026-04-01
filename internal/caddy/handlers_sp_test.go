@@ -7,10 +7,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/philiph/caddy-saml-disco/internal/session"
+	"go.uber.org/zap/zaptest"
+
+	"github.com/philiph/caddy-saml-disco/internal/config"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
-	"go.uber.org/zap/zaptest"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 // TestHandleXxx_NilSPConfig tests that handlers properly check for nil SPConfig fields
@@ -46,7 +48,7 @@ func TestHandleXxx_NilSPConfig(t *testing.T) {
 			}
 
 			cfg := &SPConfig{
-				Config:        Config{SessionCookieName: "saml_session"},
+				SPConfig:      config.SPConfig{Config: Config{SessionCookieName: "saml_session"}},
 				samlService:   nil, // nil to test error handling
 				metadataStore: nil,
 				sessionStore:  nil,
@@ -86,7 +88,7 @@ func TestHandleXxx_EmptyEntityID(t *testing.T) {
 	}
 
 	cfg := &SPConfig{
-		Config:    Config{SessionCookieName: "saml_session"},
+		SPConfig:  config.SPConfig{Config: Config{SessionCookieName: "saml_session"}},
 		logoStore: logoStore,
 	}
 
@@ -129,7 +131,7 @@ func TestHandleXxx_URLParseError(t *testing.T) {
 	}
 
 	cfg := &SPConfig{
-		Config:      Config{SessionCookieName: "saml_session"},
+		SPConfig:    config.SPConfig{Config: Config{SessionCookieName: "saml_session"}},
 		samlService: samlService,
 		metadataStore: &mockMetadataStore{
 			idps: []domain.IdPInfo{

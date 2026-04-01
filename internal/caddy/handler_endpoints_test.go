@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/session"
-	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
 func TestServeHTTP_SAMLEndpoints_BypassSessionCheck(t *testing.T) {
@@ -169,9 +170,9 @@ func TestValidateRelayState(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidateRelayState(tc.relayState)
+			got := httputil.ValidateRelayState(tc.relayState)
 			if got != tc.want {
-				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+				t.Errorf("httputil.ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
 			}
 		})
 	}
@@ -397,7 +398,7 @@ func TestHealthEndpoint_NoMetadataStore(t *testing.T) {
 	}
 
 	// Should return JSON error
-	var resp JSONErrorResponse
+	var resp httputil.JSONErrorResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode JSON error: %v", err)
 	}
@@ -669,9 +670,9 @@ func TestRelayStateBoundaryValues(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidateRelayState(tc.relayState)
+			got := httputil.ValidateRelayState(tc.relayState)
 			if got != tc.want {
-				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+				t.Errorf("httputil.ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
 			}
 		})
 	}
@@ -777,9 +778,9 @@ func TestValidateRelayState_DoubleEncodedBypass(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidateRelayState(tc.relayState)
+			got := httputil.ValidateRelayState(tc.relayState)
 			if got != tc.want {
-				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+				t.Errorf("httputil.ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
 			}
 		})
 	}
@@ -801,9 +802,9 @@ func TestValidateRelayState_EncodedProtocolMarker(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidateRelayState(tc.relayState)
+			got := httputil.ValidateRelayState(tc.relayState)
 			if got != tc.want {
-				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+				t.Errorf("httputil.ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
 			}
 		})
 	}
@@ -825,9 +826,9 @@ func TestValidateRelayState_MixedEncodingBypass(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidateRelayState(tc.relayState)
+			got := httputil.ValidateRelayState(tc.relayState)
 			if got != tc.want {
-				t.Errorf("ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
+				t.Errorf("httputil.ValidateRelayState(%q) = %q, want %q", tc.relayState, got, tc.want)
 			}
 		})
 	}
@@ -851,39 +852,39 @@ func FuzzValidateRelayState_InvariantCheck(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := ValidateRelayState(input)
+		result := httputil.ValidateRelayState(input)
 
 		// Invariant 1: Output is never empty
 		if result == "" {
-			t.Errorf("ValidateRelayState(%q) returned empty string", input)
+			t.Errorf("httputil.ValidateRelayState(%q) returned empty string", input)
 		}
 
 		// Invariant 2: Output always starts with "/"
 		if !strings.HasPrefix(result, "/") {
-			t.Errorf("ValidateRelayState(%q) = %q, does not start with /", input, result)
+			t.Errorf("httputil.ValidateRelayState(%q) = %q, does not start with /", input, result)
 		}
 
 		// Invariant 3: Output never starts with "//" (protocol-relative URL)
 		if strings.HasPrefix(result, "//") {
-			t.Errorf("ValidateRelayState(%q) = %q, starts with // (protocol-relative)", input, result)
+			t.Errorf("httputil.ValidateRelayState(%q) = %q, starts with // (protocol-relative)", input, result)
 		}
 
 		// Invariant 4: Parsed URL has no scheme or host
 		parsed, err := url.Parse(result)
 		if err != nil {
-			t.Errorf("ValidateRelayState(%q) = %q, failed to parse: %v", input, result, err)
+			t.Errorf("httputil.ValidateRelayState(%q) = %q, failed to parse: %v", input, result, err)
 		} else {
 			if parsed.Scheme != "" {
-				t.Errorf("ValidateRelayState(%q) = %q, has scheme: %q", input, result, parsed.Scheme)
+				t.Errorf("httputil.ValidateRelayState(%q) = %q, has scheme: %q", input, result, parsed.Scheme)
 			}
 			if parsed.Host != "" {
-				t.Errorf("ValidateRelayState(%q) = %q, has host: %q", input, result, parsed.Host)
+				t.Errorf("httputil.ValidateRelayState(%q) = %q, has host: %q", input, result, parsed.Host)
 			}
 		}
 
 		// Invariant 5: Output contains no CR/LF (header injection prevention)
 		if strings.ContainsAny(result, "\r\n") {
-			t.Errorf("ValidateRelayState(%q) = %q, contains CR/LF", input, result)
+			t.Errorf("httputil.ValidateRelayState(%q) = %q, contains CR/LF", input, result)
 		}
 
 		// Invariant 6: Decoded output must not contain protocol markers
@@ -898,10 +899,10 @@ func FuzzValidateRelayState_InvariantCheck(f *testing.F) {
 
 		// After full decoding, check for protocol markers
 		if strings.Contains(decoded, "://") {
-			t.Errorf("ValidateRelayState(%q) = %q, decoded contains protocol marker: %q", input, result, decoded)
+			t.Errorf("httputil.ValidateRelayState(%q) = %q, decoded contains protocol marker: %q", input, result, decoded)
 		}
 		if strings.HasPrefix(decoded, "//") {
-			t.Errorf("ValidateRelayState(%q) = %q, decoded starts with //: %q", input, result, decoded)
+			t.Errorf("httputil.ValidateRelayState(%q) = %q, decoded starts with //: %q", input, result, decoded)
 		}
 	})
 }

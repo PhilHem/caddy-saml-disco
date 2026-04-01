@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"go.uber.org/zap/zaptest"
+
+	"github.com/philiph/caddy-saml-disco/internal/config"
 )
 
 // Cycle 4: RED - Write failing tests for multi-SP SAMLDisco
@@ -16,12 +18,14 @@ func TestSAMLDisco_MultiSP_Structure(t *testing.T) {
 	s := &SAMLDisco{
 		SPConfigs: []*SPConfig{
 			{
-				Hostname: "app1.example.com",
-				Config: Config{
-					EntityID:     "https://app1/saml",
-					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "../../testdata/sp-cert.pem",
-					KeyFile:      "testdata/sp-key.pem",
+				SPConfig: config.SPConfig{
+					Hostname: "app1.example.com",
+					Config: Config{
+						EntityID:     "https://app1/saml",
+						MetadataFile: "testdata/idp-metadata.xml",
+						CertFile:     "../../testdata/sp-cert.pem",
+						KeyFile:      "testdata/sp-key.pem",
+					},
 				},
 			},
 		},
@@ -41,21 +45,25 @@ func TestSAMLDisco_MultiSP_RegistrySetup(t *testing.T) {
 	s := &SAMLDisco{
 		SPConfigs: []*SPConfig{
 			{
-				Hostname: "app1.example.com",
-				Config: Config{
-					EntityID:     "https://app1/saml",
-					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "../../testdata/sp-cert.pem",
-					KeyFile:      "testdata/sp-key.pem",
+				SPConfig: config.SPConfig{
+					Hostname: "app1.example.com",
+					Config: Config{
+						EntityID:     "https://app1/saml",
+						MetadataFile: "testdata/idp-metadata.xml",
+						CertFile:     "../../testdata/sp-cert.pem",
+						KeyFile:      "testdata/sp-key.pem",
+					},
 				},
 			},
 			{
-				Hostname: "app2.example.com",
-				Config: Config{
-					EntityID:     "https://app2/saml",
-					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "../../testdata/sp-cert.pem",
-					KeyFile:      "testdata/sp-key.pem",
+				SPConfig: config.SPConfig{
+					Hostname: "app2.example.com",
+					Config: Config{
+						EntityID:     "https://app2/saml",
+						MetadataFile: "testdata/idp-metadata.xml",
+						CertFile:     "../../testdata/sp-cert.pem",
+						KeyFile:      "testdata/sp-key.pem",
+					},
 				},
 			},
 		},
@@ -110,21 +118,25 @@ func TestSAMLDisco_ServeHTTP_MultiSP_RoutesByHostname(t *testing.T) {
 	s := &SAMLDisco{
 		SPConfigs: []*SPConfig{
 			{
-				Hostname: "app1.example.com",
-				Config: Config{
-					EntityID:     "https://app1/saml",
-					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "../../testdata/sp-cert.pem",
-					KeyFile:      "testdata/sp-key.pem",
+				SPConfig: config.SPConfig{
+					Hostname: "app1.example.com",
+					Config: Config{
+						EntityID:     "https://app1/saml",
+						MetadataFile: "testdata/idp-metadata.xml",
+						CertFile:     "../../testdata/sp-cert.pem",
+						KeyFile:      "testdata/sp-key.pem",
+					},
 				},
 			},
 			{
-				Hostname: "app2.example.com",
-				Config: Config{
-					EntityID:     "https://app2/saml",
-					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "../../testdata/sp-cert.pem",
-					KeyFile:      "testdata/sp-key.pem",
+				SPConfig: config.SPConfig{
+					Hostname: "app2.example.com",
+					Config: Config{
+						EntityID:     "https://app2/saml",
+						MetadataFile: "testdata/idp-metadata.xml",
+						CertFile:     "../../testdata/sp-cert.pem",
+						KeyFile:      "testdata/sp-key.pem",
+					},
 				},
 			},
 		},
@@ -158,12 +170,14 @@ func TestSAMLDisco_ServeHTTP_MultiSP_UnknownHostname(t *testing.T) {
 	s := &SAMLDisco{
 		SPConfigs: []*SPConfig{
 			{
-				Hostname: "app1.example.com",
-				Config: Config{
-					EntityID:     "https://app1/saml",
-					MetadataFile: "testdata/idp-metadata.xml",
-					CertFile:     "../../testdata/sp-cert.pem",
-					KeyFile:      "testdata/sp-key.pem",
+				SPConfig: config.SPConfig{
+					Hostname: "app1.example.com",
+					Config: Config{
+						EntityID:     "https://app1/saml",
+						MetadataFile: "testdata/idp-metadata.xml",
+						CertFile:     "../../testdata/sp-cert.pem",
+						KeyFile:      "testdata/sp-key.pem",
+					},
 				},
 			},
 		},
@@ -190,10 +204,10 @@ func TestSAMLDisco_ServeHTTP_MultiSP_UnknownHostname(t *testing.T) {
 	_ = req
 }
 
-// TestResolveAcsURLForSP_XForwardedProto verifies that resolveAcsURLForSP
+// TestResolveAcsURLForSP_XForwardedProto verifies that resolveAcsURL
 // respects X-Forwarded-Proto header for reverse proxy deployments.
 // This is a regression test for the inconsistency where resolveAcsURL checked
-// X-Forwarded-Proto but resolveAcsURLForSP did not.
+// X-Forwarded-Proto but resolveAcsURL did not.
 func TestResolveAcsURLForSP_XForwardedProto(t *testing.T) {
 	s := &SAMLDisco{}
 	spConfig := &SPConfig{}
@@ -223,9 +237,9 @@ func TestResolveAcsURLForSP_XForwardedProto(t *testing.T) {
 				req.Header.Set("X-Forwarded-Proto", tc.xForwardProto)
 			}
 
-			acsURL := s.resolveAcsURLForSP(req, spConfig)
+			acsURL := s.resolveAcsURL(req, spConfig)
 			if acsURL.Scheme != tc.expectedScheme {
-				t.Errorf("resolveAcsURLForSP scheme = %q, want %q", acsURL.Scheme, tc.expectedScheme)
+				t.Errorf("resolveAcsURL scheme = %q, want %q", acsURL.Scheme, tc.expectedScheme)
 			}
 		})
 	}

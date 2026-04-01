@@ -169,7 +169,7 @@ func TestApplyAttributeHeaders_StripsSpoofedValues(t *testing.T) {
 	s := &SAMLDisco{
 		Config: Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "role", HeaderName: "X-Role"},
 			},
 		},
@@ -225,7 +225,7 @@ func TestApplyAttributeHeaders_StripsWhenAttributeMissing(t *testing.T) {
 	s := &SAMLDisco{
 		Config: Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "role", HeaderName: "X-Role"},
 			},
 		},
@@ -281,7 +281,7 @@ func TestApplyAttributeHeaders_DisabledPreservesIncoming(t *testing.T) {
 	s := &SAMLDisco{
 		Config: Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "role", HeaderName: "X-Role"},
 			},
 			StripAttributeHeaders: boolPtr(false),
@@ -1023,7 +1023,7 @@ func TestHeaderStrippingUnicode(t *testing.T) {
 	s := &SAMLDisco{
 		Config: Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "name", HeaderName: "X-User-Name"},
 				{SAMLAttribute: "role", HeaderName: "X-User-Role"},
 			},

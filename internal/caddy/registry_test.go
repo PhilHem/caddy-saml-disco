@@ -4,6 +4,8 @@ package caddy
 
 import (
 	"testing"
+
+	"github.com/philiph/caddy-saml-disco/internal/config"
 )
 
 // Cycle 2: RED - Write failing tests for registry lookup
@@ -11,8 +13,8 @@ import (
 func TestSPConfigRegistry_GetByHostname(t *testing.T) {
 	registry := NewSPConfigRegistry()
 
-	cfg1 := &SPConfig{Hostname: "app1.example.com", Config: Config{EntityID: "https://app1/saml"}}
-	cfg2 := &SPConfig{Hostname: "app2.example.com", Config: Config{EntityID: "https://app2/saml"}}
+	cfg1 := &SPConfig{SPConfig: config.SPConfig{Hostname: "app1.example.com", Config: Config{EntityID: "https://app1/saml"}}}
+	cfg2 := &SPConfig{SPConfig: config.SPConfig{Hostname: "app2.example.com", Config: Config{EntityID: "https://app2/saml"}}}
 
 	registry.Add(cfg1)
 	registry.Add(cfg2)
@@ -33,7 +35,7 @@ func TestSPConfigRegistry_GetByHostname(t *testing.T) {
 
 func TestSPConfigRegistry_GetByHostname_ExactMatch(t *testing.T) {
 	registry := NewSPConfigRegistry()
-	cfg := &SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app/saml"}}
+	cfg := &SPConfig{SPConfig: config.SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app/saml"}}}
 	registry.Add(cfg)
 
 	// Should match exactly, not by substring
@@ -50,7 +52,7 @@ func TestSPConfigRegistry_GetByHostname_ExactMatch(t *testing.T) {
 
 func TestSPConfigRegistry_GetByHostname_CaseSensitive(t *testing.T) {
 	registry := NewSPConfigRegistry()
-	cfg := &SPConfig{Hostname: "App.Example.COM", Config: Config{EntityID: "https://app/saml"}}
+	cfg := &SPConfig{SPConfig: config.SPConfig{Hostname: "App.Example.COM", Config: Config{EntityID: "https://app/saml"}}}
 	registry.Add(cfg)
 
 	// Hostname matching should be case-sensitive
@@ -68,8 +70,8 @@ func TestSPConfigRegistry_GetByHostname_CaseSensitive(t *testing.T) {
 func TestSPConfigRegistry_Add_SucceedsForUniqueHostname(t *testing.T) {
 	registry := NewSPConfigRegistry()
 
-	cfg1 := &SPConfig{Hostname: "app1.example.com", Config: Config{EntityID: "https://app1/saml"}}
-	cfg2 := &SPConfig{Hostname: "app2.example.com", Config: Config{EntityID: "https://app2/saml"}}
+	cfg1 := &SPConfig{SPConfig: config.SPConfig{Hostname: "app1.example.com", Config: Config{EntityID: "https://app1/saml"}}}
+	cfg2 := &SPConfig{SPConfig: config.SPConfig{Hostname: "app2.example.com", Config: Config{EntityID: "https://app2/saml"}}}
 
 	err := registry.Add(cfg1)
 	if err != nil {
@@ -93,8 +95,8 @@ func TestSPConfigRegistry_Add_SucceedsForUniqueHostname(t *testing.T) {
 func TestSPConfigRegistry_Add_ReturnsErrorOnCollision(t *testing.T) {
 	registry := NewSPConfigRegistry()
 
-	cfg1 := &SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app1/saml"}}
-	cfg2 := &SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app2/saml"}}
+	cfg1 := &SPConfig{SPConfig: config.SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app1/saml"}}}
+	cfg2 := &SPConfig{SPConfig: config.SPConfig{Hostname: "app.example.com", Config: Config{EntityID: "https://app2/saml"}}}
 
 	err := registry.Add(cfg1)
 	if err != nil {

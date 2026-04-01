@@ -7,8 +7,6 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
-// handlers_health.go - Health endpoint handlers
-
 func (s *SAMLDisco) handleHealthInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
 	if cfg.metadataStore == nil {
 		s.renderAppError(w, r, domain.ConfigError("metadata store not configured"))

@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/philiph/caddy-saml-disco/internal/session"
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
 func TestDiscoveryUI_ServesHTML(t *testing.T) {
@@ -209,7 +210,7 @@ func TestParseAcceptLanguage(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := ParseAcceptLanguage(tc.header)
+			result := discovery.ParseAcceptLanguage(tc.header)
 			if len(result) != len(tc.expected) {
 				t.Errorf("parseAcceptLanguage(%q) = %v (len=%d), want %v (len=%d)",
 					tc.header, result, len(result), tc.expected, len(tc.expected))

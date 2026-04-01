@@ -5,12 +5,15 @@ import (
 	"net/http"
 )
 
-// handlers_session.go - Session info handler
+type sessionInfoResponse struct {
+	Authenticated bool              `json:"authenticated"`
+	Subject       string            `json:"subject,omitempty"`
+	IdPEntityID   string            `json:"idp_entity_id,omitempty"`
+	Attributes    map[string]string `json:"attributes,omitempty"`
+}
 
 func (s *SAMLDisco) handleSessionInfoInternal(w http.ResponseWriter, r *http.Request, cfg *SPConfig) error {
 	response := sessionInfoResponse{Authenticated: false}
-
-	// Try to get session from cookie
 	if cfg.sessionStore != nil {
 		cookie, err := r.Cookie(cfg.Config.SessionCookieName)
 		if err == nil && cookie.Value != "" {

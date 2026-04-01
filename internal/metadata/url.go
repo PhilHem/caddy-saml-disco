@@ -52,6 +52,12 @@ func newURLSnapshot(idps []domain.IdPInfo, lastFetch time.Time, etag, lastModifi
 	}
 }
 
+// maxMetadataSize is the upper bound on how many bytes we will read from a
+// metadata HTTP response. Federation aggregates such as eduGAIN can reach
+// 50–100 MB, so the limit is set to 200 MB to give headroom while still
+// protecting against runaway responses.
+const maxMetadataSize = 200 * 1024 * 1024 // 200 MB
+
 // URLMetadataStore loads IdP metadata from a URL with caching.
 type URLMetadataStore struct {
 	url                          string
@@ -368,9 +374,22 @@ func (s *URLMetadataStore) doRefresh(ctx context.Context, force bool) error {
 		return refreshErr
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	// Fast-fail on Content-Length before reading anything.
+	if resp.ContentLength > maxMetadataSize {
+		refreshErr := fmt.Errorf("metadata response too large: %d bytes (max %d)", resp.ContentLength, maxMetadataSize)
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
+	}
+
+	limitedBody := io.LimitReader(resp.Body, maxMetadataSize+1)
+	data, err := io.ReadAll(limitedBody)
 	if err != nil {
 		refreshErr := fmt.Errorf("read response: %w", err)
+		s.markRefreshFailed(refreshErr)
+		return refreshErr
+	}
+	if int64(len(data)) > maxMetadataSize {
+		refreshErr := fmt.Errorf("metadata response too large: exceeds %d bytes", maxMetadataSize)
 		s.markRefreshFailed(refreshErr)
 		return refreshErr
 	}

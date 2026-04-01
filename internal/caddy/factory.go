@@ -1,3 +1,5 @@
+//go:build unit || integration
+
 package caddy
 
 // NewSAMLDisco creates a new SAMLDisco instance with the given options.

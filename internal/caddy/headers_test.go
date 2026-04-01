@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"go.uber.org/zap"
+
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 )
 
 // TestApplyAttributeHeadersCore_BasicMapping verifies the core function correctly maps
@@ -23,8 +25,8 @@ func TestApplyAttributeHeadersCore_BasicMapping(t *testing.T) {
 		},
 	}
 
-	cfg := HeaderConfig{
-		AttributeHeaders: []AttributeMapping{
+	cfg := httputil.HeaderConfig{
+		AttributeHeaders: []domain.AttributeMapping{
 			{SAMLAttribute: "email", HeaderName: "X-User-Email"},
 			{SAMLAttribute: "displayName", HeaderName: "X-User-Name"},
 		},
@@ -35,7 +37,7 @@ func TestApplyAttributeHeadersCore_BasicMapping(t *testing.T) {
 	logger := zap.NewNop()
 
 	// Execute
-	applyAttributeHeadersCore(req, session, cfg, logger)
+	httputil.ApplyAttributeHeadersCore(req, session, cfg, logger)
 
 	// Verify
 	if got := req.Header.Get("X-User-Email"); got != "user@example.com" {
@@ -63,8 +65,8 @@ func TestApplyAttributeHeadersCore_StripsExisting(t *testing.T) {
 		},
 	}
 
-	cfg := HeaderConfig{
-		AttributeHeaders: []AttributeMapping{
+	cfg := httputil.HeaderConfig{
+		AttributeHeaders: []domain.AttributeMapping{
 			{SAMLAttribute: "email", HeaderName: "X-User-Email"},
 			{SAMLAttribute: "displayName", HeaderName: "X-User-Name"},
 		},
@@ -75,7 +77,7 @@ func TestApplyAttributeHeadersCore_StripsExisting(t *testing.T) {
 	logger := zap.NewNop()
 
 	// Execute
-	applyAttributeHeadersCore(req, session, cfg, logger)
+	httputil.ApplyAttributeHeadersCore(req, session, cfg, logger)
 
 	// Verify - should have session values, not the pre-existing ones
 	if got := req.Header.Get("X-User-Email"); got != "user@example.com" {
@@ -102,8 +104,8 @@ func TestApplyAttributeHeadersCore_PreservesExisting(t *testing.T) {
 		},
 	}
 
-	cfg := HeaderConfig{
-		AttributeHeaders: []AttributeMapping{
+	cfg := httputil.HeaderConfig{
+		AttributeHeaders: []domain.AttributeMapping{
 			{SAMLAttribute: "email", HeaderName: "X-User-Email"},
 		},
 		HeaderPrefix: "",
@@ -113,7 +115,7 @@ func TestApplyAttributeHeadersCore_PreservesExisting(t *testing.T) {
 	logger := zap.NewNop()
 
 	// Execute
-	applyAttributeHeadersCore(req, session, cfg, logger)
+	httputil.ApplyAttributeHeadersCore(req, session, cfg, logger)
 
 	// Verify - session value should overwrite X-User-Email
 	if got := req.Header.Get("X-User-Email"); got != "user@example.com" {

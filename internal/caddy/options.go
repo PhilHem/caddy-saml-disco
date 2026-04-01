@@ -1,9 +1,13 @@
+//go:build unit || integration
+
 package caddy
 
 import (
 	"go.uber.org/zap"
 
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
+	samlsvc "github.com/philiph/caddy-saml-disco/internal/saml"
 )
 
 // SAMLDiscoOption is a functional option for configuring SAMLDisco instances.
@@ -14,11 +18,11 @@ type samlDiscoOptions struct {
 	config           *Config
 	metadataStore    ports.MetadataStore
 	sessionStore     ports.SessionStore
-	samlService      *SAMLService
+	samlService      *samlsvc.SAMLService
 	logoStore        ports.LogoStore
 	entitlementStore ports.EntitlementStore
 	metricsRecorder  ports.MetricsRecorder
-	templateRenderer *TemplateRenderer
+	templateRenderer *discovery.TemplateRenderer
 	logger           *zap.Logger
 	pinnedIdPs       []string
 }
@@ -56,7 +60,7 @@ func WithSessionStore(store ports.SessionStore) SAMLDiscoOption {
 
 // WithSAMLService sets the SAML service for the SAMLDisco instance.
 // Use this for testing with custom SAML services.
-func WithSAMLService(service *SAMLService) SAMLDiscoOption {
+func WithSAMLService(service *samlsvc.SAMLService) SAMLDiscoOption {
 	return func(o *samlDiscoOptions) {
 		o.samlService = service
 	}
@@ -88,7 +92,7 @@ func WithMetricsRecorder(recorder ports.MetricsRecorder) SAMLDiscoOption {
 
 // WithTemplateRenderer sets the template renderer for the SAMLDisco instance.
 // Use this for testing with custom template renderers.
-func WithTemplateRenderer(renderer *TemplateRenderer) SAMLDiscoOption {
+func WithTemplateRenderer(renderer *discovery.TemplateRenderer) SAMLDiscoOption {
 	return func(o *samlDiscoOptions) {
 		o.templateRenderer = renderer
 	}

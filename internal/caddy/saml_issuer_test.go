@@ -5,6 +5,7 @@ package caddy
 import (
 	"encoding/base64"
 	"testing"
+	samlsvc "github.com/philiph/caddy-saml-disco/internal/saml"
 )
 
 // TestExtractResponseIssuer_Valid tests extraction from a valid SAML response.
@@ -24,29 +25,29 @@ func TestExtractResponseIssuer_Valid(t *testing.T) {
 
 	encoded := base64.StdEncoding.EncodeToString([]byte(responseXML))
 
-	issuer, err := ExtractResponseIssuer(encoded)
+	issuer, err := samlsvc.ExtractResponseIssuer(encoded)
 	if err != nil {
-		t.Fatalf("ExtractResponseIssuer() error = %v", err)
+		t.Fatalf("samlsvc.ExtractResponseIssuer() error = %v", err)
 	}
 
 	if issuer != "https://idp.example.com/saml" {
-		t.Errorf("ExtractResponseIssuer() = %q, want %q", issuer, "https://idp.example.com/saml")
+		t.Errorf("samlsvc.ExtractResponseIssuer() = %q, want %q", issuer, "https://idp.example.com/saml")
 	}
 }
 
 // TestExtractResponseIssuer_Empty tests error on empty input.
 func TestExtractResponseIssuer_Empty(t *testing.T) {
-	_, err := ExtractResponseIssuer("")
+	_, err := samlsvc.ExtractResponseIssuer("")
 	if err == nil {
-		t.Error("ExtractResponseIssuer() should fail with empty input")
+		t.Error("samlsvc.ExtractResponseIssuer() should fail with empty input")
 	}
 }
 
 // TestExtractResponseIssuer_InvalidBase64 tests error on invalid base64.
 func TestExtractResponseIssuer_InvalidBase64(t *testing.T) {
-	_, err := ExtractResponseIssuer("not-valid-base64!!!")
+	_, err := samlsvc.ExtractResponseIssuer("not-valid-base64!!!")
 	if err == nil {
-		t.Error("ExtractResponseIssuer() should fail with invalid base64")
+		t.Error("samlsvc.ExtractResponseIssuer() should fail with invalid base64")
 	}
 }
 
@@ -54,9 +55,9 @@ func TestExtractResponseIssuer_InvalidBase64(t *testing.T) {
 func TestExtractResponseIssuer_InvalidXML(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte("<not valid xml"))
 
-	_, err := ExtractResponseIssuer(encoded)
+	_, err := samlsvc.ExtractResponseIssuer(encoded)
 	if err == nil {
-		t.Error("ExtractResponseIssuer() should fail with invalid XML")
+		t.Error("samlsvc.ExtractResponseIssuer() should fail with invalid XML")
 	}
 }
 
@@ -75,9 +76,9 @@ func TestExtractResponseIssuer_NoIssuer(t *testing.T) {
 
 	encoded := base64.StdEncoding.EncodeToString([]byte(responseXML))
 
-	_, err := ExtractResponseIssuer(encoded)
+	_, err := samlsvc.ExtractResponseIssuer(encoded)
 	if err == nil {
-		t.Error("ExtractResponseIssuer() should fail when Issuer is missing")
+		t.Error("samlsvc.ExtractResponseIssuer() should fail when Issuer is missing")
 	}
 }
 
@@ -98,8 +99,8 @@ func TestExtractResponseIssuer_EmptyIssuer(t *testing.T) {
 
 	encoded := base64.StdEncoding.EncodeToString([]byte(responseXML))
 
-	_, err := ExtractResponseIssuer(encoded)
+	_, err := samlsvc.ExtractResponseIssuer(encoded)
 	if err == nil {
-		t.Error("ExtractResponseIssuer() should fail when Issuer is empty")
+		t.Error("samlsvc.ExtractResponseIssuer() should fail when Issuer is empty")
 	}
 }

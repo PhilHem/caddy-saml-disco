@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/config"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 )
 
 // Cycle 7: RED - Test that applyAttributeHeaders includes entitlements when combined
@@ -26,17 +28,18 @@ func TestApplyAttributeHeaders_IncludesEntitlements(t *testing.T) {
 		t.Fatalf("Failed to add entitlement: %v", err)
 	}
 
-	// Create SAMLDisco instance with entitlements configured
-	s := &SAMLDisco{
-		Config: Config{
-			AttributeHeaders: []AttributeMapping{
+	// Create SAMLDisco instance with entitlements configured via SPConfig
+	s := &SAMLDisco{}
+	sp := &SPConfig{
+		SPConfig: config.SPConfig{Config: Config{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
-			EntitlementHeaders: []EntitlementHeaderMapping{
+			EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 				{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 				{Field: "department", HeaderName: "X-Department"},
 			},
-		},
+		}},
 		entitlementStore: entitlementStore,
 	}
 
@@ -52,7 +55,7 @@ func TestApplyAttributeHeaders_IncludesEntitlements(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 
 	// Apply headers
-	s.applyAttributeHeaders(req, session)
+	s.applyAttributeHeaders(req, session, sp)
 
 	// Assert: Both SAML attribute AND entitlement headers are present
 	if req.Header.Get("X-Remote-User") != "user@example.edu" {
@@ -68,12 +71,13 @@ func TestApplyAttributeHeaders_IncludesEntitlements(t *testing.T) {
 
 func TestApplyAttributeHeaders_WorksWithoutEntitlements(t *testing.T) {
 	// Test that SAML attributes still work when no entitlements are configured
-	s := &SAMLDisco{
-		Config: Config{
-			AttributeHeaders: []AttributeMapping{
+	s := &SAMLDisco{}
+	sp := &SPConfig{
+		SPConfig: config.SPConfig{Config: Config{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
-		},
+		}},
 	}
 
 	session := &domain.Session{
@@ -84,7 +88,7 @@ func TestApplyAttributeHeaders_WorksWithoutEntitlements(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/", nil)
-	s.applyAttributeHeaders(req, session)
+	s.applyAttributeHeaders(req, session, sp)
 
 	if req.Header.Get("X-Remote-User") != "user@example.edu" {
 		t.Error("SAML attribute header not set")
@@ -93,15 +97,16 @@ func TestApplyAttributeHeaders_WorksWithoutEntitlements(t *testing.T) {
 
 func TestApplyAttributeHeaders_WorksWithoutEntitlementStore(t *testing.T) {
 	// Test that it works when entitlement store is nil
-	s := &SAMLDisco{
-		Config: Config{
-			AttributeHeaders: []AttributeMapping{
+	s := &SAMLDisco{}
+	sp := &SPConfig{
+		SPConfig: config.SPConfig{Config: Config{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
-			EntitlementHeaders: []EntitlementHeaderMapping{
+			EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 				{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 			},
-		},
+		}},
 		entitlementStore: nil,
 	}
 
@@ -113,7 +118,7 @@ func TestApplyAttributeHeaders_WorksWithoutEntitlementStore(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("GET", "/", nil)
-	s.applyAttributeHeaders(req, session)
+	s.applyAttributeHeaders(req, session, sp)
 
 	// Should still set SAML attribute header
 	if req.Header.Get("X-Remote-User") != "user@example.edu" {

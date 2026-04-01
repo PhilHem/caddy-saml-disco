@@ -9,6 +9,11 @@ import (
 	"net/url"
 )
 
+// maxSAMLRequestSize is the upper bound on the decompressed size of a SAML
+// redirect-binding request. Legitimate AuthnRequests are well under 100 KB;
+// 10 MB guards against decompression bombs without affecting real traffic.
+const maxSAMLRequestSize = 10 * 1024 * 1024 // 10 MB
+
 // DecodeSAMLRequest decodes a SAML request from HTTP-Redirect binding format.
 // The pipeline is: URL decode -> Base64 decode -> Deflate inflate.
 //
@@ -26,13 +31,19 @@ func DecodeSAMLRequest(encoded string) ([]byte, error) {
 		return nil, fmt.Errorf("base64 decode SAMLRequest: %w", err)
 	}
 
-	// Step 3: Inflate (deflate decompress)
+	// Step 3: Inflate (deflate decompress) with size limit to guard against
+	// decompression bombs. We read one byte beyond the limit so we can detect
+	// when the stream is truncated vs. exactly at the boundary.
 	inflatedReader := flate.NewReader(bytes.NewReader(base64Decoded))
 	defer inflatedReader.Close()
 
-	inflatedBytes, err := io.ReadAll(inflatedReader)
+	limitedReader := io.LimitReader(inflatedReader, maxSAMLRequestSize+1)
+	inflatedBytes, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, fmt.Errorf("inflate SAMLRequest: %w", err)
+	}
+	if int64(len(inflatedBytes)) > maxSAMLRequestSize {
+		return nil, fmt.Errorf("inflate SAMLRequest: decompressed size exceeds %d bytes", maxSAMLRequestSize)
 	}
 
 	return inflatedBytes, nil

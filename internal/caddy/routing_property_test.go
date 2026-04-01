@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 	"testing/quick"
+
+	"github.com/philiph/caddy-saml-disco/internal/config"
 )
 
 // Cycle 3: Property-Based Test - Routing Correctness
@@ -19,30 +21,33 @@ func TestSPConfigRegistry_Property_RoutingCorrectness(t *testing.T) {
 		}
 
 		registry := NewSPConfigRegistry()
+		added := make(map[string]bool)
 		for i, hostname := range hostnames {
-			// Skip empty hostnames
+			// Skip empty hostnames (registry does not support wildcard in this mode)
 			if hostname == "" {
 				continue
 			}
+			// Skip duplicates (registry rejects them)
+			if added[hostname] {
+				continue
+			}
 			cfg := &SPConfig{
-				Hostname: hostname,
-				Config: Config{
-					EntityID: fmt.Sprintf("https://sp%d/saml", i),
+				SPConfig: config.SPConfig{
+					Hostname: hostname,
+					Config: Config{
+						EntityID: fmt.Sprintf("https://sp%d/saml", i),
+					},
 				},
 			}
-			registry.Add(cfg)
+			if err := registry.Add(cfg); err == nil {
+				added[hostname] = true
+			}
 		}
 
 		found := registry.GetByHostname(lookupHostname)
 
-		// Property: found != nil iff lookupHostname is in hostnames
-		expectedFound := false
-		for _, h := range hostnames {
-			if h == lookupHostname {
-				expectedFound = true
-				break
-			}
-		}
+		// Property: found != nil iff lookupHostname was successfully added
+		expectedFound := added[lookupHostname]
 
 		return (found != nil) == expectedFound
 	}
@@ -65,9 +70,11 @@ func TestSPConfigRegistry_Property_RoutingCorrectness_CustomGenerator(t *testing
 				continue
 			}
 			cfg := &SPConfig{
-				Hostname: hostname,
-				Config: Config{
-					EntityID: fmt.Sprintf("https://sp%d/saml", i),
+				SPConfig: config.SPConfig{
+					Hostname: hostname,
+					Config: Config{
+						EntityID: fmt.Sprintf("https://sp%d/saml", i),
+					},
 				},
 			}
 			registry.Add(cfg)
@@ -88,7 +95,7 @@ func TestSPConfigRegistry_Property_RoutingCorrectness_CustomGenerator(t *testing
 	}
 
 	// Custom generator to create reasonable hostname strings
-	config := &quick.Config{
+	quickCfg := &quick.Config{
 		Values: func(values []reflect.Value, r *rand.Rand) {
 			// Generate 1-5 hostnames
 			numHostnames := 1 + r.Intn(5)
@@ -110,7 +117,7 @@ func TestSPConfigRegistry_Property_RoutingCorrectness_CustomGenerator(t *testing
 		},
 	}
 
-	if err := quick.Check(f, config); err != nil {
+	if err := quick.Check(f, quickCfg); err != nil {
 		t.Error(err)
 	}
 }

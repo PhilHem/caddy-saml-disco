@@ -17,11 +17,15 @@ import (
 
 	"github.com/beevik/etree"
 
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/ports"
+	"github.com/philiph/caddy-saml-disco/internal/request"
+	samlsvc "github.com/philiph/caddy-saml-disco/internal/saml"
 	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/internal/signature"
-	"github.com/philiph/caddy-saml-disco/internal/domain"
-	"github.com/philiph/caddy-saml-disco/internal/ports"
 )
 
 // fuzzTestKey is a shared RSA key for fuzz tests, generated once at init.
@@ -171,7 +175,7 @@ func FuzzValidateDenyRedirect(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
-		result := ValidateDenyRedirect(input)
+		result := httputil.ValidateDenyRedirect(input)
 		// Must never panic
 		// Must never return dangerous schemes
 		if result != "" {
@@ -192,7 +196,7 @@ func FuzzValidateRelayState(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := ValidateRelayState(input)
+		result := httputil.ValidateRelayState(input)
 		checkRelayStateInvariants(t, input, result)
 	})
 }
@@ -273,7 +277,7 @@ func FuzzApplyAttributeHeaders(f *testing.F) {
 			attr = "urn:fuzz:attr"
 		}
 
-		mapping := AttributeMapping{
+		mapping := domain.AttributeMapping{
 			SAMLAttribute: attr,
 			HeaderName:    "X-Fuzz-Header",
 			Separator:     separator,
@@ -803,7 +807,7 @@ func FuzzParseAcceptLanguage(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := ParseAcceptLanguage(input)
+		result := discovery.ParseAcceptLanguage(input)
 		checkParseAcceptLanguageInvariants(t, input, result)
 	})
 }
@@ -942,7 +946,7 @@ func FuzzParseDuration(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		dur, err := ParseDuration(input)
+		dur, err := httputil.ParseDuration(input)
 		checkParseDurationInvariants(t, input, dur, err)
 	})
 }
@@ -987,7 +991,7 @@ func checkForceAuthnPathInvariants(t *testing.T, path string, patterns []string,
 				prefix := strings.TrimSuffix(pattern, "/*")
 				expected := strings.HasPrefix(path, prefix+"/")
 				if expected && !result {
-					t.Errorf("MatchesForceAuthnPath(%q, %v) = false, want true (wildcard prefix match)", truncate(path), patterns)
+					t.Errorf("httputil.MatchesForceAuthnPath(%q, %v) = false, want true (wildcard prefix match)", truncate(path), patterns)
 				}
 			}
 		}
@@ -1006,7 +1010,7 @@ func FuzzMatchesForceAuthnPath(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, path, pattern string) {
 		patterns := []string{pattern}
-		result := MatchesForceAuthnPath(path, patterns)
+		result := httputil.MatchesForceAuthnPath(path, patterns)
 		checkForceAuthnPathInvariants(t, path, patterns, result)
 	})
 }
@@ -1102,7 +1106,7 @@ func FuzzHandleACS_EncryptedAssertion(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, encryptedData string) {
 		// Create service with test keys
-		svc := NewSAMLService("https://sp.example.com", fuzzTestKey, fuzzTestCert)
+		svc := samlsvc.NewSAMLServiceWithStore("https://sp.example.com", fuzzTestKey, fuzzTestCert, request.NewInMemoryRequestStore())
 
 		// Create minimal IdP info
 		idp := &domain.IdPInfo{

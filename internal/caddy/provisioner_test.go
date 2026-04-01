@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/philiph/caddy-saml-disco/internal/metadata"
+	"github.com/philiph/caddy-saml-disco/internal/metrics"
 	"go.uber.org/zap"
 )
 
@@ -60,9 +61,9 @@ func TestBuildMetadataStoreOptions(t *testing.T) {
 				},
 				logger: zap.NewNop(),
 			}
-			s.initMetricsRecorder()
+			rec := metrics.NewNoopMetricsRecorder()
 
-			opts, err := s.buildMetadataStoreOptions()
+			opts, err := metadata.BuildOptionsFromConfig(&s.Config, s.logger, rec, getVersion())
 
 			if tt.expectError {
 				if err == nil {
@@ -127,8 +128,6 @@ func TestInitializeMetadataStore(t *testing.T) {
 				},
 				logger: zap.NewNop(),
 			}
-			s.initMetricsRecorder()
-
 			refreshInterval := 1 * time.Hour
 			opts := []metadata.MetadataOption{
 				metadata.WithLogger(s.logger),
@@ -136,7 +135,7 @@ func TestInitializeMetadataStore(t *testing.T) {
 
 			// Note: We don't call Load() here because that would trigger network I/O or file I/O.
 			// This test only verifies that the correct store type is created.
-			store, err := s.initializeMetadataStore(refreshInterval, opts)
+			store, err := metadata.NewStoreFromConfig(&s.Config, refreshInterval, opts, s.logger)
 
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -236,7 +235,7 @@ func TestInitializeSessionAndSAML(t *testing.T) {
 				logger: zap.NewNop(),
 			}
 
-			sessionStore, samlService, sessionDur, err := s.initializeSessionAndSAML()
+			sessionStore, samlService, sessionDur, err := newSessionAndSAMLFromConfig(&s.Config, s.logger, s.SignMetadata)
 
 			if tt.expectError {
 				if err == nil {

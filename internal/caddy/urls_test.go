@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
@@ -17,7 +18,7 @@ func TestResolveScheme_Direct(t *testing.T) {
 	req := httptest.NewRequest("GET", "https://example.com/test", nil)
 	req.TLS = &tls.ConnectionState{}
 
-	scheme := resolveScheme(req)
+	scheme := httputil.ResolveScheme(req)
 	if scheme != "https" {
 		t.Errorf("expected 'https', got %q", scheme)
 	}
@@ -31,7 +32,7 @@ func TestResolveScheme_XForwardedProto(t *testing.T) {
 	req.TLS = nil
 	req.Header.Set("X-Forwarded-Proto", "https")
 
-	scheme := resolveScheme(req)
+	scheme := httputil.ResolveScheme(req)
 	if scheme != "https" {
 		t.Errorf("expected 'https', got %q", scheme)
 	}
@@ -44,7 +45,7 @@ func TestResolveScheme_NoTLS_NoHeader(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://example.com/test", nil)
 	req.TLS = nil
 
-	scheme := resolveScheme(req)
+	scheme := httputil.ResolveScheme(req)
 	if scheme != "http" {
 		t.Errorf("expected 'http', got %q", scheme)
 	}

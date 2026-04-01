@@ -14,8 +14,6 @@ import (
 
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
-
-	"github.com/philiph/caddy-saml-disco/internal/request"
 )
 
 // SAMLService provides SAML Service Provider operations.
@@ -41,34 +39,9 @@ type AuthResult struct {
 // DefaultRequestCleanupInterval is the default interval for cleaning up expired SAML request IDs.
 const DefaultRequestCleanupInterval = 5 * time.Minute
 
-// NewSAMLService creates a new SAML service with the given configuration.
-// Uses an in-memory request store WITHOUT background cleanup.
-// For production use with background cleanup, use NewSAMLServiceWithCleanup.
-func NewSAMLService(entityID string, privateKey *rsa.PrivateKey, certificate *x509.Certificate) *SAMLService {
-	return &SAMLService{
-		entityID:     entityID,
-		privateKey:   privateKey,
-		certificate:  certificate,
-		requestStore: request.NewInMemoryRequestStore(),
-		requestTTL:   10 * time.Minute,
-	}
-}
-
-// NewSAMLServiceWithCleanup creates a SAML service with background cleanup.
-// The cleanupInterval specifies how often expired request IDs are cleaned up.
-// Call Close() when the service is no longer needed to stop the cleanup goroutine.
-func NewSAMLServiceWithCleanup(entityID string, privateKey *rsa.PrivateKey, certificate *x509.Certificate, cleanupInterval time.Duration) *SAMLService {
-	return &SAMLService{
-		entityID:     entityID,
-		privateKey:   privateKey,
-		certificate:  certificate,
-		requestStore: request.NewInMemoryRequestStoreWithCleanup(cleanupInterval),
-		requestTTL:   10 * time.Minute,
-	}
-}
-
-// NewSAMLServiceWithStore creates a new SAML service with a custom request store.
-// Use this for dependency injection or when background cleanup is needed.
+// NewSAMLServiceWithStore creates a new SAML service with the given request store.
+// The caller is responsible for providing a ports.RequestStore implementation.
+// For production use, pass a store with background cleanup; call Close() when done.
 func NewSAMLServiceWithStore(entityID string, privateKey *rsa.PrivateKey, certificate *x509.Certificate, store ports.RequestStore) *SAMLService {
 	return &SAMLService{
 		entityID:     entityID,

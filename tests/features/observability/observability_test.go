@@ -17,10 +17,10 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
+	"github.com/philiph/caddy-saml-disco/internal/authentication"
+	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/metrics"
-	caddy "github.com/philiph/caddy-saml-disco/internal/caddy"
-	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
@@ -37,7 +37,7 @@ type testContext struct {
 
 	// Test data for SAML auth error scenarios
 	idpEntityID  string
-	errorDetails *caddy.SAMLErrorDetails
+	errorDetails *authentication.SAMLErrorDetails
 
 	// Test data for filter failure scenarios
 	idps      []domain.IdPInfo // IdPs to load
@@ -146,7 +146,7 @@ func authFailsDueToSignatureVerification(ctx context.Context) (context.Context, 
 	}
 
 	// Parse and process the error (simulating what the ACS handler does)
-	tc.errorDetails = caddy.ParseSAMLError(err)
+	tc.errorDetails = authentication.ParseSAMLError(err)
 
 	// Emit log with structured fields (simulating handler behavior)
 	fields := buildLogFields(tc.errorDetails, tc.idpEntityID)
@@ -166,7 +166,7 @@ func authFailsDueToDecryptionFailure(ctx context.Context) (context.Context, erro
 		Now:        time.Now(),
 	}
 
-	tc.errorDetails = caddy.ParseSAMLError(err)
+	tc.errorDetails = authentication.ParseSAMLError(err)
 	fields := buildLogFields(tc.errorDetails, tc.idpEntityID)
 	tc.logger.Warn("saml authentication failed", fields...)
 	tc.metricsRecorder.RecordAuthFailure(string(tc.errorDetails.Category), tc.idpEntityID)
@@ -182,7 +182,7 @@ func authFailsDueToTimeConstraint(ctx context.Context) (context.Context, error) 
 		Now:        time.Now(),
 	}
 
-	tc.errorDetails = caddy.ParseSAMLError(err)
+	tc.errorDetails = authentication.ParseSAMLError(err)
 	fields := buildLogFields(tc.errorDetails, tc.idpEntityID)
 	tc.logger.Warn("saml authentication failed", fields...)
 	tc.metricsRecorder.RecordAuthFailure(string(tc.errorDetails.Category), tc.idpEntityID)
@@ -207,7 +207,7 @@ func authFailsDueToIdPStatus(ctx context.Context) (context.Context, error) {
 		Now:        time.Now(),
 	}
 
-	tc.errorDetails = caddy.ParseSAMLError(err)
+	tc.errorDetails = authentication.ParseSAMLError(err)
 	fields := buildLogFields(tc.errorDetails, tc.idpEntityID)
 	tc.logger.Warn("saml authentication failed", fields...)
 	tc.metricsRecorder.RecordAuthFailure(string(tc.errorDetails.Category), tc.idpEntityID)
@@ -223,7 +223,7 @@ func authFailsDueToUnknownError(ctx context.Context) (context.Context, error) {
 		Now:        time.Now(),
 	}
 
-	tc.errorDetails = caddy.ParseSAMLError(err)
+	tc.errorDetails = authentication.ParseSAMLError(err)
 	fields := buildLogFields(tc.errorDetails, tc.idpEntityID)
 	tc.logger.Warn("saml authentication failed", fields...)
 	tc.metricsRecorder.RecordAuthFailure(string(tc.errorDetails.Category), tc.idpEntityID)
@@ -413,7 +413,7 @@ func metricShouldHaveLabelWithValue(ctx context.Context, metricName, labelName, 
 }
 
 // buildLogFields mirrors the logging logic in plugin.go handleACSError
-func buildLogFields(details *caddy.SAMLErrorDetails, idpEntityID string) []zap.Field {
+func buildLogFields(details *authentication.SAMLErrorDetails, idpEntityID string) []zap.Field {
 	fields := []zap.Field{
 		zap.String("error_category", string(details.Category)),
 		zap.String("idp_entity_id", idpEntityID),

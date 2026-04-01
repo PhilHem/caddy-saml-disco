@@ -11,8 +11,10 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/config"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
 )
 
@@ -110,7 +112,7 @@ func TestHeaderStripping_Property_SpoofedHeadersAlwaysRemoved(t *testing.T) {
 			Config: Config{
 				HeaderPrefix:          prefix,
 				StripAttributeHeaders: boolPtr(stripEnabled),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:attr", HeaderName: headerName},
 				},
 			},
@@ -125,7 +127,7 @@ func TestHeaderStripping_Property_SpoofedHeadersAlwaysRemoved(t *testing.T) {
 		}
 
 		// Apply headers
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 		// Property: If strip enabled, spoofed headers must be removed
 		// and replaced with attribute value (if present)
@@ -187,7 +189,7 @@ func TestHeaderStripping_Property_CaseInsensitiveMatching(t *testing.T) {
 			disco := &SAMLDisco{
 				Config: Config{
 					StripAttributeHeaders: boolPtr(true),
-					AttributeHeaders: []AttributeMapping{
+					AttributeHeaders: []domain.AttributeMapping{
 						{SAMLAttribute: "test:attr", HeaderName: headerName},
 					},
 				},
@@ -200,7 +202,7 @@ func TestHeaderStripping_Property_CaseInsensitiveMatching(t *testing.T) {
 				},
 			}
 
-			disco.applyAttributeHeaders(req, session)
+			disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 			// Property: Header should be stripped regardless of case
 			// Use canonical form for checking
@@ -255,7 +257,7 @@ func TestHeaderStripping_Property_MultipleValuesRemoved(t *testing.T) {
 		disco := &SAMLDisco{
 			Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:attr", HeaderName: headerName},
 				},
 			},
@@ -268,7 +270,7 @@ func TestHeaderStripping_Property_MultipleValuesRemoved(t *testing.T) {
 			},
 		}
 
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 		// Property: All spoofed values removed, only authentic value remains
 		values := req.Header.Values(headerName)
@@ -320,7 +322,7 @@ func TestHeaderStripping_Property_PrefixHandling(t *testing.T) {
 			Config: Config{
 				HeaderPrefix:          prefix,
 				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:attr", HeaderName: headerName},
 				},
 			},
@@ -333,7 +335,7 @@ func TestHeaderStripping_Property_PrefixHandling(t *testing.T) {
 			},
 		}
 
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 		// Property: Prefixed header should be stripped correctly
 		got := req.Header.Get(finalHeaderName)
@@ -407,7 +409,7 @@ func TestHeaderStripping_Property_PrefixCaseCanonical(t *testing.T) {
 						Config: Config{
 							HeaderPrefix:          prefixVar,
 							StripAttributeHeaders: boolPtr(true),
-							AttributeHeaders: []AttributeMapping{
+							AttributeHeaders: []domain.AttributeMapping{
 								{SAMLAttribute: "test:attr", HeaderName: headerNameVar},
 							},
 						},
@@ -420,7 +422,7 @@ func TestHeaderStripping_Property_PrefixCaseCanonical(t *testing.T) {
 						},
 					}
 
-					disco.applyAttributeHeaders(req, session)
+					disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 					// Property: Header should be stripped and replaced at canonical name
 					// regardless of case used in config or spoofed header
@@ -458,7 +460,7 @@ func TestHeaderStripping_Property_EntitlementHeadersStripped(t *testing.T) {
 		disco := &SAMLDisco{
 			Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				EntitlementHeaders: []EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: headerName},
 				},
 			},
@@ -473,7 +475,7 @@ func TestHeaderStripping_Property_EntitlementHeadersStripped(t *testing.T) {
 		// Note: This test requires an entitlement store to be set up
 		// For property testing, we'll verify the stripping happens
 		// even without a store (header should be removed)
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 		// Property: Spoofed entitlement header should be stripped
 		// (even if no entitlement store is configured)
@@ -504,7 +506,7 @@ func TestHeaderStripping_DefaultBehaviorConsistency_Unit(t *testing.T) {
 	disco1 := &SAMLDisco{
 		Config: Config{
 			// StripAttributeHeaders is nil - should default to true
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "test:attr", HeaderName: headerName},
 			},
 		},
@@ -518,24 +520,26 @@ func TestHeaderStripping_DefaultBehaviorConsistency_Unit(t *testing.T) {
 		},
 	}
 
-	disco1.applyAttributeHeaders(req1, session)
+	disco1.applyAttributeHeaders(req1, session, &SPConfig{SPConfig: config.SPConfig{Config: disco1.Config}})
 
 	// Test multi-SP mode with nil StripAttributeHeaders (should default to true)
 	req2 := &http.Request{Header: make(http.Header)}
 	req2.Header.Set(headerName, spoofedValue)
 
 	spConfig := &SPConfig{
-		Hostname: "test.example.com",
-		Config: Config{
-			// StripAttributeHeaders is nil - should default to true
-			AttributeHeaders: []AttributeMapping{
-				{SAMLAttribute: "test:attr", HeaderName: headerName},
+		SPConfig: config.SPConfig{
+			Hostname: "test.example.com",
+			Config: Config{
+				// StripAttributeHeaders is nil - should default to true
+				AttributeHeaders: []domain.AttributeMapping{
+					{SAMLAttribute: "test:attr", HeaderName: headerName},
+				},
 			},
 		},
 	}
 
 	disco2 := &SAMLDisco{}
-	disco2.applyAttributeHeadersForSP(req2, session, spConfig)
+	disco2.applyAttributeHeaders(req2, session, spConfig)
 
 	// Single-SP should strip spoofed header (empty because no matching attribute)
 	got1 := req1.Header.Get(headerName)
@@ -578,7 +582,7 @@ func TestHeaderStripping_Property_DefaultBehaviorConsistency(t *testing.T) {
 		disco1 := &SAMLDisco{
 			Config: Config{
 				// StripAttributeHeaders is nil - should default to true
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:attr", HeaderName: headerName},
 				},
 			},
@@ -594,24 +598,26 @@ func TestHeaderStripping_Property_DefaultBehaviorConsistency(t *testing.T) {
 			},
 		}
 
-		disco1.applyAttributeHeaders(req1, session)
+		disco1.applyAttributeHeaders(req1, session, &SPConfig{SPConfig: config.SPConfig{Config: disco1.Config}})
 
 		// Test multi-SP mode with nil StripAttributeHeaders (should default to true)
 		req2 := &http.Request{Header: make(http.Header)}
 		req2.Header.Set(headerName, spoofedValue)
 
 		spConfig := &SPConfig{
-			Hostname: "test.example.com",
-			Config: Config{
-				// StripAttributeHeaders is nil - should default to true
-				AttributeHeaders: []AttributeMapping{
-					{SAMLAttribute: "test:attr", HeaderName: headerName},
+			SPConfig: config.SPConfig{
+				Hostname: "test.example.com",
+				Config: Config{
+					// StripAttributeHeaders is nil - should default to true
+					AttributeHeaders: []domain.AttributeMapping{
+						{SAMLAttribute: "test:attr", HeaderName: headerName},
+					},
 				},
 			},
 		}
 
 		disco2 := &SAMLDisco{}
-		disco2.applyAttributeHeadersForSP(req2, session, spConfig)
+		disco2.applyAttributeHeaders(req2, session, spConfig)
 
 		// Property: Both should strip spoofed headers when StripAttributeHeaders is nil
 		// Single-SP: shouldStripAttributeHeaders() returns true when nil, so strips (empty result)
@@ -661,7 +667,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 			Config: Config{
 				StripAttributeHeaders: boolPtr(true),
 				HeaderPrefix:          "X-Saml-",
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					// Use invalid header name that will fail validation in MapAttributesToHeadersWithPrefix
 					// The prefix + headerName combination creates "X-Saml-invalid" which is valid,
 					// but we'll use a header name that when combined with prefix becomes invalid
@@ -685,7 +691,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 		}
 
 		// Normal case: mapping succeeds, header replaced
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 		got := req.Header.Get(prefixedHeaderName)
 		if got != domain.SanitizeHeaderValue("authentic-value") {
 			t.Errorf("expected header to be replaced with authentic value, got %q", got)
@@ -714,7 +720,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 		}
 
 		// Restore headers (restoreHeaderState is package-private, accessible in tests)
-		restoreHeaderState(req, originalHeaders)
+		httputil.RestoreHeaderState(req, originalHeaders)
 
 		// Verify both values were restored
 		values := req.Header[headerName]
@@ -743,7 +749,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 				// Use invalid prefix that will cause MapAttributesToHeadersWithPrefix to fail
 				// This simulates a runtime error scenario
 				HeaderPrefix: "invalid-prefix-", // Invalid: doesn't start with X-
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:attr", HeaderName: headerName},
 				},
 			},
@@ -757,7 +763,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 		}
 
 		// Apply headers - mapping should fail due to invalid prefix
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 		// Verify header was restored (rollback happened)
 		got := req.Header.Get(headerName)
@@ -774,11 +780,13 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 		req.Header.Set(headerName, spoofedValue)
 
 		spConfig := &SPConfig{
-			Hostname: "test.example.com",
-			Config: Config{
-				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
-					{SAMLAttribute: "test:attr", HeaderName: headerName},
+			SPConfig: config.SPConfig{
+				Hostname: "test.example.com",
+				Config: Config{
+					StripAttributeHeaders: boolPtr(true),
+					AttributeHeaders: []domain.AttributeMapping{
+						{SAMLAttribute: "test:attr", HeaderName: headerName},
+					},
 				},
 			},
 		}
@@ -791,7 +799,7 @@ func TestHeaderStripping_Property_MappingErrorHandling(t *testing.T) {
 		}
 
 		disco := &SAMLDisco{}
-		disco.applyAttributeHeadersForSP(req, session, spConfig)
+		disco.applyAttributeHeaders(req, session, spConfig)
 
 		got := req.Header.Get(headerName)
 		if got != domain.SanitizeHeaderValue("authentic-value") {
@@ -815,21 +823,6 @@ func TestHeaderStripping_Property_EntitlementMappingErrorHandling(t *testing.T) 
 		req := &http.Request{Header: make(http.Header)}
 		req.Header.Set(headerName, spoofedValue)
 
-		disco := &SAMLDisco{
-			Config: Config{
-				StripAttributeHeaders: boolPtr(true),
-				// Use invalid header name in entitlement mapping that will cause validation error
-				EntitlementHeaders: []EntitlementHeaderMapping{
-					{Field: "roles", HeaderName: "invalid-header"}, // Invalid: doesn't start with X-
-				},
-			},
-		}
-
-		session := &domain.Session{
-			Subject:    "user@example.com",
-			Attributes: map[string]string{},
-		}
-
 		// Create an in-memory entitlement store that returns a result
 		entitlementStore := entitlements.NewInMemoryEntitlementStore()
 		entitlementStore.Add(domain.Entitlement{
@@ -837,11 +830,25 @@ func TestHeaderStripping_Property_EntitlementMappingErrorHandling(t *testing.T) 
 			Roles:   []string{"admin", "staff"},
 		})
 
-		// Set entitlement store
-		disco.entitlementStore = entitlementStore
+		discoSP := &SPConfig{
+			SPConfig: config.SPConfig{Config: Config{
+				StripAttributeHeaders: boolPtr(true),
+				// Use invalid header name in entitlement mapping that will cause validation error
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
+					{Field: "roles", HeaderName: "invalid-header"}, // Invalid: doesn't start with X-
+				},
+			}},
+			entitlementStore: entitlementStore,
+		}
+		disco := &SAMLDisco{}
+
+		session := &domain.Session{
+			Subject:    "user@example.com",
+			Attributes: map[string]string{},
+		}
 
 		// Apply headers - entitlement mapping should fail due to invalid header name
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, discoSP)
 
 		// Verify header was restored (rollback happened)
 		got := req.Header.Get(headerName)
@@ -866,11 +873,13 @@ func TestHeaderStripping_Property_EntitlementMappingErrorHandling(t *testing.T) 
 		})
 
 		spConfig := &SPConfig{
-			Hostname: "test.example.com",
-			Config: Config{
-				StripAttributeHeaders: boolPtr(true),
-				EntitlementHeaders: []EntitlementHeaderMapping{
-					{Field: "roles", HeaderName: "invalid-header"}, // Invalid header name
+			SPConfig: config.SPConfig{
+				Hostname: "test.example.com",
+				Config: Config{
+					StripAttributeHeaders: boolPtr(true),
+					EntitlementHeaders: []httputil.EntitlementHeaderMapping{
+						{Field: "roles", HeaderName: "invalid-header"}, // Invalid header name
+					},
 				},
 			},
 			entitlementStore: entitlementStore,
@@ -882,7 +891,7 @@ func TestHeaderStripping_Property_EntitlementMappingErrorHandling(t *testing.T) 
 		}
 
 		disco := &SAMLDisco{}
-		disco.applyAttributeHeadersForSP(req, session, spConfig)
+		disco.applyAttributeHeaders(req, session, spConfig)
 
 		// Verify header was restored (rollback happened)
 		got := req.Header.Get(headerName)
@@ -910,14 +919,14 @@ func TestHeaderStripping_Property_SessionNilHandling(t *testing.T) {
 	disco := &SAMLDisco{
 		Config: Config{
 			StripAttributeHeaders: boolPtr(true),
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "test:attr", HeaderName: headerName},
 			},
 		},
 	}
 
 	// Session is nil (unauthenticated request)
-	disco.applyAttributeHeaders(req, nil)
+	disco.applyAttributeHeaders(req, nil, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 	got = req.Header.Get(headerName)
 
@@ -966,7 +975,7 @@ func TestHeaderStripping_Property_NonASCIICharacters(t *testing.T) {
 			disco := &SAMLDisco{
 				Config: Config{
 					StripAttributeHeaders: boolPtr(true),
-					AttributeHeaders: []AttributeMapping{
+					AttributeHeaders: []domain.AttributeMapping{
 						{SAMLAttribute: "test:attr", HeaderName: tc.headerName},
 					},
 				},
@@ -979,7 +988,7 @@ func TestHeaderStripping_Property_NonASCIICharacters(t *testing.T) {
 				},
 			}
 
-			disco.applyAttributeHeaders(req, session)
+			disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 			got := req.Header.Get(canonical)
 
@@ -1041,7 +1050,7 @@ func TestHeaderStripping_Property_CaseInsensitiveMatching_ASCII(t *testing.T) {
 				disco := &SAMLDisco{
 					Config: Config{
 						StripAttributeHeaders: boolPtr(true),
-						AttributeHeaders: []AttributeMapping{
+						AttributeHeaders: []domain.AttributeMapping{
 							{SAMLAttribute: "test:attr", HeaderName: tc.headerName},
 						},
 					},
@@ -1054,7 +1063,7 @@ func TestHeaderStripping_Property_CaseInsensitiveMatching_ASCII(t *testing.T) {
 					},
 				}
 
-				disco.applyAttributeHeaders(req, session)
+				disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 				canonical := http.CanonicalHeaderKey(tc.headerName)
 				got := req.Header.Get(canonical)
@@ -1121,7 +1130,7 @@ func TestHeaderStripping_Property_RollbackOnError(t *testing.T) {
 			Config: Config{
 				StripAttributeHeaders: boolPtr(true),
 				HeaderPrefix:          "invalid-prefix-", // Invalid: will cause mapping error
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:attr", HeaderName: headerName},
 				},
 			},
@@ -1135,7 +1144,7 @@ func TestHeaderStripping_Property_RollbackOnError(t *testing.T) {
 		}
 
 		// Apply headers - mapping should fail
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 		// Property: Headers must be restored after mapping error
 		restoredValues := req.Header[finalHeaderName]
@@ -1187,7 +1196,7 @@ func TestHeaderStripping_Concurrency_RollbackOnError(t *testing.T) {
 		Config: Config{
 			StripAttributeHeaders: boolPtr(true),
 			HeaderPrefix:          "invalid-prefix-", // Will cause mapping error
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "test:attr", HeaderName: "X-Role"},
 			},
 		},
@@ -1225,7 +1234,7 @@ func TestHeaderStripping_Concurrency_RollbackOnError(t *testing.T) {
 				}
 
 				// Apply headers - mapping should fail, triggering rollback
-				disco.applyAttributeHeaders(req, session)
+				disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 				// Verify rollback: headers should be restored
 				restoredValues := req.Header["X-Role"]
@@ -1269,7 +1278,7 @@ func TestHeaderStripping_Concurrency_NoRaceCondition(t *testing.T) {
 	disco := &SAMLDisco{
 		Config: Config{
 			StripAttributeHeaders: boolPtr(true),
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "test:attr", HeaderName: "X-Role"},
 			},
 		},
@@ -1303,7 +1312,7 @@ func TestHeaderStripping_Concurrency_NoRaceCondition(t *testing.T) {
 				}
 
 				// Call applyAttributeHeaders concurrently
-				disco.applyAttributeHeaders(req, session)
+				disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 				// Verify header was stripped and replaced
 				got := req.Header.Get("X-Role")
@@ -1353,7 +1362,7 @@ func TestHeaderStripping_Concurrency_PropertyBased(t *testing.T) {
 		disco := &SAMLDisco{
 			Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:attr", HeaderName: headerName},
 				},
 			},
@@ -1378,7 +1387,7 @@ func TestHeaderStripping_Concurrency_PropertyBased(t *testing.T) {
 					},
 				}
 
-				disco.applyAttributeHeaders(req, session)
+				disco.applyAttributeHeaders(req, session, &SPConfig{SPConfig: config.SPConfig{Config: disco.Config}})
 
 				got := req.Header.Get(headerName)
 				expected := domain.SanitizeHeaderValue(attrValue)
@@ -1441,7 +1450,7 @@ var _ ports.EntitlementStore = (*MockEntitlementStore)(nil)
 //
 // This test verifies the inconsistency and can be used to test both behaviors.
 func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T) {
-	t.Run("lookup error - SAML attributes still applied (HEADER-015 fix)", func(t *testing.T) {
+	t.Run("lookup error - headers restored, SAML attributes NOT applied (strict mode)", func(t *testing.T) {
 		headerName := "X-Role"
 		spoofedValue := "spoofed-admin"
 		samlAttrValue := "authentic-admin"
@@ -1454,18 +1463,19 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 			lookupError: fmt.Errorf("file read error: permission denied"),
 		}
 
-		disco := &SAMLDisco{
-			Config: Config{
+		discoSP := &SPConfig{
+			SPConfig: config.SPConfig{Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:role", HeaderName: headerName},
 				},
-				EntitlementHeaders: []EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Role"},
 				},
-			},
+			}},
 			entitlementStore: mockStore,
 		}
+		disco := &SAMLDisco{}
 
 		session := &domain.Session{
 			Subject: "user@example.com",
@@ -1474,13 +1484,20 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 			},
 		}
 
-		// Apply headers - lookup should fail, but SAML attributes should still be applied
-		disco.applyAttributeHeaders(req, session)
+		// Apply headers - lookup fails; strict mode (RestoreOnEntitlementError=true) restores
+		// headers and returns early, so the SAML attribute is NOT applied.
+		disco.applyAttributeHeaders(req, session, discoSP)
 
-		// HEADER-015 fix: SAML attributes should be applied even when entitlement lookup fails
+		// Strict mode: on entitlement error with EntitlementHeaders configured, all headers
+		// are restored to their original values. The spoofed value is restored; SAML
+		// attribute is NOT written (prevents partial header state from leaking through).
 		got := req.Header.Get(headerName)
-		if got != domain.SanitizeHeaderValue(samlAttrValue) {
-			t.Errorf("expected SAML attribute value %q to be applied after lookup error, got %q", domain.SanitizeHeaderValue(samlAttrValue), got)
+		if got != spoofedValue {
+			t.Errorf("expected original spoofed value %q to be restored after lookup error, got %q", spoofedValue, got)
+		}
+		// Verify SAML attribute was NOT applied (strict mode returns before applying it)
+		if got == domain.SanitizeHeaderValue(samlAttrValue) {
+			t.Errorf("SAML attribute value %q should NOT be applied in strict mode on entitlement error", samlAttrValue)
 		}
 
 		// Entitlement headers should NOT be set (lookup failed)
@@ -1488,6 +1505,7 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 		if entitlementHeader != "" {
 			t.Errorf("expected entitlement header to be empty (lookup failed), got %q", entitlementHeader)
 		}
+		_ = samlAttrValue // used above
 	})
 
 	t.Run("mapping error - headers ARE restored (consistent behavior)", func(t *testing.T) {
@@ -1504,15 +1522,16 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 			},
 		}
 
-		disco := &SAMLDisco{
-			Config: Config{
+		discoSP := &SPConfig{
+			SPConfig: config.SPConfig{Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				EntitlementHeaders: []EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: headerName}, // Invalid: doesn't start with X-
 				},
-			},
+			}},
 			entitlementStore: mockStore,
 		}
+		disco := &SAMLDisco{}
 
 		session := &domain.Session{
 			Subject:    "user@example.com",
@@ -1520,7 +1539,7 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 		}
 
 		// Apply headers - mapping should fail due to invalid header name
-		disco.applyAttributeHeaders(req, session)
+		disco.applyAttributeHeaders(req, session, discoSP)
 
 		// Expected behavior: Headers ARE restored when mapping fails
 		got := req.Header.Get(headerName)
@@ -1559,22 +1578,23 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 				invalidHeaderName = "invalid-header" // Invalid header name
 			}
 
-			disco := &SAMLDisco{
-				Config: Config{
+			discoSP := &SPConfig{
+				SPConfig: config.SPConfig{Config: Config{
 					StripAttributeHeaders: boolPtr(true),
-					EntitlementHeaders: []EntitlementHeaderMapping{
+					EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 						{Field: "roles", HeaderName: invalidHeaderName},
 					},
-				},
+				}},
 				entitlementStore: mockStore,
 			}
+			disco := &SAMLDisco{}
 
 			session := &domain.Session{
 				Subject:    "user@example.com",
 				Attributes: map[string]string{},
 			}
 
-			disco.applyAttributeHeaders(req, session)
+			disco.applyAttributeHeaders(req, session, discoSP)
 
 			got := req.Header.Get(headerName)
 
@@ -1600,11 +1620,13 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 		}
 
 		spConfig := &SPConfig{
-			Hostname: "test.example.com",
-			Config: Config{
-				StripAttributeHeaders: boolPtr(true),
-				EntitlementHeaders: []EntitlementHeaderMapping{
-					{Field: "roles", HeaderName: headerName},
+			SPConfig: config.SPConfig{
+				Hostname: "test.example.com",
+				Config: Config{
+					StripAttributeHeaders: boolPtr(true),
+					EntitlementHeaders: []httputil.EntitlementHeaderMapping{
+						{Field: "roles", HeaderName: headerName},
+					},
 				},
 			},
 			entitlementStore: mockStore,
@@ -1616,7 +1638,7 @@ func TestHeaderStripping_Property_DifferentialLookupVsMappingErrors(t *testing.T
 		}
 
 		disco := &SAMLDisco{}
-		disco.applyAttributeHeadersForSP(req, session, spConfig)
+		disco.applyAttributeHeaders(req, session, spConfig)
 
 		// Expected behavior: Headers SHOULD be restored when lookup fails
 		got := req.Header.Get(headerName)
@@ -1642,33 +1664,33 @@ func TestHeaderStripping_Concurrency_ConfigMutationInvariant(t *testing.T) {
 	expectedHeaderName := domain.ApplyHeaderPrefix(headerPrefix, headerName)
 	expectedCanonical := http.CanonicalHeaderKey(expectedHeaderName)
 
-	// Create config and validate it
-	disco := &SAMLDisco{
-		Config: Config{
+	// Create SPConfig and validate it
+	spCfg := &SPConfig{
+		SPConfig: config.SPConfig{Config: Config{
 			EntityID:     "https://sp.example.com/saml",
 			MetadataFile: "/path/to/metadata.xml",
 			CertFile:     "/path/to/cert.pem",
 			KeyFile:      "/path/to/key.pem",
 			HeaderPrefix: headerPrefix,
-			AttributeHeaders: []AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "test:attr", HeaderName: headerName},
 			},
 			StripAttributeHeaders: boolPtr(true),
-		},
+		}},
 	}
+	disco := &SAMLDisco{}
 
 	// Validate config and capture expected header names
-	if err := disco.Validate(); err != nil {
+	if err := spCfg.Config.Validate(); err != nil {
 		t.Fatalf("config validation failed: %v", err)
 	}
 
-	// Initialize snapshots (simulating Provision) to prevent mutation
-	// This is what Provision() does - snapshot config values after validation
-	disco.headerPrefixSnapshot = disco.HeaderPrefix
-	disco.attributeHeadersSnapshot = make([]AttributeMapping, len(disco.AttributeHeaders))
-	copy(disco.attributeHeadersSnapshot, disco.AttributeHeaders)
-	disco.entitlementHeadersSnapshot = make([]EntitlementHeaderMapping, len(disco.EntitlementHeaders))
-	copy(disco.entitlementHeadersSnapshot, disco.EntitlementHeaders)
+	// Initialize snapshots on SPConfig (simulating Provision) to prevent mutation
+	spCfg.headerPrefixSnapshot = spCfg.HeaderPrefix
+	spCfg.attributeHeadersSnapshot = make([]domain.AttributeMapping, len(spCfg.AttributeHeaders))
+	copy(spCfg.attributeHeadersSnapshot, spCfg.AttributeHeaders)
+	spCfg.entitlementHeadersSnapshot = make([]httputil.EntitlementHeaderMapping, len(spCfg.EntitlementHeaders))
+	copy(spCfg.entitlementHeadersSnapshot, spCfg.EntitlementHeaders)
 
 	// Create session with matching attribute
 	session := &domain.Session{
@@ -1697,8 +1719,8 @@ func TestHeaderStripping_Concurrency_ConfigMutationInvariant(t *testing.T) {
 				spoofedValue := fmt.Sprintf("spoofed-%d-%d", goroutineID, j)
 				req.Header.Set(expectedCanonical, spoofedValue)
 
-				// Apply headers - this reads HeaderPrefix and AttributeHeaders
-				disco.applyAttributeHeaders(req, session)
+				// Apply headers - this reads HeaderPrefix and AttributeHeaders via snapshots
+				disco.applyAttributeHeaders(req, session, spCfg)
 
 				// Verify: header name used must match validation-time expectation
 				got := req.Header.Get(expectedCanonical)
@@ -1726,7 +1748,7 @@ func TestHeaderStripping_Concurrency_ConfigMutationInvariant(t *testing.T) {
 		}(i)
 	}
 
-	// Goroutine 2: Attempt to mutate HeaderPrefix and AttributeHeaders concurrently
+	// Goroutine 2: Attempt to mutate HeaderPrefix and AttributeHeaders on spCfg concurrently
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -1735,26 +1757,26 @@ func TestHeaderStripping_Concurrency_ConfigMutationInvariant(t *testing.T) {
 		mutations := []string{"X-Other-", "X-Different-", "X-Mutated-", ""}
 		for i := 0; i < numIterations*2; i++ {
 			// Mutate HeaderPrefix
-			disco.HeaderPrefix = mutations[i%len(mutations)]
+			spCfg.HeaderPrefix = mutations[i%len(mutations)]
 
 			// Mutate AttributeHeaders slice
-			if len(disco.AttributeHeaders) > 0 {
+			if len(spCfg.AttributeHeaders) > 0 {
 				// Try to mutate the slice elements
-				disco.AttributeHeaders[0].HeaderName = fmt.Sprintf("Mutated-%d", i)
+				spCfg.AttributeHeaders[0].HeaderName = fmt.Sprintf("Mutated-%d", i)
 			}
 
 			// Try appending to slice (though this shouldn't affect existing calls)
-			disco.AttributeHeaders = append(disco.AttributeHeaders, AttributeMapping{
+			spCfg.AttributeHeaders = append(spCfg.AttributeHeaders, domain.AttributeMapping{
 				SAMLAttribute: "extra:attr",
 				HeaderName:    fmt.Sprintf("X-Extra-%d", i),
 			})
 
 			// Reset to original values to test if mutation persists
-			disco.HeaderPrefix = headerPrefix
-			if len(disco.AttributeHeaders) > 0 {
-				disco.AttributeHeaders[0].HeaderName = headerName
+			spCfg.HeaderPrefix = headerPrefix
+			if len(spCfg.AttributeHeaders) > 0 {
+				spCfg.AttributeHeaders[0].HeaderName = headerName
 			}
-			disco.AttributeHeaders = disco.AttributeHeaders[:1] // Reset slice length
+			spCfg.AttributeHeaders = spCfg.AttributeHeaders[:1] // Reset slice length
 		}
 	}()
 
@@ -1805,7 +1827,7 @@ func TestHeaderStripping_Property_RestoreDoesNotAccumulate(t *testing.T) {
 		}
 
 		// Restore original headers (simulating error path)
-		restoreHeaderState(req, originalHeaders)
+		httputil.RestoreHeaderState(req, originalHeaders)
 
 		// Property: Only original values should remain, not accumulated with SAML values
 		values := req.Header[canonicalHeader]
@@ -1852,7 +1874,7 @@ func TestHeaderStripping_Property_RestoreDoesNotAccumulate(t *testing.T) {
 			req.Header.Set(canonicalHeader, samlValue)
 
 			// Restore original headers
-			restoreHeaderState(req, originalHeaders)
+			httputil.RestoreHeaderState(req, originalHeaders)
 
 			// Property: Only original values should remain
 			values := req.Header[canonicalHeader]
@@ -1898,7 +1920,7 @@ func TestHeaderStripping_Property_RestoreDoesNotAccumulate(t *testing.T) {
 		req.Header.Set(canonicalHeader, samlValue)
 
 		// Restore original headers
-		restoreHeaderState(req, originalHeaders)
+		httputil.RestoreHeaderState(req, originalHeaders)
 
 		// Property: All original values should be restored, SAML value should not be present
 		values := req.Header[canonicalHeader]
@@ -1922,36 +1944,37 @@ func TestHeaderStripping_Property_RestoreDoesNotAccumulate(t *testing.T) {
 	})
 }
 
-// TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError verifies that
-// SAML attributes are still applied when entitlement lookup fails with
-// non-ErrEntitlementNotFound error.
-// This tests HEADER-015: SAML attributes skipped on entitlement error.
-// Property: Entitlements are supplementary - SAML attributes should always
-// be applied regardless of entitlement lookup outcome.
+// TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError verifies strict-mode behavior
+// when entitlement lookup fails with a non-ErrEntitlementNotFound error.
+// Strict mode (RestoreOnEntitlementError=true, always set): when EntitlementHeaders are
+// configured and lookup fails, headers are fully restored and no new headers are written.
+// This prevents partial header state from leaking through to downstream services.
 func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T) {
-	t.Run("SAML attributes applied when entitlement lookup fails", func(t *testing.T) {
+	t.Run("strict mode: headers restored, nothing written when entitlement lookup fails", func(t *testing.T) {
 		headerName := "X-Role"
 		samlAttrValue := "authentic-admin"
 
 		req := &http.Request{Header: make(http.Header)}
+		// No pre-existing header value (no spoofed value to restore)
 
 		// Create mock entitlement store that fails with non-ErrEntitlementNotFound error
 		mockStore := &MockEntitlementStore{
 			lookupError: fmt.Errorf("entitlement store error: permission denied"),
 		}
 
-		disco := &SAMLDisco{
-			Config: Config{
+		discoSP := &SPConfig{
+			SPConfig: config.SPConfig{Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:role", HeaderName: headerName},
 				},
-				EntitlementHeaders: []EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Role"},
 				},
-			},
+			}},
 			entitlementStore: mockStore,
 		}
+		disco := &SAMLDisco{}
 
 		session := &domain.Session{
 			Subject: "user@example.com",
@@ -1960,16 +1983,23 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 			},
 		}
 
-		// Apply headers - entitlement lookup should fail, but SAML attributes should still be applied
-		disco.applyAttributeHeaders(req, session)
+		// Apply headers - entitlement lookup fails; strict mode restores headers and returns
+		// before writing any SAML or entitlement headers.
+		disco.applyAttributeHeaders(req, session, discoSP)
 
-		// Property: SAML attributes should be applied even when entitlement lookup fails
+		// Strict mode: on entitlement error with EntitlementHeaders configured, the function
+		// restores original state and returns early. Since there was no original value, the
+		// header remains empty — SAML attribute is NOT written.
 		got := req.Header.Get(headerName)
-		if got != domain.SanitizeHeaderValue(samlAttrValue) {
-			t.Errorf("expected SAML attribute value %q to be applied, got %q", domain.SanitizeHeaderValue(samlAttrValue), got)
+		if got != "" {
+			t.Errorf("expected header to be empty (strict mode restores on error), got %q", got)
+		}
+		// Verify SAML attribute was NOT applied
+		if got == domain.SanitizeHeaderValue(samlAttrValue) {
+			t.Errorf("SAML attribute value %q should NOT be applied in strict mode on entitlement error", samlAttrValue)
 		}
 
-		// Entitlement headers should NOT be set (since lookup failed)
+		// Entitlement headers should NOT be set (lookup failed)
 		entitlementHeader := req.Header.Get("X-Entitlement-Role")
 		if entitlementHeader != "" {
 			t.Errorf("expected entitlement header to be empty (lookup failed), got %q", entitlementHeader)
@@ -2006,15 +2036,16 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 				}
 			}
 
-			disco := &SAMLDisco{
-				Config: Config{
+			discoSP := &SPConfig{
+				SPConfig: config.SPConfig{Config: Config{
 					StripAttributeHeaders: boolPtr(true),
-					AttributeHeaders: []AttributeMapping{
+					AttributeHeaders: []domain.AttributeMapping{
 						{SAMLAttribute: "test:role", HeaderName: headerName},
 					},
-				},
+				}},
 				entitlementStore: mockStore,
 			}
+			disco := &SAMLDisco{}
 
 			session := &domain.Session{
 				Subject: "user@example.com",
@@ -2023,7 +2054,7 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 				},
 			}
 
-			disco.applyAttributeHeaders(req, session)
+			disco.applyAttributeHeaders(req, session, discoSP)
 
 			// Property: SAML attributes should always be applied
 			got := req.Header.Get(headerName)
@@ -2057,15 +2088,16 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 			},
 		}
 
-		disco1 := &SAMLDisco{
-			Config: Config{
+		sp1 := &SPConfig{
+			SPConfig: config.SPConfig{Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:role", HeaderName: headerName},
 				},
-			},
+			}},
 			entitlementStore: mockStore1,
 		}
+		disco1 := &SAMLDisco{}
 
 		session1 := &domain.Session{
 			Subject: "user@example.com",
@@ -2074,7 +2106,7 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 			},
 		}
 
-		disco1.applyAttributeHeaders(req1, session1)
+		disco1.applyAttributeHeaders(req1, session1, sp1)
 		samlValue1 := req1.Header.Get(headerName)
 
 		// Test case 2: Entitlement lookup fails
@@ -2083,15 +2115,16 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 			lookupError: fmt.Errorf("entitlement store error"),
 		}
 
-		disco2 := &SAMLDisco{
-			Config: Config{
+		sp2 := &SPConfig{
+			SPConfig: config.SPConfig{Config: Config{
 				StripAttributeHeaders: boolPtr(true),
-				AttributeHeaders: []AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test:role", HeaderName: headerName},
 				},
-			},
+			}},
 			entitlementStore: mockStore2,
 		}
+		disco2 := &SAMLDisco{}
 
 		session2 := &domain.Session{
 			Subject: "user@example.com",
@@ -2100,7 +2133,7 @@ func TestHeaderStripping_Property_SAMLNotSkippedOnEntitlementError(t *testing.T)
 			},
 		}
 
-		disco2.applyAttributeHeaders(req2, session2)
+		disco2.applyAttributeHeaders(req2, session2, sp2)
 		samlValue2 := req2.Header.Get(headerName)
 
 		// Property: SAML attributes should be the same regardless of entitlement outcome

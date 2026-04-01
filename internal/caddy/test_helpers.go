@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 )
 
@@ -71,9 +72,9 @@ var _ caddyhttp.Handler = (*capturedHeaders)(nil)
 
 // testTemplateRenderer returns a template renderer for tests.
 // This uses the embedded templates.
-func testTemplateRenderer(t *testing.T) *TemplateRenderer {
+func testTemplateRenderer(t *testing.T) *discovery.TemplateRenderer {
 	t.Helper()
-	renderer, err := NewTemplateRenderer()
+	renderer, err := discovery.NewTemplateRenderer()
 	if err != nil {
 		t.Fatalf("failed to create template renderer: %v", err)
 	}
