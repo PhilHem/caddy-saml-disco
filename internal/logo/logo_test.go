@@ -5,6 +5,7 @@ package logo
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -12,9 +13,10 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/philiph/caddy-saml-disco/internal/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
+	"github.com/philiph/caddy-saml-disco/internal/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
+	"github.com/philiph/caddy-saml-disco/internal/testutil/tra"
 )
 
 // Cycle 1: Test that LogoStore interface exists and ErrLogoNotFound is defined
@@ -326,6 +328,35 @@ func TestCachingLogoStore_Property_CacheConsistency(t *testing.T) {
 
 	if err := quick.Check(f, &quick.Config{MaxCount: 10}); err != nil {
 		t.Error(err)
+	}
+}
+
+// Cycle 10: Test InMemoryLogoStore evicts the oldest entry when capacity is exceeded
+
+func TestInMemoryLogoStore_Eviction(t *testing.T) {
+	tra.RequireLegacy(t)
+
+	store := NewInMemoryLogoStoreWithCapacity(DefaultLogoCapacity)
+
+	logo := &ports.CachedLogo{Data: []byte("data"), ContentType: "image/png"}
+
+	// Fill to capacity
+	for i := 0; i < DefaultLogoCapacity; i++ {
+		store.Set(fmt.Sprintf("https://idp%d.example.com", i), logo)
+	}
+
+	// Insert one more entry — should evict the first (LRU)
+	store.Set("https://idp-new.example.com", logo)
+
+	_, err := store.Get("https://idp0.example.com")
+	if !errors.Is(err, ErrLogoNotFound) {
+		t.Errorf("expected ErrLogoNotFound for evicted entry, got %v", err)
+	}
+
+	// The new entry must be present
+	_, err = store.Get("https://idp-new.example.com")
+	if err != nil {
+		t.Errorf("Get() for new entry failed: %v", err)
 	}
 }
 
