@@ -1,4 +1,3 @@
-@beads:caddy-saml-disco-5wz
 Feature: Multi-IdP Authentication Redirect
   As a service administrator
   I want unauthenticated users redirected to the discovery page when multiple IdPs match
