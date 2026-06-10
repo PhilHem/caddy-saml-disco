@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/ports"
@@ -141,6 +142,35 @@ func (c *CompositeMetadataStore) Health() domain.MetadataHealth {
 	}
 
 	return health
+}
+
+// StartBackgroundRefresh promotes every wrapped store that supports background
+// refresh to active refresh at the given interval. Stores that do not implement
+// the method (e.g. file-backed stores) are left untouched. Idempotent at the
+// child level: a child whose worker is already running ignores the call.
+func (c *CompositeMetadataStore) StartBackgroundRefresh(interval time.Duration) {
+	for _, store := range c.stores {
+		if starter, ok := store.(interface {
+			StartBackgroundRefresh(time.Duration)
+		}); ok {
+			starter.StartBackgroundRefresh(interval)
+		}
+	}
+}
+
+// Close stops any background workers started on wrapped stores. Children that
+// do not implement Close() error are skipped. The first error encountered is
+// returned, after attempting to close all children.
+func (c *CompositeMetadataStore) Close() error {
+	var errs []error
+	for _, store := range c.stores {
+		if closer, ok := store.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return joinErrors(errs)
 }
 
 // Ensure CompositeMetadataStore implements ports.MetadataStore

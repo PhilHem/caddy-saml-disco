@@ -120,10 +120,23 @@ func NewURLMetadataStore(url string, cacheTTL time.Duration, opts ...MetadataOpt
 // Call Close() to stop the background goroutine.
 func NewURLMetadataStoreWithRefresh(url string, refreshInterval time.Duration, opts ...MetadataOption) *URLMetadataStore {
 	s := NewURLMetadataStore(url, refreshInterval, opts...)
+	s.StartBackgroundRefresh(refreshInterval)
+	return s
+}
+
+// StartBackgroundRefresh launches a background goroutine that periodically
+// fetches metadata at the given interval, bypassing the cache TTL. It is
+// idempotent: if a worker is already running, the call is a no-op. This lets a
+// passively-constructed store be promoted to active refresh after a failed
+// initial load, so it can self-heal once the upstream serves fresh metadata.
+func (s *URLMetadataStore) StartBackgroundRefresh(interval time.Duration) {
+	if s.worker != nil {
+		return
+	}
 	if s.logger != nil {
 		s.logger.Info("starting background metadata refresh",
-			zap.Duration("interval", refreshInterval),
-			zap.String("url", url))
+			zap.Duration("interval", interval),
+			zap.String("url", s.url))
 	}
 
 	workerOpts := []worker.Option{}
@@ -133,7 +146,7 @@ func NewURLMetadataStoreWithRefresh(url string, refreshInterval time.Duration, o
 
 	w := worker.NewSupervisedWorker(
 		"metadata-refresh",
-		refreshInterval,
+		interval,
 		func(ctx context.Context) error {
 			startTime := s.clock.Now()
 			err := s.doRefresh(ctx, true) // force=true bypasses cache TTL
@@ -156,7 +169,6 @@ func NewURLMetadataStoreWithRefresh(url string, refreshInterval time.Duration, o
 	)
 	w.Start()
 	s.worker = w
-	return s
 }
 
 // Close stops the background refresh goroutine if running.

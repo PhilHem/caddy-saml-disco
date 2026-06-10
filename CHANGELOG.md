@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Caddyfile-configured `metadata_url`/`metadata_file` sources are loaded again: the provisioner now builds a store from `metadata_sources`, restoring a regressed code path that left such instances with no IdP metadata.
+- A failed initial metadata load (expired aggregate, unreachable upstream, HTTP error) no longer aborts provisioning. The store starts with an empty IdP list and logs a structured ERROR; all other routes, including non-SAML reverse proxies, continue to serve. Expired metadata is still rejected by the parser, so degradation means an empty IdP list, never serving expired entity descriptors.
+
+### Added
+- URL-backed metadata stores that fail their initial load are promoted to background refresh and self-heal once the upstream serves fresh metadata, without requiring a restart. `URLMetadataStore.StartBackgroundRefresh` is idempotent; `CompositeMetadataStore` propagates `StartBackgroundRefresh` and `Close` to its children so background workers are stopped on config reload.
+
 ## [0.19.10] - 2026-04-02
 
 ### Added

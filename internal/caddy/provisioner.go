@@ -127,18 +127,43 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 	if spCfg.VerifyMetadataSignature && spCfg.Hostname != "" {
 		s.logger.Info("metadata signature verification enabled (SP)", zap.String("hostname", spCfg.Hostname))
 	}
-	store, err := metadata.NewStoreFromConfig(&spCfg.Config, refreshInterval, metadataOpts, s.logger)
+	var store ports.MetadataStore
+	var sourceType string
+	if len(spCfg.MetadataSources) > 0 {
+		store, err = metadata.BuildStore(spCfg.MetadataSources, metadataOpts)
+		sourceType = "metadata sources"
+	} else {
+		store, err = metadata.NewStoreFromConfig(&spCfg.Config, refreshInterval, metadataOpts, s.logger)
+		sourceType = "metadata from URL"
+		if spCfg.MetadataFile != "" {
+			sourceType = "metadata from file"
+		}
+	}
 	if err != nil {
 		return err
 	}
 	if store != nil {
-		sourceType := "metadata from URL"
-		if spCfg.MetadataFile != "" {
-			sourceType = "metadata from file"
-		}
 		if loader, ok := store.(interface{ Load() error }); ok {
 			if err := loader.Load(); err != nil {
-				return fmt.Errorf("load %s: %w", sourceType, err)
+				// A failed initial load (expired aggregate, unreachable upstream,
+				// HTTP error) must never abort provisioning: the blast radius of
+				// that would be every route in the Caddyfile, including non-SAML
+				// reverse proxies. Start with an empty IdP list and recover via
+				// background refresh. The parser still rejects expired metadata,
+				// so degradation means an empty list, never serving stale entries.
+				s.logger.Error("initial metadata load failed; starting with empty metadata, will recover via background refresh",
+					zap.String("source", sourceType),
+					zap.String("hostname", spCfg.Hostname),
+					zap.Error(err))
+				// Promote URL-backed stores to active background refresh so a
+				// degraded store self-heals once the upstream serves fresh
+				// metadata. File-backed stores do not implement the interface
+				// and are left as-is (a static file has no upstream to retry).
+				if starter, ok := store.(interface {
+					StartBackgroundRefresh(time.Duration)
+				}); ok {
+					starter.StartBackgroundRefresh(refreshInterval)
+				}
 			}
 		}
 		spCfg.metadataStore = store
@@ -198,7 +223,9 @@ func (s *SAMLDisco) provisionSPConfig(ctx caddy.Context, spCfg *SPConfig) error 
 func (s *SAMLDisco) Validate() error { return s.Config.Validate() }
 func (s *SAMLDisco) Cleanup() error {
 	spCfgs := s.SPConfigs
-	if s.registry != nil { spCfgs = s.registry.AllConfigs() }
+	if s.registry != nil {
+		spCfgs = s.registry.AllConfigs()
+	}
 	for _, sp := range spCfgs {
 		if sp.samlService != nil {
 			if err := sp.samlService.Close(); err != nil {
