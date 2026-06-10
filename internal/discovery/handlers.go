@@ -174,10 +174,10 @@ func (h *DiscoveryHandler) HandleDiscoveryUI(w http.ResponseWriter, r *http.Requ
 	if len(idps) == 1 {
 		idp := &idps[0]
 
-		// A configured guest_passcode gates the bypass path. A plain page
-		// navigation carries no passcode, so fall through to the discovery page
-		// where the user can pick the entry and supply it — never silently bypass.
-		if h.isBypassIdP(idp.EntityID) && h.Config.GuestPasscode == "" {
+		// A configured passcode gates the bypass path. A plain page navigation
+		// carries no passcode, so fall through to the discovery page where the
+		// user can pick the entry and supply it — never silently bypass.
+		if h.isBypassIdP(idp.EntityID) && h.effectivePasscode(idp.EntityID) == "" {
 			return h.handleBypassIdP(w, r, idp, returnURL, "")
 		}
 
@@ -243,10 +243,10 @@ func (h *DiscoveryHandler) HandleRedirectToIdP(w http.ResponseWriter, r *http.Re
 	idp := &idps[0]
 
 	if h.isBypassIdP(idp.EntityID) {
-		// A configured guest_passcode gates the bypass path. This redirect-to-IdP
-		// flow has no passcode available, so render the discovery page (where the
-		// user can supply it) instead of silently minting a bypass session.
-		if h.Config.GuestPasscode != "" {
+		// A configured passcode gates the bypass path. This redirect-to-IdP flow
+		// has no passcode available, so render the discovery page (where the user
+		// can supply it) instead of silently minting a bypass session.
+		if h.effectivePasscode(idp.EntityID) != "" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			h.renderDiscoveryHTML(w, r, idps, ValidateRelayState(r.URL.RequestURI())) //nolint:errcheck
 			return
@@ -286,11 +286,21 @@ func (h *DiscoveryHandler) isBypassIdP(entityID string) bool {
 	return false
 }
 
-// passcodeMatches reports whether the supplied passcode matches the configured
-// guest passcode, using a constant-time comparison to avoid leaking length or
-// content through timing. It never logs the passcode.
-func (h *DiscoveryHandler) passcodeMatches(supplied string) bool {
-	expected := h.Config.GuestPasscode
+// effectivePasscode returns the passcode that gates the given no-authentication
+// target: a per-target value (keyed by entity ID, with GuestEntityID keying the
+// guest_access entry) if one is configured, otherwise the shared GuestPasscode.
+// An empty result means the target is ungated.
+func (h *DiscoveryHandler) effectivePasscode(entityID string) string {
+	if pc, ok := h.Config.GuestPasscodes[entityID]; ok {
+		return pc
+	}
+	return h.Config.GuestPasscode
+}
+
+// passcodeMatches reports whether the supplied passcode matches the expected one,
+// using a constant-time comparison to avoid leaking length or content through
+// timing. It never logs the passcode.
+func (h *DiscoveryHandler) passcodeMatches(expected, supplied string) bool {
 	if len(supplied) != len(expected) {
 		// ConstantTimeCompare already returns 0 on length mismatch, but it is
 		// not constant-time across differing lengths; the early return keeps the
@@ -315,7 +325,7 @@ func (h *DiscoveryHandler) writeInvalidPasscode(w http.ResponseWriter) error {
 // handleBypassIdP creates a guest session for a bypass IdP without SAML authentication.
 // When a guest passcode is configured, the supplied passcode must match first.
 func (h *DiscoveryHandler) handleBypassIdP(w http.ResponseWriter, r *http.Request, idp *domain.IdPInfo, returnURL, passcode string) error {
-	if h.Config.GuestPasscode != "" && !h.passcodeMatches(passcode) {
+	if expected := h.effectivePasscode(idp.EntityID); expected != "" && !h.passcodeMatches(expected, passcode) {
 		h.getLogger().Info("bypass idp rejected: invalid passcode",
 			zap.String("entity_id", idp.EntityID),
 		)
@@ -363,7 +373,7 @@ func (h *DiscoveryHandler) handleBypassIdP(w http.ResponseWriter, r *http.Reques
 // handleGuestAccess creates a guest session without any SAML authentication.
 // When a guest passcode is configured, the supplied passcode must match first.
 func (h *DiscoveryHandler) handleGuestAccess(w http.ResponseWriter, r *http.Request, returnURL, passcode string) error {
-	if h.Config.GuestPasscode != "" && !h.passcodeMatches(passcode) {
+	if expected := h.effectivePasscode(GuestEntityID); expected != "" && !h.passcodeMatches(expected, passcode) {
 		h.getLogger().Info("guest access rejected: invalid passcode")
 		return h.writeInvalidPasscode(w)
 	}
@@ -448,14 +458,19 @@ func (h *DiscoveryHandler) renderDiscoveryHTML(w http.ResponseWriter, r *http.Re
 		ServiceName:     h.Config.ServiceName,
 	}
 
-	// When a guest passcode is configured, tell the page which entries gate on it:
-	// the guest sentinel (if guest_access is set) and every bypass IdP.
-	if h.Config.GuestPasscode != "" {
+	// Tell the page which entries gate on a passcode, evaluated per target so a
+	// guest_access and each bypass_idp can carry distinct codes (or none): the
+	// guest sentinel (if guest_access is set) and every bypass IdP with a
+	// non-empty effective passcode.
+	if h.Config.GuestAccessLabel != "" && h.effectivePasscode(GuestEntityID) != "" {
 		data.PasscodeRequired = true
-		if h.Config.GuestAccessLabel != "" {
-			data.PasscodeRequiredEntityIDs = append(data.PasscodeRequiredEntityIDs, GuestEntityID)
+		data.PasscodeRequiredEntityIDs = append(data.PasscodeRequiredEntityIDs, GuestEntityID)
+	}
+	for _, id := range h.Config.BypassIdPs {
+		if h.effectivePasscode(id) != "" {
+			data.PasscodeRequired = true
+			data.PasscodeRequiredEntityIDs = append(data.PasscodeRequiredEntityIDs, id)
 		}
-		data.PasscodeRequiredEntityIDs = append(data.PasscodeRequiredEntityIDs, h.Config.BypassIdPs...)
 	}
 
 	return h.Renderer.RenderDisco(w, data)

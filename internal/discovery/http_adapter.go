@@ -28,6 +28,7 @@ type AdapterDeps struct {
 	BypassIdPs            []string
 	GuestAccessLabel      string
 	GuestPasscode         string
+	GuestPasscodes        map[string]string
 	AltLogins             []AltLoginConfig
 	ServiceName           string
 	ForceAuthn            bool
@@ -65,6 +66,7 @@ func NewHTTPAdapter(deps AdapterDeps) *HTTPAdapter {
 				BypassIdPs:            deps.BypassIdPs,
 				GuestAccessLabel:      deps.GuestAccessLabel,
 				GuestPasscode:         deps.GuestPasscode,
+				GuestPasscodes:        deps.GuestPasscodes,
 				AltLogins:             deps.AltLogins,
 				ServiceName:           deps.ServiceName,
 				ForceAuthn:            deps.ForceAuthn,

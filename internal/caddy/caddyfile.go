@@ -70,6 +70,34 @@ func parseStringField(d *caddyfile.Dispenser, target *string) error {
 	return nil
 }
 
+// parsePasscodeBlock reads an optional { passcode <value> } block that may follow
+// a guest_access or bypass_idp directive and records the passcode for each of the
+// given target entity IDs. A present-but-empty value (e.g. an unset env
+// substitution) is rejected so the no-authentication path is never silently
+// reopened. An absent block leaves the targets to fall back to guest_passcode.
+func parsePasscodeBlock(d *caddyfile.Dispenser, cfg *Config, targets []string) error {
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "passcode":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if d.Val() == "" {
+				return d.Err("passcode must not be empty")
+			}
+			if cfg.GuestPasscodes == nil {
+				cfg.GuestPasscodes = make(map[string]string)
+			}
+			for _, t := range targets {
+				cfg.GuestPasscodes[t] = d.Val()
+			}
+		default:
+			return d.Errf("unrecognized block option: %s", d.Val())
+		}
+	}
+	return nil
+}
+
 func parseMetadataSourceBlock(d *caddyfile.Dispenser, src *MetadataSource) error {
 	nesting := d.Nesting()
 	for d.NextBlock(nesting) {
@@ -164,6 +192,7 @@ func parseAuthDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 			return true, d.ArgErr()
 		}
 		cfg.BypassIdPs = append(cfg.BypassIdPs, args...)
+		return true, parsePasscodeBlock(d, cfg, args)
 	default:
 		return false, nil
 	}
@@ -339,7 +368,11 @@ func parseUIDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 			return true, d.ArgErr()
 		}
 	case "guest_access":
-		return true, parseStringField(d, &cfg.GuestAccessLabel)
+		if !d.NextArg() {
+			return true, d.ArgErr()
+		}
+		cfg.GuestAccessLabel = d.Val()
+		return true, parsePasscodeBlock(d, cfg, []string{config.GuestEntityID})
 	case "guest_passcode":
 		if !d.NextArg() {
 			return true, d.ArgErr()

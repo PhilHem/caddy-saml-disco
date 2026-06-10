@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-06-11
+
+### Added
+- A `passcode` subdirective inside a `guest_access` or `bypass_idp` block gates that single entry on its own code, so the guest entry and each bypass IdP can require distinct passcodes.
+
+### Changed
+- An entry without its own `passcode` falls back to the shared `guest_passcode`, and an entry with neither stays ungated.
+
 ## [0.20.0] - 2026-06-10
 
 ### Added

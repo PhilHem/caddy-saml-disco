@@ -255,6 +255,16 @@ type Config struct {
 	// silently reopened.
 	GuestPasscode string `json:"guest_passcode,omitempty"`
 
+	// GuestPasscodes holds per-target passcodes that override GuestPasscode for
+	// a single no-authentication target. The guest_access entry is keyed by the
+	// guest sentinel (GuestEntityID); a bypass IdP is keyed by its own entity ID.
+	// A target present here gates on its own value; a target absent here falls
+	// back to the shared GuestPasscode. This lets guest_access and each
+	// bypass_idp carry distinct passcodes (configured via a passcode subdirective
+	// in their Caddyfile blocks). As with GuestPasscode, a present-but-empty
+	// per-target passcode is rejected at config-parse time.
+	GuestPasscodes map[string]string `json:"guest_passcodes,omitempty"`
+
 	// AltLogins is a list of alternative login methods to display in the discovery UI.
 	AltLogins []AltLoginConfig `json:"alt_logins,omitempty"`
 

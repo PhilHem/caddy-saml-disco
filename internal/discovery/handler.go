@@ -49,6 +49,11 @@ type Config struct {
 	// the caller supplies a matching passcode. Empty means ungated.
 	GuestPasscode string
 
+	// GuestPasscodes holds per-target passcodes that override GuestPasscode for a
+	// single no-authentication target, keyed by entity ID (GuestEntityID for the
+	// guest_access entry). A target absent here falls back to GuestPasscode.
+	GuestPasscodes map[string]string
+
 	// AltLogins is a list of alternative login methods.
 	AltLogins []AltLoginConfig
 

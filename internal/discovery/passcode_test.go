@@ -158,6 +158,123 @@ func TestSelectIdP_PasscodeGate_GuestAndBypass(t *testing.T) {
 	}
 }
 
+// TestSelectIdP_PerTargetPasscodes verifies that guest_access and a bypass IdP
+// can carry distinct passcodes: each target accepts only its own code, and the
+// other target's code is rejected.
+func TestSelectIdP_PerTargetPasscodes(t *testing.T) {
+	const guestCode = "guest-code-AAAA"
+	const bypassCode = "bypass-code-BBBB"
+
+	newHandler := func() *DiscoveryHandler {
+		h := newPasscodeHandler(t, "") // no shared default
+		h.Config.GuestPasscodes = map[string]string{
+			GuestEntityID:  guestCode,
+			bypassEntityID: bypassCode,
+		}
+		return h
+	}
+
+	tests := []struct {
+		name        string
+		entityID    string
+		supplied    string
+		wantStatus  int
+		wantSession bool
+	}{
+		{"guest accepts its own code", GuestEntityID, guestCode, http.StatusOK, true},
+		{"guest rejects the bypass code", GuestEntityID, bypassCode, http.StatusUnauthorized, false},
+		{"bypass accepts its own code", bypassEntityID, bypassCode, http.StatusOK, true},
+		{"bypass rejects the guest code", bypassEntityID, guestCode, http.StatusUnauthorized, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHandler()
+			p, _ := json.Marshal(tc.supplied)
+			body := `{"entity_id":"` + tc.entityID + `","return_url":"` + testReturnURL + `","passcode":` + string(p) + `}`
+			rec := postSelect(t, h, body)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (body: %s)", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if got := hasSessionCookie(rec); got != tc.wantSession {
+				t.Errorf("session cookie = %v, want %v", got, tc.wantSession)
+			}
+		})
+	}
+}
+
+// TestSelectIdP_PerTargetOverrideAndFallback verifies that a per-target passcode
+// overrides the shared default for that target only, while a target without its
+// own entry keeps using the shared default.
+func TestSelectIdP_PerTargetOverrideAndFallback(t *testing.T) {
+	const shared = "shared-default"
+	const guestOnly = "guest-only-code"
+
+	newHandler := func() *DiscoveryHandler {
+		h := newPasscodeHandler(t, shared) // shared default for any target...
+		h.Config.GuestPasscodes = map[string]string{
+			GuestEntityID: guestOnly, // ...overridden for the guest entry only
+		}
+		return h
+	}
+
+	tests := []struct {
+		name       string
+		entityID   string
+		supplied   string
+		wantStatus int
+	}{
+		{"guest uses its override, not the default", GuestEntityID, guestOnly, http.StatusOK},
+		{"guest rejects the shared default", GuestEntityID, shared, http.StatusUnauthorized},
+		{"bypass falls back to the shared default", bypassEntityID, shared, http.StatusOK},
+		{"bypass rejects the guest override", bypassEntityID, guestOnly, http.StatusUnauthorized},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHandler()
+			p, _ := json.Marshal(tc.supplied)
+			body := `{"entity_id":"` + tc.entityID + `","return_url":"` + testReturnURL + `","passcode":` + string(p) + `}`
+			rec := postSelect(t, h, body)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (body: %s)", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestSelectIdP_PerTargetGatedAndUngated verifies that gating one target does not
+// gate another: with only the guest entry in the per-target map and no shared
+// default, the bypass IdP stays reachable without a passcode.
+func TestSelectIdP_PerTargetGatedAndUngated(t *testing.T) {
+	const guestCode = "guest-code-only"
+
+	newHandler := func() *DiscoveryHandler {
+		h := newPasscodeHandler(t, "") // no shared default
+		h.Config.GuestPasscodes = map[string]string{GuestEntityID: guestCode}
+		return h
+	}
+
+	t.Run("guest is gated", func(t *testing.T) {
+		h := newHandler()
+		body := `{"entity_id":"` + GuestEntityID + `","return_url":"` + testReturnURL + `"}`
+		rec := postSelect(t, h, body)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 (body: %s)", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("bypass stays ungated", func(t *testing.T) {
+		h := newHandler()
+		body := `{"entity_id":"` + bypassEntityID + `","return_url":"` + testReturnURL + `"}`
+		rec := postSelect(t, h, body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+		}
+		if !hasSessionCookie(rec) {
+			t.Error("expected an ungated bypass to mint a session without a passcode")
+		}
+	})
+}
+
 // TestSelectIdP_NoPasscodeConfigured_UngatedBackdoors verifies that when no
 // passcode is configured, guest and bypass sessions are created without one,
 // preserving the original behavior.
@@ -326,4 +443,22 @@ func TestRenderDiscoData_PasscodeRequiredFields(t *testing.T) {
 			}
 		})
 	}
+
+	// Per-target: only the guest entry carries a passcode, so only it appears in
+	// the page's passcode-required list — the ungated bypass IdP must not.
+	t.Run("per-target gating lists only the gated entry", func(t *testing.T) {
+		h := newPasscodeHandler(t, "") // no shared default
+		h.Config.GuestPasscodes = map[string]string{GuestEntityID: "guest-only"}
+		h.Renderer = renderer
+
+		req := httptest.NewRequest(http.MethodGet, "/saml/disco?return_url=/x", nil)
+		rec := httptest.NewRecorder()
+		if err := h.HandleDiscoveryUI(rec, req); err != nil {
+			t.Fatalf("HandleDiscoveryUI: %v", err)
+		}
+		want := "required=true;ids=[" + GuestEntityID + "]"
+		if got := rec.Body.String(); got != want {
+			t.Errorf("rendered data = %q, want %q", got, want)
+		}
+	})
 }
