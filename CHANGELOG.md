@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-06-10
+
+### Added
+- A `guest_passcode` directive gates the guest-access and bypass-IdP entries: when set, `/saml/api/select` creates a guest or bypass session only if the request carries the matching passcode, compared in constant time.
+- The discovery page reveals a passcode field on the gated entries and reports a wrong code inline without leaving the page.
+
+### Changed
+- The single-IdP auto-bypass shortcut renders the discovery page instead of creating a bypass session when a passcode is configured.
+- An empty `guest_passcode` value is refused at config load.
+
 ## [0.19.11] - 2026-06-10
 
 ### Fixed
