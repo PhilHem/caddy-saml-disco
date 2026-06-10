@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,6 +27,7 @@ type selectIdPRequest struct {
 	EntityID  string `json:"entity_id"`
 	ReturnURL string `json:"return_url"`
 	Remember  bool   `json:"remember"`
+	Passcode  string `json:"passcode,omitempty"`
 }
 
 // HandleListIdPs handles GET /saml/api/idps.
@@ -92,7 +94,7 @@ func (h *DiscoveryHandler) HandleSelectIdP(w http.ResponseWriter, r *http.Reques
 	}
 
 	if req.EntityID == GuestEntityID && h.Config.GuestAccessLabel != "" {
-		return h.handleGuestAccess(w, r, req.ReturnURL)
+		return h.handleGuestAccess(w, r, req.ReturnURL, req.Passcode)
 	}
 
 	if h.MetadataStore == nil {
@@ -119,7 +121,7 @@ func (h *DiscoveryHandler) HandleSelectIdP(w http.ResponseWriter, r *http.Reques
 	}
 
 	if h.isBypassIdP(req.EntityID) {
-		return h.handleBypassIdP(w, r, idp, req.ReturnURL)
+		return h.handleBypassIdP(w, r, idp, req.ReturnURL, req.Passcode)
 	}
 
 	if h.SAMLService == nil {
@@ -172,8 +174,17 @@ func (h *DiscoveryHandler) HandleDiscoveryUI(w http.ResponseWriter, r *http.Requ
 	if len(idps) == 1 {
 		idp := &idps[0]
 
+		// A configured guest_passcode gates the bypass path. A plain page
+		// navigation carries no passcode, so fall through to the discovery page
+		// where the user can pick the entry and supply it — never silently bypass.
+		if h.isBypassIdP(idp.EntityID) && h.Config.GuestPasscode == "" {
+			return h.handleBypassIdP(w, r, idp, returnURL, "")
+		}
+
 		if h.isBypassIdP(idp.EntityID) {
-			return h.handleBypassIdP(w, r, idp, returnURL)
+			// Passcode-gated bypass: render the discovery page instead.
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			return h.renderDiscoveryHTML(w, r, idps, returnURL)
 		}
 
 		if h.SAMLService != nil {
@@ -232,7 +243,15 @@ func (h *DiscoveryHandler) HandleRedirectToIdP(w http.ResponseWriter, r *http.Re
 	idp := &idps[0]
 
 	if h.isBypassIdP(idp.EntityID) {
-		h.handleBypassIdP(w, r, idp, r.URL.RequestURI()) //nolint:errcheck
+		// A configured guest_passcode gates the bypass path. This redirect-to-IdP
+		// flow has no passcode available, so render the discovery page (where the
+		// user can supply it) instead of silently minting a bypass session.
+		if h.Config.GuestPasscode != "" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			h.renderDiscoveryHTML(w, r, idps, ValidateRelayState(r.URL.RequestURI())) //nolint:errcheck
+			return
+		}
+		h.handleBypassIdP(w, r, idp, r.URL.RequestURI(), "") //nolint:errcheck
 		return
 	}
 
@@ -267,8 +286,42 @@ func (h *DiscoveryHandler) isBypassIdP(entityID string) bool {
 	return false
 }
 
+// passcodeMatches reports whether the supplied passcode matches the configured
+// guest passcode, using a constant-time comparison to avoid leaking length or
+// content through timing. It never logs the passcode.
+func (h *DiscoveryHandler) passcodeMatches(supplied string) bool {
+	expected := h.Config.GuestPasscode
+	if len(supplied) != len(expected) {
+		// ConstantTimeCompare already returns 0 on length mismatch, but it is
+		// not constant-time across differing lengths; the early return keeps the
+		// contract explicit. The brief length-leak here is not security-relevant.
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(supplied), []byte(expected)) == 1
+}
+
+// writeInvalidPasscode writes the 401 response the discovery frontend branches on.
+func (h *DiscoveryHandler) writeInvalidPasscode(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"error": "invalid_passcode",
+	}); err != nil {
+		h.getLogger().Warn("failed to encode invalid_passcode response", zap.Error(err))
+	}
+	return nil
+}
+
 // handleBypassIdP creates a guest session for a bypass IdP without SAML authentication.
-func (h *DiscoveryHandler) handleBypassIdP(w http.ResponseWriter, r *http.Request, idp *domain.IdPInfo, returnURL string) error {
+// When a guest passcode is configured, the supplied passcode must match first.
+func (h *DiscoveryHandler) handleBypassIdP(w http.ResponseWriter, r *http.Request, idp *domain.IdPInfo, returnURL, passcode string) error {
+	if h.Config.GuestPasscode != "" && !h.passcodeMatches(passcode) {
+		h.getLogger().Info("bypass idp rejected: invalid passcode",
+			zap.String("entity_id", idp.EntityID),
+		)
+		return h.writeInvalidPasscode(w)
+	}
+
 	h.getLogger().Info("bypass idp selected, creating guest session",
 		zap.String("entity_id", idp.EntityID),
 	)
@@ -308,7 +361,13 @@ func (h *DiscoveryHandler) handleBypassIdP(w http.ResponseWriter, r *http.Reques
 }
 
 // handleGuestAccess creates a guest session without any SAML authentication.
-func (h *DiscoveryHandler) handleGuestAccess(w http.ResponseWriter, r *http.Request, returnURL string) error {
+// When a guest passcode is configured, the supplied passcode must match first.
+func (h *DiscoveryHandler) handleGuestAccess(w http.ResponseWriter, r *http.Request, returnURL, passcode string) error {
+	if h.Config.GuestPasscode != "" && !h.passcodeMatches(passcode) {
+		h.getLogger().Info("guest access rejected: invalid passcode")
+		return h.writeInvalidPasscode(w)
+	}
+
 	h.getLogger().Info("guest access selected, creating guest session")
 
 	relayState := returnURL
@@ -379,7 +438,7 @@ func (h *DiscoveryHandler) renderDiscoveryHTML(w http.ResponseWriter, r *http.Re
 		altLogins[i] = AltLoginOption(alt)
 	}
 
-	return h.Renderer.RenderDisco(w, DiscoData{
+	data := DiscoData{
 		IdPs:            filteredIdPs,
 		PinnedIdPs:      pinnedIdPs,
 		ReturnURL:       returnURL,
@@ -387,7 +446,19 @@ func (h *DiscoveryHandler) renderDiscoveryHTML(w http.ResponseWriter, r *http.Re
 		RememberedIdP:   rememberedIdP,
 		AltLogins:       altLogins,
 		ServiceName:     h.Config.ServiceName,
-	})
+	}
+
+	// When a guest passcode is configured, tell the page which entries gate on it:
+	// the guest sentinel (if guest_access is set) and every bypass IdP.
+	if h.Config.GuestPasscode != "" {
+		data.PasscodeRequired = true
+		if h.Config.GuestAccessLabel != "" {
+			data.PasscodeRequiredEntityIDs = append(data.PasscodeRequiredEntityIDs, GuestEntityID)
+		}
+		data.PasscodeRequiredEntityIDs = append(data.PasscodeRequiredEntityIDs, h.Config.BypassIdPs...)
+	}
+
+	return h.Renderer.RenderDisco(w, data)
 }
 
 // renderAppError renders an AppError as JSON (for API endpoints) or HTML (for UI endpoints).

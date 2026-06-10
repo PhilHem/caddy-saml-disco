@@ -321,8 +321,8 @@ func parseEntitlementDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error
 
 // parseUIDirective handles discovery UI and frontend directives:
 // discovery_template, templates_dir, default_language, service_name,
-// pinned_idps, guest_access, alt_login, cors_origins, cors_allow_credentials,
-// login_redirect.
+// pinned_idps, guest_access, guest_passcode, alt_login, cors_origins,
+// cors_allow_credentials, login_redirect.
 func parseUIDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 	switch d.Val() {
 	case "discovery_template":
@@ -340,6 +340,17 @@ func parseUIDirective(d *caddyfile.Dispenser, cfg *Config) (bool, error) {
 		}
 	case "guest_access":
 		return true, parseStringField(d, &cfg.GuestAccessLabel)
+	case "guest_passcode":
+		if !d.NextArg() {
+			return true, d.ArgErr()
+		}
+		// The deployment passes the secret via Caddy parse-time env
+		// substitution; an unset/empty value must fail loudly rather than
+		// silently leave the guest/bypass backdoor open.
+		if d.Val() == "" {
+			return true, d.Err("guest_passcode must not be empty")
+		}
+		cfg.GuestPasscode = d.Val()
 	case "alt_login":
 		args := d.RemainingArgs()
 		if len(args) < 2 {

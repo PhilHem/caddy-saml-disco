@@ -242,6 +242,19 @@ type Config struct {
 	// Unlike bypass_idp, no real IdP metadata is required.
 	GuestAccessLabel string `json:"guest_access_label,omitempty"`
 
+	// GuestPasscode gates the no-authentication access paths (guest_access and
+	// bypass_idp). When non-empty, /saml/api/select must carry a matching
+	// passcode before a guest or bypass session is created, and the single-IdP
+	// auto-bypass shortcut falls back to the discovery page instead of bypassing.
+	// When empty, those paths are ungated (backward compatible). Real SAML logins
+	// are never affected. The value is treated as a literal secret; the
+	// deployment supplies it via Caddy parse-time env substitution.
+	//
+	// A present-but-empty guest_passcode directive (e.g. an unset env
+	// substitution) is rejected at config-parse time so the backdoor is never
+	// silently reopened.
+	GuestPasscode string `json:"guest_passcode,omitempty"`
+
 	// AltLogins is a list of alternative login methods to display in the discovery UI.
 	AltLogins []AltLoginConfig `json:"alt_logins,omitempty"`
 

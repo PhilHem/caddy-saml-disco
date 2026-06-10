@@ -34,6 +34,7 @@ func (s *SAMLDisco) discoveryAdapter(cfg *SPConfig) *discovery.HTTPAdapter {
 		PinnedIdPs:            cfg.Config.PinnedIdPs,
 		BypassIdPs:            cfg.Config.BypassIdPs,
 		GuestAccessLabel:      cfg.Config.GuestAccessLabel,
+		GuestPasscode:         cfg.Config.GuestPasscode,
 		AltLogins:             altLogins,
 		ServiceName:           cfg.Config.ServiceName,
 		ForceAuthn:            cfg.Config.ForceAuthn,

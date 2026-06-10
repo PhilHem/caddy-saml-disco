@@ -44,6 +44,11 @@ type Config struct {
 	// When non-empty a guest entry appears at the bottom of the discovery page.
 	GuestAccessLabel string
 
+	// GuestPasscode gates the no-authentication paths (guest_access and
+	// bypass_idp). When non-empty, a guest or bypass session is only created if
+	// the caller supplies a matching passcode. Empty means ungated.
+	GuestPasscode string
+
 	// AltLogins is a list of alternative login methods.
 	AltLogins []AltLoginConfig
 

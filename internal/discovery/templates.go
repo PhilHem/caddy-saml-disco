@@ -23,6 +23,15 @@ type DiscoData struct {
 	RememberedIdP   *domain.IdPInfo  // Full IdP info for remembered IdP
 	AltLogins       []AltLoginOption // Alternative login methods
 	ServiceName     string           // Service name for branding
+
+	// PasscodeRequired is true when a guest passcode is configured, meaning the
+	// entries in PasscodeRequiredEntityIDs must collect a passcode before POSTing
+	// to /saml/api/select.
+	PasscodeRequired bool
+
+	// PasscodeRequiredEntityIDs lists the entity IDs whose selection requires a
+	// passcode: the guest sentinel (if guest_access is set) plus every bypass IdP.
+	PasscodeRequiredEntityIDs []string
 }
 
 // AltLoginOption represents an alternative login method for the discovery UI.
