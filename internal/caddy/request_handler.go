@@ -23,77 +23,80 @@ func (s *SAMLDisco) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	return s.serveSPRequest(w, r, next, spConfig)
 }
 
+// spHandler serves one SAML endpoint for a resolved SP config.
+type spHandler func(*SAMLDisco, http.ResponseWriter, *http.Request, *SPConfig) error
+
+// samlRoutes maps an exact request path to the handler for each method it
+// accepts. A path that is present but called with an unlisted method falls
+// through to the downstream passthrough, matching plain reverse-proxy behaviour.
+var samlRoutes = map[string]map[string]spHandler{
+	"/saml/metadata":    {http.MethodGet: (*SAMLDisco).handleMetadataInternal},
+	"/saml/acs":         {http.MethodPost: (*SAMLDisco).handleACSInternal},
+	"/saml/logout":      {http.MethodGet: (*SAMLDisco).handleLogoutInternal},
+	"/saml/slo":         {http.MethodGet: (*SAMLDisco).handleSLOInternal, http.MethodPost: (*SAMLDisco).handleSLOInternal},
+	"/saml/api/idps":    {http.MethodGet: (*SAMLDisco).handleListIdPsInternal},
+	"/saml/api/select":  {http.MethodPost: (*SAMLDisco).handleSelectIdPInternal},
+	"/saml/api/session": {http.MethodGet: (*SAMLDisco).handleSessionInfoInternal},
+	"/saml/api/health":  {http.MethodGet: (*SAMLDisco).handleHealthInternal},
+	"/saml/health":      {http.MethodGet: (*SAMLDisco).handleSimpleHealthInternal},
+	"/saml/disco":       {http.MethodGet: (*SAMLDisco).handleDiscoveryUIInternal},
+}
+
 func (s *SAMLDisco) serveSPRequest(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler, spConfig *SPConfig) error {
-	if strings.HasPrefix(r.URL.Path, "/saml/api/") {
-		httputil.ApplyCORSHeaders(w, r, s.CORSAllowedOrigins, s.CORSAllowCredentials)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return nil
-		}
+	if s.answerCORSPreflight(w, r) {
+		return nil
 	}
 	if strings.HasPrefix(r.URL.Path, "/saml/api/logo/") && r.Method == http.MethodGet {
 		return s.handleLogoEndpointInternal(w, r, spConfig)
 	}
-	switch r.URL.Path {
-	case "/saml/metadata":
-		if r.Method == http.MethodGet {
-			return s.handleMetadataInternal(w, r, spConfig)
-		}
-	case "/saml/acs":
-		if r.Method == http.MethodPost {
-			return s.handleACSInternal(w, r, spConfig)
-		}
-	case "/saml/logout":
-		if r.Method == http.MethodGet {
-			return s.handleLogoutInternal(w, r, spConfig)
-		}
-	case "/saml/slo":
-		if r.Method == http.MethodGet || r.Method == http.MethodPost {
-			return s.handleSLOInternal(w, r, spConfig)
-		}
-	case "/saml/api/idps":
-		if r.Method == http.MethodGet {
-			return s.handleListIdPsInternal(w, r, spConfig)
-		}
-	case "/saml/api/select":
-		if r.Method == http.MethodPost {
-			return s.handleSelectIdPInternal(w, r, spConfig)
-		}
-	case "/saml/api/session":
-		if r.Method == http.MethodGet {
-			return s.handleSessionInfoInternal(w, r, spConfig)
-		}
-	case "/saml/api/health":
-		if r.Method == http.MethodGet {
-			return s.handleHealthInternal(w, r, spConfig)
-		}
-	case "/saml/health":
-		if r.Method == http.MethodGet {
-			return s.handleSimpleHealthInternal(w, r, spConfig)
-		}
-	case "/saml/disco":
-		if r.Method == http.MethodGet {
-			return s.handleDiscoveryUIInternal(w, r, spConfig)
-		}
+	if handler := routeHandler(r.URL.Path, r.Method); handler != nil {
+		return handler(s, w, r, spConfig)
 	}
-	if spConfig.sessionStore != nil && !strings.HasPrefix(r.URL.Path, "/saml/") {
-		cookie, err := r.Cookie(spConfig.Config.SessionCookieName)
-		if err != nil || cookie.Value == "" {
-			s.redirectToIdPInternal(w, r, spConfig)
-			return nil
-		}
-		session, err := spConfig.sessionStore.Get(cookie.Value)
-		if err != nil {
-			s.getMetricsRecorder().RecordSessionValidation(false)
-			s.redirectToIdPInternal(w, r, spConfig)
-			return nil
-		}
-		s.getMetricsRecorder().RecordSessionValidation(true)
-		ctx := context.WithValue(r.Context(), sessionContextKey{}, session)
-		r = r.WithContext(ctx)
-		if len(spConfig.AttributeHeaders) > 0 || len(spConfig.EntitlementHeaders) > 0 {
-			s.applyAttributeHeaders(r, session, spConfig)
-		}
+	return s.serveDownstream(w, r, next, spConfig)
+}
+
+// answerCORSPreflight applies CORS headers to /saml/api/ requests and reports
+// whether the request was an OPTIONS preflight that has been fully answered.
+func (s *SAMLDisco) answerCORSPreflight(w http.ResponseWriter, r *http.Request) bool {
+	if !strings.HasPrefix(r.URL.Path, "/saml/api/") {
+		return false
+	}
+	httputil.ApplyCORSHeaders(w, r, s.CORSAllowedOrigins, s.CORSAllowCredentials)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	return false
+}
+
+// routeHandler returns the handler registered for an exact path and method, or
+// nil when nothing matches.
+func routeHandler(path, method string) spHandler {
+	return samlRoutes[path][method]
+}
+
+// serveDownstream applies the SAML session to a non-SAML request and forwards it
+// to the next handler. An unauthenticated request is redirected to the IdP.
+func (s *SAMLDisco) serveDownstream(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler, spConfig *SPConfig) error {
+	if spConfig.sessionStore == nil || strings.HasPrefix(r.URL.Path, "/saml/") {
+		return next.ServeHTTP(w, r)
+	}
+	cookie, err := r.Cookie(spConfig.Config.SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		s.redirectToIdPInternal(w, r, spConfig)
+		return nil
+	}
+	session, err := spConfig.sessionStore.Get(cookie.Value)
+	if err != nil {
+		s.getMetricsRecorder().RecordSessionValidation(false)
+		s.redirectToIdPInternal(w, r, spConfig)
+		return nil
+	}
+	s.getMetricsRecorder().RecordSessionValidation(true)
+	ctx := context.WithValue(r.Context(), sessionContextKey{}, session)
+	r = r.WithContext(ctx)
+	if len(spConfig.AttributeHeaders) > 0 || len(spConfig.EntitlementHeaders) > 0 {
+		s.applyAttributeHeaders(r, session, spConfig)
 	}
 	return next.ServeHTTP(w, r)
 }
