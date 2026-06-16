@@ -8,6 +8,7 @@ package logout
 import (
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/beevik/etree"
 	"go.uber.org/zap"
@@ -170,6 +171,19 @@ func (h *LogoutHandler) handleLogoutResponse(w http.ResponseWriter, r *http.Requ
 	return nil
 }
 
+// rawSAMLRequest returns the SAMLRequest query parameter without URL-decoding
+// it. r.URL.Query() unescapes values, but DecodeSAMLRequest unescapes again as
+// the first step of the redirect-binding pipeline, so a pre-unescaped value
+// double-decodes and corrupts the base64 ('+' in the payload becomes a space).
+func rawSAMLRequest(r *http.Request) string {
+	for _, kv := range strings.Split(r.URL.RawQuery, "&") {
+		if v, ok := strings.CutPrefix(kv, "SAMLRequest="); ok {
+			return v
+		}
+	}
+	return ""
+}
+
 // handleLogoutRequest processes a SAMLRequest (IdP-initiated SLO).
 func (h *LogoutHandler) handleLogoutRequest(w http.ResponseWriter, r *http.Request, sloURL *url.URL) error {
 	if h.MetadataStore == nil {
@@ -180,7 +194,7 @@ func (h *LogoutHandler) handleLogoutRequest(w http.ResponseWriter, r *http.Reque
 	// Decode the SAMLRequest so we can extract the Issuer element and identify
 	// which IdP sent the LogoutRequest. Using ListIdPs("")[0] would select the
 	// wrong IdP when more than one IdP is configured.
-	xmlBytes, err := domain.DecodeSAMLRequest(r.URL.Query().Get("SAMLRequest"))
+	xmlBytes, err := domain.DecodeSAMLRequest(rawSAMLRequest(r))
 	if err != nil {
 		h.logger().Warn("failed to decode SAMLRequest",
 			zap.Error(err),
