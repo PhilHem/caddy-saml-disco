@@ -302,29 +302,61 @@ func (c *Config) Validate() error {
 	if err := domain.ValidateEntityID(c.EntityID); err != nil {
 		return err
 	}
+	if err := c.validateMetadataSources(); err != nil {
+		return err
+	}
+	if err := c.validateCookieSecure(); err != nil {
+		return err
+	}
+	if err := c.validateCORS(); err != nil {
+		return err
+	}
+	if err := c.validateMetadataSignature(); err != nil {
+		return err
+	}
+	if err := c.validateHeaderPrefix(); err != nil {
+		return err
+	}
+	if err := c.validateAttributeHeaders(); err != nil {
+		return err
+	}
+	if err := c.validateEntitlements(); err != nil {
+		return err
+	}
+	if err := c.validateEntitlementHeaders(); err != nil {
+		return err
+	}
+	return nil
+}
 
-	// Check if at least one metadata source is specified
+// validateMetadataSources ensures exactly one consistent metadata source is set.
+func (c *Config) validateMetadataSources() error {
 	hasOldMetadata := c.MetadataURL != "" || c.MetadataFile != ""
 	hasNewMetadata := len(c.MetadataSources) > 0
 
 	if !hasOldMetadata && !hasNewMetadata {
 		return fmt.Errorf("at least one metadata source must be specified (via metadata_url, metadata_file, or metadata_sources)")
 	}
-
 	// Backward compatibility: old fields can be used independently
-	if hasOldMetadata && (c.MetadataURL != "" && c.MetadataFile != "") {
+	if c.MetadataURL != "" && c.MetadataFile != "" {
 		return fmt.Errorf("only one of metadata_url or metadata_file can be specified")
 	}
+	return nil
+}
 
-	// Validate cookie_secure value
+// validateCookieSecure ensures the cookie_secure directive uses a known mode.
+func (c *Config) validateCookieSecure() error {
 	switch c.CookieSecure {
 	case "", "auto", "always", "never":
-		// valid
+		return nil
 	default:
 		return fmt.Errorf("cookie_secure must be \"auto\", \"always\", or \"never\", got %q", c.CookieSecure)
 	}
+}
 
-	// Validate CORS config: wildcard cannot be combined with other origins
+// validateCORS ensures the wildcard origin is not mixed with concrete origins
+// or with credentialed requests.
+func (c *Config) validateCORS() error {
 	if len(c.CORSAllowedOrigins) > 1 {
 		for _, o := range c.CORSAllowedOrigins {
 			if o == "*" {
@@ -332,25 +364,34 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
-
-	// Validate CORS config: credentials cannot be used with wildcard
 	if c.CORSAllowCredentials && len(c.CORSAllowedOrigins) == 1 && c.CORSAllowedOrigins[0] == "*" {
 		return fmt.Errorf("cors_allow_credentials cannot be used with wildcard origin")
 	}
+	return nil
+}
 
-	// Validate signature verification config
+// validateMetadataSignature ensures a signing cert is present when verification is on.
+func (c *Config) validateMetadataSignature() error {
 	if c.VerifyMetadataSignature && c.MetadataSigningCert == "" {
 		return fmt.Errorf("metadata_signing_cert is required when verify_metadata_signature is enabled")
 	}
+	return nil
+}
 
-	// Validate header prefix
-	if c.HeaderPrefix != "" {
-		if !domain.IsValidHeaderName(c.HeaderPrefix) {
-			return fmt.Errorf("header_prefix %q must start with X- and contain only A-Za-z0-9-", c.HeaderPrefix)
-		}
+// validateHeaderPrefix ensures a configured header prefix is a valid header name.
+func (c *Config) validateHeaderPrefix() error {
+	if c.HeaderPrefix == "" {
+		return nil
 	}
+	if !domain.IsValidHeaderName(c.HeaderPrefix) {
+		return fmt.Errorf("header_prefix %q must start with X- and contain only A-Za-z0-9-", c.HeaderPrefix)
+	}
+	return nil
+}
 
-	// Validate attribute header mappings
+// validateAttributeHeaders ensures each attribute mapping has the required
+// fields and resolves to a valid (optionally prefixed) header name.
+func (c *Config) validateAttributeHeaders() error {
 	for i, m := range c.AttributeHeaders {
 		if m.SAMLAttribute == "" {
 			return fmt.Errorf("attribute_headers[%d]: saml_attribute is required", i)
@@ -358,35 +399,50 @@ func (c *Config) Validate() error {
 		if m.HeaderName == "" {
 			return fmt.Errorf("attribute_headers[%d]: header_name is required", i)
 		}
-
-		// If prefix is set, validate the final combined name
-		// Otherwise, validate the header name directly (must start with X-)
-		if c.HeaderPrefix != "" {
-			finalName := domain.ApplyHeaderPrefix(c.HeaderPrefix, m.HeaderName)
-			if !domain.IsValidHeaderName(finalName) {
-				return fmt.Errorf("attribute_headers[%d]: header_name %q with prefix %q results in invalid name %q: must start with X- and contain only A-Za-z0-9-", i, m.HeaderName, c.HeaderPrefix, finalName)
-			}
-		} else {
-			if !domain.IsValidHeaderName(m.HeaderName) {
-				return fmt.Errorf("attribute_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
-			}
+		if err := c.validateAttributeHeaderName(i, m.HeaderName); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	// Validate entitlements config
+// validateAttributeHeaderName validates a single attribute header name, applying
+// the configured prefix when one is set.
+func (c *Config) validateAttributeHeaderName(i int, headerName string) error {
+	if c.HeaderPrefix == "" {
+		if !domain.IsValidHeaderName(headerName) {
+			return fmt.Errorf("attribute_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, headerName)
+		}
+		return nil
+	}
+	finalName := domain.ApplyHeaderPrefix(c.HeaderPrefix, headerName)
+	if !domain.IsValidHeaderName(finalName) {
+		return fmt.Errorf("attribute_headers[%d]: header_name %q with prefix %q results in invalid name %q: must start with X- and contain only A-Za-z0-9-", i, headerName, c.HeaderPrefix, finalName)
+	}
+	return nil
+}
+
+// validateEntitlements ensures the entitlements file is present whenever a
+// dependent setting is configured, and that the refresh interval parses.
+func (c *Config) validateEntitlements() error {
 	if c.RequireEntitlement != "" && c.EntitlementsFile == "" {
 		return fmt.Errorf("entitlements_file is required when require_entitlement is set")
 	}
-	if c.EntitlementsRefreshInterval != "" {
-		if c.EntitlementsFile == "" {
-			return fmt.Errorf("entitlements_file is required when entitlements_refresh_interval is set")
-		}
-		if _, err := time.ParseDuration(c.EntitlementsRefreshInterval); err != nil {
-			return fmt.Errorf("entitlements_refresh_interval %q is not a valid duration: %w", c.EntitlementsRefreshInterval, err)
-		}
+	if c.EntitlementsRefreshInterval == "" {
+		return nil
 	}
+	if c.EntitlementsFile == "" {
+		return fmt.Errorf("entitlements_file is required when entitlements_refresh_interval is set")
+	}
+	if _, err := time.ParseDuration(c.EntitlementsRefreshInterval); err != nil {
+		return fmt.Errorf("entitlements_refresh_interval %q is not a valid duration: %w", c.EntitlementsRefreshInterval, err)
+	}
+	return nil
+}
 
-	// Validate entitlement header mappings
+// validateEntitlementHeaders ensures each entitlement mapping has the required
+// fields and a valid header name.
+func (c *Config) validateEntitlementHeaders() error {
 	for i, m := range c.EntitlementHeaders {
 		if m.Field == "" {
 			return fmt.Errorf("entitlement_headers[%d]: field is required", i)
@@ -394,12 +450,10 @@ func (c *Config) Validate() error {
 		if m.HeaderName == "" {
 			return fmt.Errorf("entitlement_headers[%d]: header_name is required", i)
 		}
-
 		if !domain.IsValidHeaderName(m.HeaderName) {
 			return fmt.Errorf("entitlement_headers[%d]: header_name %q must start with X- and contain only A-Za-z0-9-", i, m.HeaderName)
 		}
 	}
-
 	return nil
 }
 
