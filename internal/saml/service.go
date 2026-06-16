@@ -180,16 +180,33 @@ func (s *SAMLService) StartAuthWithOptions(idp *domain.IdPInfo, acsURL *url.URL,
 		return nil, err
 	}
 
-	// Apply authentication options
-	if opts != nil && opts.ForceAuthn {
+	applyAuthnOptions(authReq, opts)
+	s.rememberAuthnRequest(authReq.ID, idp.EntityID)
+
+	// Build redirect URL
+	redirectURL, err := authReq.Redirect(relayState, sp)
+	if err != nil {
+		return nil, err
+	}
+
+	return redirectURL, nil
+}
+
+// applyAuthnOptions applies the optional ForceAuthn and RequestedAuthnContext
+// settings to an outgoing AuthnRequest. A nil opts leaves the request unchanged.
+func applyAuthnOptions(authReq *saml.AuthnRequest, opts *domain.AuthnOptions) {
+	if opts == nil {
+		return
+	}
+
+	if opts.ForceAuthn {
 		forceAuthn := true
 		authReq.ForceAuthn = &forceAuthn
 	}
 
-	// Apply RequestedAuthnContext if specified
 	// Note: crewjam/saml library only supports a single AuthnContextClassRef,
 	// so we use the first element if multiple are provided.
-	if opts != nil && len(opts.RequestedAuthnContext) > 0 {
+	if len(opts.RequestedAuthnContext) > 0 {
 		comparison := opts.AuthnContextComparison
 		if comparison == "" {
 			comparison = "exact" // SAML spec default
@@ -199,25 +216,20 @@ func (s *SAMLService) StartAuthWithOptions(idp *domain.IdPInfo, acsURL *url.URL,
 			AuthnContextClassRef: opts.RequestedAuthnContext[0],
 		}
 	}
+}
 
-	// Store request ID for later validation (configurable TTL, default 10 minutes).
-	// Prefer StoreWithEntityID so ACS can recover the IdP after a metadata refresh.
+// rememberAuthnRequest stores the AuthnRequest ID for later validation
+// (configurable TTL, default 10 minutes). It prefers StoreWithEntityID so ACS
+// can recover the IdP after a metadata refresh.
+func (s *SAMLService) rememberAuthnRequest(requestID, entityID string) {
 	expiry := time.Now().Add(s.requestTTL)
 	if store, ok := s.requestStore.(interface {
 		StoreWithEntityID(string, time.Time, string)
 	}); ok {
-		store.StoreWithEntityID(authReq.ID, expiry, idp.EntityID)
+		store.StoreWithEntityID(requestID, expiry, entityID)
 	} else {
-		s.requestStore.Store(authReq.ID, expiry)
+		s.requestStore.Store(requestID, expiry)
 	}
-
-	// Build redirect URL
-	redirectURL, err := authReq.Redirect(relayState, sp)
-	if err != nil {
-		return nil, err
-	}
-
-	return redirectURL, nil
 }
 
 // IdPInfoToEntityDescriptor converts an IdPInfo to a saml.EntityDescriptor.
@@ -320,9 +332,38 @@ func ExtractResponseIssuer(samlResponseB64 string) (string, error) {
 // The SP metadata includes an encryption KeyDescriptor, allowing IdPs to encrypt
 // assertions using the SP's public key.
 func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *domain.IdPInfo) (*AuthResult, error) {
+	assertion, err := s.parseACSResponse(r, acsURL, idp)
+	if err != nil {
+		return nil, err
+	}
+
+	subject, nameIDFormat := extractSubject(assertion)
+	sessionIndex := extractSessionIndex(assertion)
+	attrs := extractAttributes(assertion)
+
+	if err := validateScopes(attrs, idp); err != nil {
+		return nil, err
+	}
+
+	if err := s.consumeRequestID(assertion); err != nil {
+		return nil, err
+	}
+
+	return &AuthResult{
+		Subject:      subject,
+		Attributes:   attrs,
+		IdPEntityID:  idp.EntityID,
+		NameIDFormat: nameIDFormat,
+		SessionIndex: sessionIndex,
+	}, nil
+}
+
+// parseACSResponse configures the SP for the IdP and parses/validates the SAML
+// Response from the request, returning the verified assertion.
+// Note: ParseResponse automatically decrypts encrypted assertions using sp.Key.
+func (s *SAMLService) parseACSResponse(r *http.Request, acsURL *url.URL, idp *domain.IdPInfo) (*saml.Assertion, error) {
 	sp := s.buildServiceProvider(acsURL)
 
-	// Configure IdP metadata
 	idpMetadata, err := idpInfoToEntityDescriptor(idp)
 	if err != nil {
 		return nil, fmt.Errorf("build idp metadata: %w", err)
@@ -339,58 +380,71 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *domain.Id
 		return nil, fmt.Errorf("parse form: %w", err)
 	}
 
-	// Parse and validate the SAML response
-	// Note: ParseResponse automatically decrypts encrypted assertions using sp.Key
 	assertion, err := sp.ParseResponse(r, possibleRequestIDs)
 	if err != nil {
 		return nil, fmt.Errorf("parse saml response: %w", err)
 	}
+	return assertion, nil
+}
 
-	// Extract subject (user identifier) and NameIDFormat
-	subject := ""
-	nameIDFormat := ""
+// extractSubject returns the user identifier and NameIDFormat from the assertion.
+func extractSubject(assertion *saml.Assertion) (subject, nameIDFormat string) {
 	if assertion.Subject != nil && assertion.Subject.NameID != nil {
-		subject = assertion.Subject.NameID.Value
-		nameIDFormat = assertion.Subject.NameID.Format
+		return assertion.Subject.NameID.Value, assertion.Subject.NameID.Format
 	}
+	return "", ""
+}
 
-	// Extract SessionIndex from AuthnStatements
-	sessionIndex := ""
+// extractSessionIndex returns the SessionIndex from the first AuthnStatement, if any.
+func extractSessionIndex(assertion *saml.Assertion) string {
 	if len(assertion.AuthnStatements) > 0 {
-		sessionIndex = assertion.AuthnStatements[0].SessionIndex
+		return assertion.AuthnStatements[0].SessionIndex
 	}
+	return ""
+}
 
-	// Extract attributes
+// extractAttributes flattens the assertion's attribute statements into a map,
+// keyed by FriendlyName when present, otherwise by Name.
+func extractAttributes(assertion *saml.Assertion) map[string]string {
 	attrs := make(map[string]string)
 	for _, stmt := range assertion.AttributeStatements {
 		for _, attr := range stmt.Attributes {
-			if len(attr.Values) > 0 {
-				// Use FriendlyName if available, otherwise use Name
-				key := attr.FriendlyName
-				if key == "" {
-					key = attr.Name
-				}
-				attrs[key] = attr.Values[0].Value
+			if len(attr.Values) == 0 {
+				continue
 			}
+			key := attr.FriendlyName
+			if key == "" {
+				key = attr.Name
+			}
+			attrs[key] = attr.Values[0].Value
 		}
 	}
+	return attrs
+}
 
-	// Validate scoped attributes against IdP's allowed scopes
-	if len(idp.AllowedScopes) > 0 {
-		for attrName, attrValue := range attrs {
-			if domain.IsScopedAttribute(attrName) {
-				scope := domain.ExtractScope(attrValue)
-				if !domain.ValidateScope(scope, idp.AllowedScopes) {
-					return nil, fmt.Errorf("scope validation failed: %s scope %q not allowed for IdP %q", attrName, scope, idp.EntityID)
-				}
-			}
+// validateScopes verifies that every scoped attribute carries a scope the IdP is
+// allowed to assert. A no-op when the IdP declares no allowed scopes.
+func validateScopes(attrs map[string]string, idp *domain.IdPInfo) error {
+	if len(idp.AllowedScopes) == 0 {
+		return nil
+	}
+	for attrName, attrValue := range attrs {
+		if !domain.IsScopedAttribute(attrName) {
+			continue
+		}
+		scope := domain.ExtractScope(attrValue)
+		if !domain.ValidateScope(scope, idp.AllowedScopes) {
+			return fmt.Errorf("scope validation failed: %s scope %q not allowed for IdP %q", attrName, scope, idp.EntityID)
 		}
 	}
+	return nil
+}
 
-	// Consume the request ID (mark as used, enforce single-use).
-	// The InResponseTo field links back to our original AuthnRequest.
-	// Valid() atomically checks and deletes the ID; it returns false if the ID
-	// was already consumed or never existed, indicating a replay.
+// consumeRequestID marks the AuthnRequest that triggered this assertion as used,
+// enforcing single-use. The InResponseTo field links back to our original
+// request; Valid() atomically checks and deletes the ID, returning false if the
+// ID was already consumed or never existed, indicating a replay.
+func (s *SAMLService) consumeRequestID(assertion *saml.Assertion) error {
 	consumed := false
 	if assertion.Subject != nil {
 		for _, sc := range assertion.Subject.SubjectConfirmations {
@@ -402,16 +456,9 @@ func (s *SAMLService) HandleACS(r *http.Request, acsURL *url.URL, idp *domain.Id
 		}
 	}
 	if !consumed {
-		return nil, fmt.Errorf("request ID already consumed or not found: replay detected")
+		return fmt.Errorf("request ID already consumed or not found: replay detected")
 	}
-
-	return &AuthResult{
-		Subject:      subject,
-		Attributes:   attrs,
-		IdPEntityID:  idp.EntityID,
-		NameIDFormat: nameIDFormat,
-		SessionIndex: sessionIndex,
-	}, nil
+	return nil
 }
 
 // CreateLogoutRequest creates a SAML LogoutRequest and returns the redirect URL.
@@ -446,27 +493,58 @@ const samlStatusSuccess = "urn:oasis:names:tc:SAML:2.0:status:Success"
 // from continuing with local logout — the logout flow must complete even when
 // the IdP response is malformed or carries a non-success status.
 func (s *SAMLService) ValidateLogoutResponse(raw domain.RawLogoutResponse, idp *domain.IdPInfo) (domain.ValidatedLogoutResponse, error) {
+	root, err := parseLogoutResponse(raw)
+	if err != nil {
+		return domain.ValidatedLogoutResponse{}, err
+	}
+
+	issuerText, err := s.validateLogoutIssuer(root, idp)
+	if err != nil {
+		return domain.ValidatedLogoutResponse{}, err
+	}
+
+	inResponseTo := s.checkLogoutInResponseTo(root, idp)
+
+	statusCode, err := s.validateLogoutStatus(root, idp)
+	if err != nil {
+		return domain.ValidatedLogoutResponse{}, err
+	}
+
+	return domain.ValidatedLogoutResponse{
+		StatusCode:   statusCode,
+		InResponseTo: inResponseTo,
+		Issuer:       issuerText,
+	}, nil
+}
+
+// parseLogoutResponse base64-decodes the redirect-binding payload and returns
+// the root element of the parsed XML.
+func parseLogoutResponse(raw domain.RawLogoutResponse) (*etree.Element, error) {
 	if raw.Encoded == "" {
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("missing SAMLResponse parameter")
+		return nil, fmt.Errorf("missing SAMLResponse parameter")
 	}
 
 	// Base64-decode the response (redirect binding uses standard base64).
 	xmlBytes, err := base64.StdEncoding.DecodeString(raw.Encoded)
 	if err != nil {
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("base64 decode LogoutResponse: %w", err)
+		return nil, fmt.Errorf("base64 decode LogoutResponse: %w", err)
 	}
 
 	// Parse the XML with etree for namespace-aware element access.
 	doc := etree.NewDocument()
 	if err := doc.ReadFromBytes(xmlBytes); err != nil {
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("parse LogoutResponse XML: %w", err)
+		return nil, fmt.Errorf("parse LogoutResponse XML: %w", err)
 	}
 	root := doc.Root()
 	if root == nil {
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse has no root element")
+		return nil, fmt.Errorf("LogoutResponse has no root element")
 	}
+	return root, nil
+}
 
-	// Validate Issuer — the response must come from the expected IdP.
+// validateLogoutIssuer ensures the response carries an Issuer matching the
+// expected IdP, returning the issuer text on success.
+func (s *SAMLService) validateLogoutIssuer(root *etree.Element, idp *domain.IdPInfo) (string, error) {
 	var issuerText string
 	for _, tag := range []string{"saml:Issuer", "Issuer"} {
 		if el := root.FindElement(tag); el != nil {
@@ -478,40 +556,45 @@ func (s *SAMLService) ValidateLogoutResponse(raw domain.RawLogoutResponse, idp *
 		s.log().Warn("LogoutResponse has no Issuer element",
 			zap.String("idp_entity_id", idp.EntityID),
 		)
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse missing Issuer")
+		return "", fmt.Errorf("LogoutResponse missing Issuer")
 	}
 	if issuerText != idp.EntityID {
 		s.log().Warn("LogoutResponse Issuer does not match expected IdP",
 			zap.String("expected", idp.EntityID),
 			zap.String("got", issuerText),
 		)
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse Issuer %q does not match IdP %q", issuerText, idp.EntityID)
+		return "", fmt.Errorf("LogoutResponse Issuer %q does not match IdP %q", issuerText, idp.EntityID)
 	}
+	return issuerText, nil
+}
 
-	// Check InResponseTo — if present, it should match a pending logout request ID.
-	// We check but do not hard-fail if the store doesn't contain the ID, because
-	// the request store may have expired it or the implementation may not track
-	// logout request IDs separately from authn request IDs.
+// checkLogoutInResponseTo returns the InResponseTo attribute, if any.
+// When present but unknown to the request store it logs a warning but does not
+// fail: the store may have expired the ID or may not track logout request IDs
+// separately from authn request IDs.
+func (s *SAMLService) checkLogoutInResponseTo(root *etree.Element, idp *domain.IdPInfo) string {
 	inResponseTo := root.SelectAttrValue("InResponseTo", "")
-	if inResponseTo != "" {
-		ids := s.requestStore.GetAll()
-		found := false
-		for _, id := range ids {
-			if id == inResponseTo {
-				found = true
-				break
-			}
-		}
-		if !found {
-			s.log().Warn("LogoutResponse InResponseTo not found in pending requests",
-				zap.String("in_response_to", inResponseTo),
-				zap.String("idp_entity_id", idp.EntityID),
-			)
-			// Defense-in-depth: log the warning but don't block the logout.
+	if inResponseTo == "" {
+		return ""
+	}
+
+	for _, id := range s.requestStore.GetAll() {
+		if id == inResponseTo {
+			return inResponseTo
 		}
 	}
 
-	// Validate StatusCode — must be Success for a clean SLO round-trip.
+	// Defense-in-depth: log the warning but don't block the logout.
+	s.log().Warn("LogoutResponse InResponseTo not found in pending requests",
+		zap.String("in_response_to", inResponseTo),
+		zap.String("idp_entity_id", idp.EntityID),
+	)
+	return inResponseTo
+}
+
+// validateLogoutStatus ensures the response carries a Success StatusCode,
+// returning the status code on success.
+func (s *SAMLService) validateLogoutStatus(root *etree.Element, idp *domain.IdPInfo) (string, error) {
 	statusCode := ""
 	// Try both prefixed and unprefixed paths.
 	for _, path := range []string{"samlp:Status/samlp:StatusCode", "Status/StatusCode"} {
@@ -524,21 +607,16 @@ func (s *SAMLService) ValidateLogoutResponse(raw domain.RawLogoutResponse, idp *
 		s.log().Warn("LogoutResponse has no StatusCode element",
 			zap.String("idp_entity_id", idp.EntityID),
 		)
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse missing StatusCode")
+		return "", fmt.Errorf("LogoutResponse missing StatusCode")
 	}
 	if statusCode != samlStatusSuccess {
 		s.log().Warn("LogoutResponse StatusCode is not Success",
 			zap.String("status_code", statusCode),
 			zap.String("idp_entity_id", idp.EntityID),
 		)
-		return domain.ValidatedLogoutResponse{}, fmt.Errorf("LogoutResponse StatusCode %q is not Success", statusCode)
+		return "", fmt.Errorf("LogoutResponse StatusCode %q is not Success", statusCode)
 	}
-
-	return domain.ValidatedLogoutResponse{
-		StatusCode:   statusCode,
-		InResponseTo: inResponseTo,
-		Issuer:       issuerText,
-	}, nil
+	return statusCode, nil
 }
 
 // LogoutRequestResult contains information extracted from a LogoutRequest.
