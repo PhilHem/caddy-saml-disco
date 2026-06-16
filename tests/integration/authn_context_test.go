@@ -3,10 +3,7 @@
 package integration
 
 import (
-	"compress/flate"
-	"encoding/base64"
 	"encoding/xml"
-	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -23,31 +20,26 @@ import (
 func decodeAuthnRequest(t *testing.T, redirectURL *url.URL) *saml.AuthnRequest {
 	t.Helper()
 
-	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
+	// Pull the still-URL-encoded SAMLRequest straight from RawQuery. url.Values
+	// would unescape it, and DecodeSAMLRequest unescapes again as the first step
+	// of the redirect-binding pipeline, so handing it a pre-unescaped value turns
+	// '+' into a space and corrupts the base64.
+	var samlReqEncoded string
+	for _, kv := range strings.Split(redirectURL.RawQuery, "&") {
+		if v, ok := strings.CutPrefix(kv, "SAMLRequest="); ok {
+			samlReqEncoded = v
+			break
+		}
+	}
 	if samlReqEncoded == "" {
 		t.Fatal("redirect URL should contain SAMLRequest parameter")
 	}
 
-	// Decode: URL decode -> base64 decode -> inflate
-	samlReqDecoded, err := url.QueryUnescape(samlReqEncoded)
+	inflatedBytes, err := domain.DecodeSAMLRequest(samlReqEncoded)
 	if err != nil {
-		t.Fatalf("URL decode SAMLRequest: %v", err)
+		t.Fatalf("decode SAMLRequest: %v", err)
 	}
 
-	samlReqBytes, err := base64.StdEncoding.DecodeString(samlReqDecoded)
-	if err != nil {
-		t.Fatalf("base64 decode SAMLRequest: %v", err)
-	}
-
-	// Inflate the deflated SAMLRequest
-	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
-	defer inflatedReader.Close()
-	inflatedBytes, err := io.ReadAll(inflatedReader)
-	if err != nil {
-		t.Fatalf("inflate SAMLRequest: %v", err)
-	}
-
-	// Parse XML
 	var authnReq saml.AuthnRequest
 	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
 		t.Fatalf("parse AuthnRequest XML: %v", err)

@@ -3,15 +3,9 @@
 package integration
 
 import (
-	"compress/flate"
-	"encoding/base64"
-	"encoding/xml"
-	"io"
 	"net/url"
-	"strings"
 	"testing"
 
-	"github.com/crewjam/saml"
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/session"
@@ -56,36 +50,7 @@ func TestForceAuthnFlow_RedirectsWithFlag(t *testing.T) {
 		t.Fatalf("StartAuthWithOptions failed: %v", err)
 	}
 
-	// Verify redirect URL contains SAMLRequest
-	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
-	if samlReqEncoded == "" {
-		t.Fatal("redirect URL should contain SAMLRequest parameter")
-	}
-
-	// Decode SAMLRequest: URL decode -> base64 decode -> inflate
-	samlReqDecoded, err := url.QueryUnescape(samlReqEncoded)
-	if err != nil {
-		t.Fatalf("URL decode SAMLRequest: %v", err)
-	}
-
-	samlReqBytes, err := base64.StdEncoding.DecodeString(samlReqDecoded)
-	if err != nil {
-		t.Fatalf("base64 decode SAMLRequest: %v", err)
-	}
-
-	// Inflate the deflated SAMLRequest
-	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
-	defer inflatedReader.Close()
-	inflatedBytes, err := io.ReadAll(inflatedReader)
-	if err != nil {
-		t.Fatalf("inflate SAMLRequest: %v", err)
-	}
-
-	// Parse XML and verify ForceAuthn attribute
-	var authnReq saml.AuthnRequest
-	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
-		t.Fatalf("parse AuthnRequest XML: %v", err)
-	}
+	authnReq := decodeAuthnRequest(t, redirectURL)
 
 	if authnReq.ForceAuthn == nil || !*authnReq.ForceAuthn {
 		t.Error("ForceAuthn should be true in AuthnRequest")
@@ -126,22 +91,7 @@ func TestForceAuthnFlow_WithoutFlag(t *testing.T) {
 		t.Fatalf("StartAuthWithOptions failed: %v", err)
 	}
 
-	// Decode SAMLRequest
-	samlReqEncoded := redirectURL.Query().Get("SAMLRequest")
-	if samlReqEncoded == "" {
-		t.Fatal("redirect URL should contain SAMLRequest parameter")
-	}
-
-	samlReqDecoded, _ := url.QueryUnescape(samlReqEncoded)
-	samlReqBytes, _ := base64.StdEncoding.DecodeString(samlReqDecoded)
-	inflatedReader := flate.NewReader(strings.NewReader(string(samlReqBytes)))
-	defer inflatedReader.Close()
-	inflatedBytes, _ := io.ReadAll(inflatedReader)
-
-	var authnReq saml.AuthnRequest
-	if err := xml.Unmarshal(inflatedBytes, &authnReq); err != nil {
-		t.Fatalf("parse AuthnRequest XML: %v", err)
-	}
+	authnReq := decodeAuthnRequest(t, redirectURL)
 
 	if authnReq.ForceAuthn != nil && *authnReq.ForceAuthn {
 		t.Error("ForceAuthn should be false or nil when not requested")

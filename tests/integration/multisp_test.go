@@ -5,12 +5,15 @@ package integration
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/config"
@@ -19,6 +22,32 @@ import (
 	"github.com/philiph/caddy-saml-disco/internal/session"
 	"github.com/philiph/caddy-saml-disco/testfixtures/idp"
 )
+
+// discoHandler adapts SAMLDisco.ServeHTTP to a plain http.Handler. ServeHTTP
+// follows Caddy's middleware contract and signals an unmatched hostname by
+// returning a caddyhttp.HandlerError rather than writing the status itself, so
+// the test server translates that error into a response status the way Caddy's
+// routing would.
+func discoHandler(disco *caddyadapter.SAMLDisco) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := disco.ServeHTTP(w, r, emptyNext{})
+		if err == nil {
+			return
+		}
+		var he caddyhttp.HandlerError
+		if errors.As(err, &he) {
+			w.WriteHeader(he.StatusCode)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
+// emptyNext is the terminal next-handler for the test server; routes that fall
+// through SAMLDisco are not exercised by these tests.
+type emptyNext struct{}
+
+func (emptyNext) ServeHTTP(http.ResponseWriter, *http.Request) error { return nil }
 
 // TestMultiSP_EndToEndFlow tests that multiple SP configs route correctly
 // based on hostname and return different metadata.
@@ -98,9 +127,7 @@ func TestMultiSP_EndToEndFlow(t *testing.T) {
 	disco.SetRegistry(registry)
 
 	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		disco.ServeHTTP(w, r, nil)
-	}))
+	server := httptest.NewServer(discoHandler(disco))
 	defer server.Close()
 
 	// Test 1: Verify SP1 metadata endpoint returns correct entity ID
@@ -280,9 +307,7 @@ func TestMultiSP_SessionIsolation(t *testing.T) {
 	disco.SetRegistry(registry)
 
 	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		disco.ServeHTTP(w, r, nil)
-	}))
+	server := httptest.NewServer(discoHandler(disco))
 	defer server.Close()
 
 	// Test 1: Session from SP1 should be valid for SP1
