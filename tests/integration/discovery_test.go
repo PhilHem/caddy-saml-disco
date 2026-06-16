@@ -14,6 +14,7 @@ import (
 	"time"
 
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/session"
@@ -30,9 +31,9 @@ func loadFileMetadataStore(t *testing.T, path string) *metadata.FileMetadataStor
 }
 
 // testTemplateRenderer creates a template renderer for integration tests.
-func testTemplateRenderer(t *testing.T) *caddyadapter.TemplateRenderer {
+func testTemplateRenderer(t *testing.T) *discovery.TemplateRenderer {
 	t.Helper()
-	renderer, err := caddyadapter.NewTemplateRenderer()
+	renderer, err := discovery.NewTemplateRenderer()
 	if err != nil {
 		t.Fatalf("create template renderer: %v", err)
 	}
@@ -707,7 +708,7 @@ func TestListIdPs_IncludesRememberedIdP(t *testing.T) {
 	// Parse response - should now be an object with idps and remembered_idp_id
 	var result struct {
 		IdPs          []domain.IdPInfo `json:"idps"`
-		RememberedIdP string                   `json:"remembered_idp_id"`
+		RememberedIdP string           `json:"remembered_idp_id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode JSON: %v", err)

@@ -64,7 +64,7 @@ func TestAttributeHeaders_ReachDownstreamHandler(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
 		},
@@ -130,7 +130,7 @@ func TestAttributeHeaders_OIDResolution(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Mail"},
 			},
 		},
@@ -190,7 +190,7 @@ func TestAttributeHeaders_StripsIncomingHeaders(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "role", HeaderName: "X-Role"},
 			},
 		},
@@ -256,7 +256,7 @@ func TestAttributeHeaders_MultipleMappings_CustomSeparator(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{
 					SAMLAttribute: "urn:oid:1.3.6.1.4.1.5923.1.1.1.7",
 					HeaderName:    "X-Entitlements",
@@ -337,7 +337,7 @@ func TestAttributeHeaders_Property_NoHeaderInjection(t *testing.T) {
 		disco := &caddyadapter.SAMLDisco{
 			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				AttributeHeaders: []caddyadapter.AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: "test", HeaderName: "X-Test"},
 				},
 			},
@@ -415,7 +415,7 @@ func TestAttributeHeaders_Property_OnlyConfiguredHeaders(t *testing.T) {
 		disco := &caddyadapter.SAMLDisco{
 			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				AttributeHeaders: []caddyadapter.AttributeMapping{
+				AttributeHeaders: []domain.AttributeMapping{
 					{SAMLAttribute: attrKey, HeaderName: headerName},
 				},
 			},
@@ -502,7 +502,7 @@ func TestAttributeHeaders_HeaderPrefix(t *testing.T) {
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
 			HeaderPrefix:      "X-Saml-",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "User"}, // No X- needed with prefix
 			},
 		},
@@ -568,7 +568,7 @@ func TestAttributeHeaders_HeaderPrefix_StripsIncomingHeaders(t *testing.T) {
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
 			HeaderPrefix:      "X-Saml-",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "role", HeaderName: "Role"},
 			},
 		},

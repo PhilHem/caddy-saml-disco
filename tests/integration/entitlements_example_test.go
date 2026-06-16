@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
@@ -77,7 +77,7 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 		disco := &caddyadapter.SAMLDisco{
 			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 					{Field: "department", HeaderName: "X-Department"},
 				},
@@ -133,7 +133,7 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 		disco := &caddyadapter.SAMLDisco{
 			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 				},
 			},
@@ -176,7 +176,7 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 		disco := &caddyadapter.SAMLDisco{
 			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 				},
 				// Don't require admin for this test
@@ -222,7 +222,7 @@ func TestLocalEntitlementsExample_EndToEndFlow(t *testing.T) {
 		disco := &caddyadapter.SAMLDisco{
 			Config: caddyadapter.Config{
 				SessionCookieName: "saml_session",
-				EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
+				EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 					{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 				},
 			},
@@ -295,7 +295,7 @@ func TestLocalEntitlementsExample_HeaderInjection(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
+			EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 				{Field: "roles", HeaderName: "X-Entitlement-Roles", Separator: ";"},
 				{Field: "department", HeaderName: "X-Department"},
 			},
@@ -325,18 +325,3 @@ func TestLocalEntitlementsExample_HeaderInjection(t *testing.T) {
 		t.Errorf("X-Department = %q, want Operations", gotDept)
 	}
 }
-
-// capturedHeaders records headers seen by downstream handler
-type capturedHeaders struct {
-	headers http.Header
-	called  bool
-}
-
-func (c *capturedHeaders) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
-	c.headers = r.Header.Clone()
-	c.called = true
-	w.WriteHeader(http.StatusOK)
-	return nil
-}
-
-var _ caddyhttp.Handler = (*capturedHeaders)(nil)

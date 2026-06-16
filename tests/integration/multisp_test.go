@@ -13,6 +13,7 @@ import (
 	"time"
 
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/config"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/metadata"
 	"github.com/philiph/caddy-saml-disco/internal/session"
@@ -58,17 +59,21 @@ func TestMultiSP_EndToEndFlow(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		SPConfigs: []*caddyadapter.SPConfig{
 			{
-				Hostname: "app1.example.com",
-				Config: caddyadapter.Config{
-					EntityID:          "https://app1.example.com/saml",
-					SessionCookieName: "app1_session",
+				SPConfig: config.SPConfig{
+					Hostname: "app1.example.com",
+					Config: caddyadapter.Config{
+						EntityID:          "https://app1.example.com/saml",
+						SessionCookieName: "app1_session",
+					},
 				},
 			},
 			{
-				Hostname: "app2.example.com",
-				Config: caddyadapter.Config{
-					EntityID:          "https://app2.example.com/saml",
-					SessionCookieName: "app2_session",
+				SPConfig: config.SPConfig{
+					Hostname: "app2.example.com",
+					Config: caddyadapter.Config{
+						EntityID:          "https://app2.example.com/saml",
+						SessionCookieName: "app2_session",
+					},
 				},
 			},
 		},
@@ -241,17 +246,21 @@ func TestMultiSP_SessionIsolation(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		SPConfigs: []*caddyadapter.SPConfig{
 			{
-				Hostname: "app1.example.com",
-				Config: caddyadapter.Config{
-					EntityID:          "https://app1.example.com/saml",
-					SessionCookieName: "app1_session",
+				SPConfig: config.SPConfig{
+					Hostname: "app1.example.com",
+					Config: caddyadapter.Config{
+						EntityID:          "https://app1.example.com/saml",
+						SessionCookieName: "app1_session",
+					},
 				},
 			},
 			{
-				Hostname: "app2.example.com",
-				Config: caddyadapter.Config{
-					EntityID:          "https://app2.example.com/saml",
-					SessionCookieName: "app2_session",
+				SPConfig: config.SPConfig{
+					Hostname: "app2.example.com",
+					Config: caddyadapter.Config{
+						EntityID:          "https://app2.example.com/saml",
+						SessionCookieName: "app2_session",
+					},
 				},
 			},
 		},

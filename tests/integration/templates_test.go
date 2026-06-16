@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
+	"github.com/philiph/caddy-saml-disco/internal/discovery"
 )
 
 // TestTemplates_CustomDir_UsesCustomDiscoveryTemplate verifies that
@@ -39,7 +40,7 @@ func TestTemplates_CustomDir_UsesCustomDiscoveryTemplate(t *testing.T) {
 	}
 
 	// Create renderer with custom directory
-	renderer, err := caddyadapter.NewTemplateRendererWithDir(tmpDir)
+	renderer, err := discovery.NewTemplateRendererWithDir(tmpDir)
 	if err != nil {
 		t.Fatalf("create renderer: %v", err)
 	}
@@ -135,7 +136,7 @@ func TestTemplates_CustomDir_FallsBackForMissingTemplate(t *testing.T) {
 	}
 
 	// Should succeed even without error.html
-	renderer, err := caddyadapter.NewTemplateRendererWithDir(tmpDir)
+	renderer, err := discovery.NewTemplateRendererWithDir(tmpDir)
 	if err != nil {
 		t.Fatalf("create renderer should succeed with partial custom templates: %v", err)
 	}

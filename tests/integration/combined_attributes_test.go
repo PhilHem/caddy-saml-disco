@@ -11,6 +11,7 @@ import (
 	caddyadapter "github.com/philiph/caddy-saml-disco/internal/caddy"
 	"github.com/philiph/caddy-saml-disco/internal/domain"
 	"github.com/philiph/caddy-saml-disco/internal/entitlements"
+	"github.com/philiph/caddy-saml-disco/internal/httputil"
 	"github.com/philiph/caddy-saml-disco/internal/session"
 )
 
@@ -62,10 +63,10 @@ func TestCombinedAttributes_ReachDownstreamHandler(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
-			EntitlementHeaders: []caddyadapter.EntitlementHeaderMapping{
+			EntitlementHeaders: []httputil.EntitlementHeaderMapping{
 				{Field: "roles", HeaderName: "X-Entitlement-Roles"},
 				{Field: "department", HeaderName: "X-Department"},
 			},
@@ -148,7 +149,7 @@ func TestCombinedAttributes_WorksWithoutEntitlements(t *testing.T) {
 	disco := &caddyadapter.SAMLDisco{
 		Config: caddyadapter.Config{
 			SessionCookieName: "saml_session",
-			AttributeHeaders: []caddyadapter.AttributeMapping{
+			AttributeHeaders: []domain.AttributeMapping{
 				{SAMLAttribute: "mail", HeaderName: "X-Remote-User"},
 			},
 		},
