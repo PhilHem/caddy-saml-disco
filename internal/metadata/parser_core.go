@@ -16,6 +16,16 @@ type rawMetadataValidity struct {
 	ValidUntil string `xml:"validUntil,attr"`
 }
 
+// idpInfoMaps bundles the four entity-keyed lookup maps that are parsed
+// separately from the crewjam/saml descriptors and always travel together
+// while building IdPInfo records.
+type idpInfoMaps struct {
+	uiInfo      map[string]*domain.UIInfo
+	regInfo     map[string]*domain.RegistrationInfo
+	scope       map[string][]domain.ScopeInfo
+	entityAttrs map[string]*domain.EntityAttributesInfo
+}
+
 // ParseMetadata parses SAML metadata XML, supporting both single EntityDescriptor
 // and aggregate EntitiesDescriptor formats.
 // Returns ErrMetadataExpired if the metadata has a validUntil attribute in the past.
@@ -28,20 +38,22 @@ func ParseMetadata(data []byte) ([]domain.IdPInfo, *time.Time, error) {
 	}
 
 	// Parse UIInfo, RegistrationInfo, Scopes, and EntityAttributes separately since crewjam/saml doesn't expose them
-	uiInfoMap := parseAllUIInfo(data)
-	regInfoMap := parseAllRegistrationInfo(data)
-	scopeMap := parseAllScopes(data)
-	entityAttrsMap := parseAllEntityAttributes(data)
+	maps := idpInfoMaps{
+		uiInfo:      parseAllUIInfo(data),
+		regInfo:     parseAllRegistrationInfo(data),
+		scope:       parseAllScopes(data),
+		entityAttrs: parseAllEntityAttributes(data),
+	}
 
 	// Try EntitiesDescriptor first (aggregate metadata)
 	var entities saml.EntitiesDescriptor
 	if err := xml.Unmarshal(data, &entities); err == nil && isEntitiesDescriptor(data) {
-		idps, err := parseEntitiesDescriptorWithMaps(&entities, uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
+		idps, err := parseEntitiesDescriptorWithMaps(&entities, maps)
 		return idps, validUntil, err
 	}
 
 	// Fall back to single EntityDescriptor
-	idp, err := parseEntityDescriptorWithMaps(data, uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
+	idp, err := parseEntityDescriptorWithMaps(data, maps)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -90,12 +102,12 @@ func extractAndValidateExpiry(data []byte) (*time.Time, error) {
 
 // parseEntitiesDescriptorWithMaps extracts all IdPs from an aggregate metadata document.
 // It skips entities without IDPSSODescriptor (e.g., SP metadata).
-func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo, entityAttrsMap map[string]*domain.EntityAttributesInfo) ([]domain.IdPInfo, error) {
+func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, maps idpInfoMaps) ([]domain.IdPInfo, error) {
 	var idps []domain.IdPInfo
 
 	// Process direct EntityDescriptor children
 	for i := range entities.EntityDescriptors {
-		idp, err := extractIdPInfoWithMaps(&entities.EntityDescriptors[i], uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
+		idp, err := extractIdPInfoWithMaps(&entities.EntityDescriptors[i], maps)
 		if err != nil {
 			// Skip entities without IDPSSODescriptor (SPs, etc.)
 			continue
@@ -105,7 +117,7 @@ func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMa
 
 	// Process nested EntitiesDescriptor elements (recursive)
 	for i := range entities.EntitiesDescriptors {
-		nestedIdps, err := parseEntitiesDescriptorWithMaps(&entities.EntitiesDescriptors[i], uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
+		nestedIdps, err := parseEntitiesDescriptorWithMaps(&entities.EntitiesDescriptors[i], maps)
 		if err != nil {
 			continue
 		}
@@ -121,18 +133,18 @@ func parseEntitiesDescriptorWithMaps(entities *saml.EntitiesDescriptor, uiInfoMa
 }
 
 // parseEntityDescriptorWithMaps extracts IdPInfo from a single EntityDescriptor XML.
-func parseEntityDescriptorWithMaps(data []byte, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo, entityAttrsMap map[string]*domain.EntityAttributesInfo) (*domain.IdPInfo, error) {
+func parseEntityDescriptorWithMaps(data []byte, maps idpInfoMaps) (*domain.IdPInfo, error) {
 	var ed saml.EntityDescriptor
 	if err := xml.Unmarshal(data, &ed); err != nil {
 		return nil, fmt.Errorf("unmarshal xml: %w", err)
 	}
 
-	return extractIdPInfoWithMaps(&ed, uiInfoMap, regInfoMap, scopeMap, entityAttrsMap)
+	return extractIdPInfoWithMaps(&ed, maps)
 }
 
 // extractIdPInfoWithMaps extracts IdPInfo from a single EntityDescriptor,
 // using pre-parsed UIInfo, RegistrationInfo, Scopes, and EntityAttributes from the maps.
-func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*domain.UIInfo, regInfoMap map[string]*domain.RegistrationInfo, scopeMap map[string][]domain.ScopeInfo, entityAttrsMap map[string]*domain.EntityAttributesInfo) (*domain.IdPInfo, error) {
+func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, maps idpInfoMaps) (*domain.IdPInfo, error) {
 	if ed.EntityID == "" {
 		return nil, fmt.Errorf("missing entityID attribute")
 	}
@@ -142,128 +154,142 @@ func extractIdPInfoWithMaps(ed *saml.EntityDescriptor, uiInfoMap map[string]*dom
 
 	idpDesc := ed.IDPSSODescriptors[0]
 
-	// Find SSO endpoint - prefer HTTP-Redirect, fall back to HTTP-POST
-	var ssoURL, ssoBinding string
-	for _, sso := range idpDesc.SingleSignOnServices {
-		if sso.Binding == saml.HTTPRedirectBinding {
-			ssoURL = sso.Location
-			ssoBinding = sso.Binding
-			break
-		}
-		if sso.Binding == saml.HTTPPostBinding && ssoURL == "" {
-			ssoURL = sso.Location
-			ssoBinding = sso.Binding
-		}
-	}
+	ssoURL, ssoBinding := selectPreferredEndpoint(idpDesc.SingleSignOnServices)
+	sloURL, sloBinding := selectPreferredEndpoint(idpDesc.SingleLogoutServices)
 
-	// Find SLO endpoint - prefer HTTP-Redirect, fall back to HTTP-POST
-	var sloURL, sloBinding string
-	for _, slo := range idpDesc.SingleLogoutServices {
-		if slo.Binding == saml.HTTPRedirectBinding {
-			sloURL = slo.Location
-			sloBinding = slo.Binding
-			break
-		}
-		if slo.Binding == saml.HTTPPostBinding && sloURL == "" {
-			sloURL = slo.Location
-			sloBinding = slo.Binding
-		}
-	}
-
-	// Get UIInfo from pre-parsed map
-	uiInfo := uiInfoMap[ed.EntityID]
-
-	// Extract all language variants and default display name
-	var displayNames map[string]string
-	displayName := ed.EntityID
-	if uiInfo != nil && len(uiInfo.DisplayNames) > 0 {
-		displayNames = domain.LocalizedValuesToMap(uiInfo.DisplayNames)
-		displayName = domain.SelectLocalizedValue(uiInfo.DisplayNames, "en")
-	} else if ed.Organization != nil && len(ed.Organization.OrganizationDisplayNames) > 0 {
-		displayName = ed.Organization.OrganizationDisplayNames[0].Value
-	}
-
-	// Extract all language variants and default description
-	var descriptions map[string]string
-	var description string
-	if uiInfo != nil && len(uiInfo.Descriptions) > 0 {
-		descriptions = domain.LocalizedValuesToMap(uiInfo.Descriptions)
-		description = domain.SelectLocalizedValue(uiInfo.Descriptions, "en")
-	}
-
-	// Extract logo URL from UIInfo (prefer larger logos)
-	var logoURL string
-	if uiInfo != nil && len(uiInfo.Logos) > 0 {
-		logoURL = domain.SelectBestLogo(uiInfo.Logos)
-	}
-
-	// Extract all language variants and default information URL
-	var informationURLs map[string]string
-	var informationURL string
-	if uiInfo != nil && len(uiInfo.InformationURLs) > 0 {
-		informationURLs = domain.LocalizedValuesToMap(uiInfo.InformationURLs)
-		informationURL = domain.SelectLocalizedValue(uiInfo.InformationURLs, "en")
-	}
-
-	// Extract certificates
-	var certs []string
-	for _, kd := range idpDesc.KeyDescriptors {
-		if kd.Use == "signing" || kd.Use == "" {
-			for _, cert := range kd.KeyInfo.X509Data.X509Certificates {
-				certs = append(certs, cert.Data)
-			}
-		}
-	}
-
-	// Extract RegistrationInfo from pre-parsed map
-	var registrationAuthority string
-	var registrationInstant time.Time
-	var registrationPolicies map[string]string
-	if regInfo := regInfoMap[ed.EntityID]; regInfo != nil {
-		registrationAuthority = regInfo.RegistrationAuthority
-		if regInfo.RegistrationInstant != "" {
-			if t, err := time.Parse(time.RFC3339, regInfo.RegistrationInstant); err == nil {
-				registrationInstant = t
-			}
-		}
-		if len(regInfo.RegistrationPolicies) > 0 {
-			registrationPolicies = domain.LocalizedValuesToMap(regInfo.RegistrationPolicies)
-		}
-	}
-
-	// Extract AllowedScopes from pre-parsed map
-	var allowedScopes []domain.ScopeInfo
-	if scopes, ok := scopeMap[ed.EntityID]; ok {
-		allowedScopes = scopes
-	}
+	display := extractDisplayInfo(ed, maps.uiInfo[ed.EntityID])
+	registration := extractRegistrationInfo(maps.regInfo[ed.EntityID])
 
 	// Extract EntityAttributes from pre-parsed map
 	var entityCategories []string
 	var assuranceCertifications []string
-	if attrs := entityAttrsMap[ed.EntityID]; attrs != nil {
+	if attrs := maps.entityAttrs[ed.EntityID]; attrs != nil {
 		entityCategories = attrs.EntityCategories
 		assuranceCertifications = attrs.AssuranceCertifications
 	}
 
 	return &domain.IdPInfo{
 		EntityID:                ed.EntityID,
-		DisplayName:             displayName,
-		DisplayNames:            displayNames,
-		Description:             description,
-		Descriptions:            descriptions,
-		LogoURL:                 logoURL,
-		InformationURL:          informationURL,
-		InformationURLs:         informationURLs,
+		DisplayName:             display.displayName,
+		DisplayNames:            display.displayNames,
+		Description:             display.description,
+		Descriptions:            display.descriptions,
+		LogoURL:                 display.logoURL,
+		InformationURL:          display.informationURL,
+		InformationURLs:         display.informationURLs,
 		SSOURL:                  ssoURL,
 		SSOBinding:              ssoBinding,
 		SLOURL:                  sloURL,
 		SLOBinding:              sloBinding,
-		Certificates:            certs,
-		RegistrationAuthority:   registrationAuthority,
-		RegistrationInstant:     registrationInstant,
-		RegistrationPolicies:    registrationPolicies,
-		AllowedScopes:           allowedScopes,
+		Certificates:            extractSigningCertificates(idpDesc.KeyDescriptors),
+		RegistrationAuthority:   registration.authority,
+		RegistrationInstant:     registration.instant,
+		RegistrationPolicies:    registration.policies,
+		AllowedScopes:           maps.scope[ed.EntityID],
 		EntityCategories:        entityCategories,
 		AssuranceCertifications: assuranceCertifications,
 	}, nil
+}
+
+// selectPreferredEndpoint picks the SSO/SLO endpoint to use from a list of
+// SAML endpoints, preferring HTTP-Redirect and falling back to HTTP-POST.
+// Returns the location URL and the binding that was selected (empty if none).
+func selectPreferredEndpoint(endpoints []saml.Endpoint) (location, binding string) {
+	for _, ep := range endpoints {
+		if ep.Binding == saml.HTTPRedirectBinding {
+			return ep.Location, ep.Binding
+		}
+		if ep.Binding == saml.HTTPPostBinding && location == "" {
+			location = ep.Location
+			binding = ep.Binding
+		}
+	}
+	return location, binding
+}
+
+// idpDisplayInfo holds the human-facing fields derived from UIInfo (with
+// EntityID / Organization fallbacks), each as a default value plus a map of
+// localized language variants.
+type idpDisplayInfo struct {
+	displayName     string
+	displayNames    map[string]string
+	description     string
+	descriptions    map[string]string
+	logoURL         string
+	informationURL  string
+	informationURLs map[string]string
+}
+
+// extractDisplayInfo derives the display-related fields from the entity's
+// UIInfo, falling back to the EntityID and Organization name when UIInfo is
+// absent.
+func extractDisplayInfo(ed *saml.EntityDescriptor, uiInfo *domain.UIInfo) idpDisplayInfo {
+	info := idpDisplayInfo{displayName: ed.EntityID}
+
+	if uiInfo != nil && len(uiInfo.DisplayNames) > 0 {
+		info.displayNames = domain.LocalizedValuesToMap(uiInfo.DisplayNames)
+		info.displayName = domain.SelectLocalizedValue(uiInfo.DisplayNames, "en")
+	} else if ed.Organization != nil && len(ed.Organization.OrganizationDisplayNames) > 0 {
+		info.displayName = ed.Organization.OrganizationDisplayNames[0].Value
+	}
+
+	if uiInfo == nil {
+		return info
+	}
+
+	if len(uiInfo.Descriptions) > 0 {
+		info.descriptions = domain.LocalizedValuesToMap(uiInfo.Descriptions)
+		info.description = domain.SelectLocalizedValue(uiInfo.Descriptions, "en")
+	}
+	if len(uiInfo.Logos) > 0 {
+		info.logoURL = domain.SelectBestLogo(uiInfo.Logos)
+	}
+	if len(uiInfo.InformationURLs) > 0 {
+		info.informationURLs = domain.LocalizedValuesToMap(uiInfo.InformationURLs)
+		info.informationURL = domain.SelectLocalizedValue(uiInfo.InformationURLs, "en")
+	}
+
+	return info
+}
+
+// extractSigningCertificates collects the X.509 certificate data from the
+// signing key descriptors (Use == "signing" or unspecified).
+func extractSigningCertificates(keyDescriptors []saml.KeyDescriptor) []string {
+	var certs []string
+	for _, kd := range keyDescriptors {
+		if kd.Use != "signing" && kd.Use != "" {
+			continue
+		}
+		for _, cert := range kd.KeyInfo.X509Data.X509Certificates {
+			certs = append(certs, cert.Data)
+		}
+	}
+	return certs
+}
+
+// idpRegistrationInfo holds the MDRPI registration fields derived from a
+// pre-parsed RegistrationInfo entry.
+type idpRegistrationInfo struct {
+	authority string
+	instant   time.Time
+	policies  map[string]string
+}
+
+// extractRegistrationInfo derives the registration fields from a pre-parsed
+// RegistrationInfo entry, returning zero values when it is absent.
+func extractRegistrationInfo(regInfo *domain.RegistrationInfo) idpRegistrationInfo {
+	if regInfo == nil {
+		return idpRegistrationInfo{}
+	}
+
+	info := idpRegistrationInfo{authority: regInfo.RegistrationAuthority}
+	if regInfo.RegistrationInstant != "" {
+		if t, err := time.Parse(time.RFC3339, regInfo.RegistrationInstant); err == nil {
+			info.instant = t
+		}
+	}
+	if len(regInfo.RegistrationPolicies) > 0 {
+		info.policies = domain.LocalizedValuesToMap(regInfo.RegistrationPolicies)
+	}
+	return info
 }
