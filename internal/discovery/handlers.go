@@ -112,10 +112,6 @@ func (h *DiscoveryHandler) HandleSelectIdP(w http.ResponseWriter, r *http.Reques
 		return nil
 	}
 
-	h.getLogger().Info("idp selected for authentication",
-		zap.String("entity_id", req.EntityID),
-	)
-
 	if req.Remember {
 		h.setRememberIdPCookie(w, r, req.EntityID)
 	}
@@ -128,6 +124,7 @@ func (h *DiscoveryHandler) HandleSelectIdP(w http.ResponseWriter, r *http.Reques
 		h.renderAppError(w, r, domain.ConfigError("SAML service is not configured"))
 		return nil
 	}
+	h.logIdPSelected(idp, "api_select", zap.Bool("remember_idp", req.Remember))
 
 	relayState := req.ReturnURL
 	if relayState == "" {
@@ -145,6 +142,7 @@ func (h *DiscoveryHandler) HandleSelectIdP(w http.ResponseWriter, r *http.Reques
 		h.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
 		return nil
 	}
+	h.logSAMLLoginStarted(idp, "api_select", opts.ForceAuthn, zap.Bool("remember_idp", req.Remember))
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{
@@ -199,6 +197,7 @@ func (h *DiscoveryHandler) HandleDiscoveryUI(w http.ResponseWriter, r *http.Requ
 				h.renderAppError(w, r, domain.AuthError("Failed to start authentication", err))
 				return nil
 			}
+			h.logSAMLLoginStarted(idp, "single_idp_discovery", opts.ForceAuthn)
 			http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 			return nil
 		}
@@ -273,6 +272,7 @@ func (h *DiscoveryHandler) HandleRedirectToIdP(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	h.logSAMLLoginStarted(idp, "protected_route", opts.ForceAuthn)
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 
@@ -284,6 +284,47 @@ func (h *DiscoveryHandler) isBypassIdP(entityID string) bool {
 		}
 	}
 	return false
+}
+
+// @tra: Adapter.SAMLOrgEntryLogging
+func idpAggregateLogFields(event, authFlow string, idp *domain.IdPInfo) []zap.Field {
+	fields := []zap.Field{
+		zap.String("event", event),
+		zap.String("auth_flow", authFlow),
+	}
+	if idp == nil {
+		return fields
+	}
+
+	fields = append(fields, zap.String("idp_entity_id", idp.EntityID))
+	if idp.DisplayName != "" {
+		fields = append(fields, zap.String("idp_display_name", idp.DisplayName))
+	}
+	if idp.RegistrationAuthority != "" {
+		fields = append(fields, zap.String("idp_registration_authority", idp.RegistrationAuthority))
+	}
+	return fields
+}
+
+func (h *DiscoveryHandler) logSAMLLoginStarted(idp *domain.IdPInfo, entryPoint string, forceAuthn bool, extra ...zap.Field) {
+	fields := idpAggregateLogFields("saml_disco_login_started", "saml", idp)
+	fields = append(fields,
+		zap.String("entry_point", entryPoint),
+		zap.Bool("force_authn", forceAuthn),
+	)
+	fields = append(fields, extra...)
+	h.getLogger().Info("saml login started", fields...)
+}
+
+func (h *DiscoveryHandler) logIdPSelected(idp *domain.IdPInfo, entryPoint string, extra ...zap.Field) {
+	fields := idpAggregateLogFields("saml_disco_idp_selected", "saml", idp)
+	fields = append(fields, zap.String("entry_point", entryPoint))
+	fields = append(fields, extra...)
+	h.getLogger().Info("saml idp selected", fields...)
+}
+
+func (h *DiscoveryHandler) logSessionCreated(authFlow string, idp *domain.IdPInfo) {
+	h.getLogger().Info("saml disco session created", idpAggregateLogFields("saml_disco_session_created", authFlow, idp)...)
 }
 
 // effectivePasscode returns the passcode that gates the given no-authentication
@@ -332,10 +373,6 @@ func (h *DiscoveryHandler) handleBypassIdP(w http.ResponseWriter, r *http.Reques
 		return h.writeInvalidPasscode(w)
 	}
 
-	h.getLogger().Info("bypass idp selected, creating guest session",
-		zap.String("entity_id", idp.EntityID),
-	)
-
 	relayState := returnURL
 	if relayState == "" {
 		relayState = "/"
@@ -358,6 +395,7 @@ func (h *DiscoveryHandler) handleBypassIdP(w http.ResponseWriter, r *http.Reques
 		h.renderAppError(w, r, domain.ServiceError("Failed to create session"))
 		return err
 	}
+	h.logSessionCreated("bypass", idp)
 
 	h.setSessionCookie(w, r, token)
 
@@ -377,8 +415,6 @@ func (h *DiscoveryHandler) handleGuestAccess(w http.ResponseWriter, r *http.Requ
 		h.getLogger().Info("guest access rejected: invalid passcode")
 		return h.writeInvalidPasscode(w)
 	}
-
-	h.getLogger().Info("guest access selected, creating guest session")
 
 	relayState := returnURL
 	if relayState == "" {
@@ -402,6 +438,7 @@ func (h *DiscoveryHandler) handleGuestAccess(w http.ResponseWriter, r *http.Requ
 		h.renderAppError(w, r, domain.ServiceError("Failed to create session"))
 		return err
 	}
+	h.logSessionCreated("guest", &domain.IdPInfo{EntityID: GuestEntityID, DisplayName: h.Config.GuestAccessLabel})
 
 	h.setSessionCookie(w, r, token)
 

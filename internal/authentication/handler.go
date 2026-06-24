@@ -201,10 +201,6 @@ func (h *AuthHandler) ACS(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	h.logger().Info("saml authentication successful",
-		zap.String("subject", result.Subject),
-		zap.String("idp_entity_id", result.IdPEntityID),
-	)
 	h.metricsRecorder().RecordAuthAttempt(result.IdPEntityID, true)
 	h.metricsRecorder().RecordAuthSuccess(result.IdPEntityID)
 	h.metricsRecorder().RecordAuthDuration(result.IdPEntityID, "success", duration)
@@ -259,6 +255,7 @@ func (h *AuthHandler) ACS(w http.ResponseWriter, r *http.Request) error {
 		h.onError(w, r, domain.ServiceError("Failed to create session"))
 		return err
 	}
+	h.logAuthenticationSuccess(idp, duration)
 	h.metricsRecorder().RecordSessionCreated()
 
 	// Delegate cookie writing and redirect to the caller.
@@ -266,6 +263,32 @@ func (h *AuthHandler) ACS(w http.ResponseWriter, r *http.Request) error {
 		h.OnAuthenticated(w, r, token, session)
 	}
 	return nil
+}
+
+// @tra: Adapter.SAMLOrgEntryLogging
+func authAggregateLogFields(event, authFlow string, idp *domain.IdPInfo) []zap.Field {
+	fields := []zap.Field{
+		zap.String("event", event),
+		zap.String("auth_flow", authFlow),
+	}
+	if idp == nil {
+		return fields
+	}
+
+	fields = append(fields, zap.String("idp_entity_id", idp.EntityID))
+	if idp.DisplayName != "" {
+		fields = append(fields, zap.String("idp_display_name", idp.DisplayName))
+	}
+	if idp.RegistrationAuthority != "" {
+		fields = append(fields, zap.String("idp_registration_authority", idp.RegistrationAuthority))
+	}
+	return fields
+}
+
+func (h *AuthHandler) logAuthenticationSuccess(idp *domain.IdPInfo, duration time.Duration) {
+	fields := authAggregateLogFields("saml_disco_session_created", "saml", idp)
+	fields = append(fields, zap.Duration("duration", duration))
+	h.logger().Info("saml authentication successful", fields...)
 }
 
 // resolveACSURL returns the configured ACS URL or derives it from the request.
@@ -326,10 +349,10 @@ func (h *AuthHandler) onDenied(w http.ResponseWriter, r *http.Request, subject s
 // noopMetricsRecorder satisfies ports.MetricsRecorder with no-op methods.
 type noopMetricsRecorder struct{}
 
-func (n *noopMetricsRecorder) RecordAuthAttempt(string, bool)              {}
-func (n *noopMetricsRecorder) RecordAuthSuccess(string)                    {}
-func (n *noopMetricsRecorder) RecordAuthFailure(string, string)            {}
+func (n *noopMetricsRecorder) RecordAuthAttempt(string, bool)                   {}
+func (n *noopMetricsRecorder) RecordAuthSuccess(string)                         {}
+func (n *noopMetricsRecorder) RecordAuthFailure(string, string)                 {}
 func (n *noopMetricsRecorder) RecordAuthDuration(string, string, time.Duration) {}
-func (n *noopMetricsRecorder) RecordSessionCreated()                       {}
-func (n *noopMetricsRecorder) RecordSessionValidation(bool)                {}
-func (n *noopMetricsRecorder) RecordMetadataRefresh(string, bool, int)     {}
+func (n *noopMetricsRecorder) RecordSessionCreated()                            {}
+func (n *noopMetricsRecorder) RecordSessionValidation(bool)                     {}
+func (n *noopMetricsRecorder) RecordMetadataRefresh(string, bool, int)          {}
