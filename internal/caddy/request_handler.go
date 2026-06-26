@@ -83,12 +83,18 @@ func (s *SAMLDisco) serveDownstream(w http.ResponseWriter, r *http.Request, next
 	}
 	cookie, err := r.Cookie(spConfig.Config.SessionCookieName)
 	if err != nil || cookie.Value == "" {
+		if s.answerSessionExpiredJSON(w, r, spConfig) {
+			return nil
+		}
 		s.redirectToIdPInternal(w, r, spConfig)
 		return nil
 	}
 	session, err := spConfig.sessionStore.Get(cookie.Value)
 	if err != nil {
 		s.getMetricsRecorder().RecordSessionValidation(false)
+		if s.answerSessionExpiredJSON(w, r, spConfig) {
+			return nil
+		}
 		s.redirectToIdPInternal(w, r, spConfig)
 		return nil
 	}
