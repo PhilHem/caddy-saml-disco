@@ -122,6 +122,76 @@ func TestServeHTTP_PreservesOriginalURL(t *testing.T) {
 	}
 }
 
+func TestServeHTTP_APIRequestWithoutSession_ReturnsJSONUnauthorized(t *testing.T) {
+	key := loadTestKey(t)
+	cert, err := session.LoadCertificate("../../testdata/sp-cert.pem")
+	if err != nil {
+		t.Fatalf("load certificate: %v", err)
+	}
+
+	store := session.NewCookieSessionStore(key, 8*time.Hour)
+	samlService := NewSAMLService("https://sp.example.com", key, cert)
+	metadataStore := &mockMetadataStore{
+		idps: []domain.IdPInfo{{
+			EntityID:   "https://idp.example.com/saml",
+			SSOURL:     "https://idp.example.com/saml/sso",
+			SSOBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+		}},
+	}
+
+	s := &SAMLDisco{
+		Config: Config{
+			EntityID:          "https://sp.example.com",
+			SessionCookieName: "saml_session",
+		},
+	}
+	s.SetSessionStore(store)
+	s.SetSAMLService(samlService)
+	s.SetMetadataStore(metadataStore)
+
+	req := httptest.NewRequest(http.MethodPost, "/transcription/check_transcription_exists", strings.NewReader("[]"))
+	req.Host = "sp.example.com"
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Referer", "https://sp.example.com/chat?job=123")
+	rec := httptest.NewRecorder()
+	next := &mockNextHandler{}
+
+	err = s.ServeHTTP(rec, req, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+	if next.called {
+		t.Fatal("downstream handler should not be called without a valid session")
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d; body=%q", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if location := rec.Header().Get("Location"); location != "" {
+		t.Fatalf("Location = %q, want empty JSON response", location)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json", ct)
+	}
+	if got := rec.Header().Get("X-SAML-Session-Expired"); got != "1" {
+		t.Fatalf("X-SAML-Session-Expired = %q, want 1", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode JSON body: %v; body=%q", err, rec.Body.String())
+	}
+	if payload["error"] != "session_expired" {
+		t.Errorf("error = %q, want session_expired", payload["error"])
+	}
+	if payload["login_url"] != "/saml/disco?return_url=%2Fchat%3Fjob%3D123" {
+		t.Errorf("login_url = %q", payload["login_url"])
+	}
+}
+
 // TestServeHTTP_SessionInContext verifies that a valid session is stored in
 // the request context for downstream handlers to access.
 
